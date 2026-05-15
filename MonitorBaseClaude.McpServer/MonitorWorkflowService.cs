@@ -10,7 +10,7 @@ using ModelContextProtocol.Server;
 
 namespace MonitorBaseClaude.McpServer;
 
-public sealed class MonitorWorkflowService
+public sealed partial class MonitorWorkflowService
 {
     private static readonly JsonSerializerOptions JsonOptions = new()
     {

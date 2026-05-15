@@ -104,11 +104,15 @@ internal static class Program
         ScriptedSmokeStep[] staticSteps =
         [
             new("Status", "get_monitor_status", null, "Verify configured roots and watched solution."),
+            new("Self Check", "get_self_check", null, "Verify guardrails, Working paths, and diff tool discovery."),
             new("Workflow", "get_workflow_status", null, "Verify Working folder and WinMerge discovery."),
+            new("List Monitor Runs", "list_monitor_runs", new Dictionary<string, object?> { ["maxEntries"] = 10 }, "List monitor-owned run history entries."),
+            new("List Ledgers", "list_ledgers", new Dictionary<string, object?> { ["maxEntries"] = 10 }, "List monitor-owned per-file ledgers."),
             new("Find Program.cs", "find_file", new Dictionary<string, object?> { ["fileNameOrPattern"] = "Program.cs", ["maxResults"] = 10 }, "Find Program.cs under watched project."),
             new("Read Program.cs", "get_file", new Dictionary<string, object?> { ["sourceFilePath"] = "Program.cs" }, "Read full Program.cs through the Server."),
             new("Outline Program.cs", "get_file_outline", new Dictionary<string, object?> { ["path"] = "Program.cs" }, "Read symbol outline for Program.cs."),
             new("Get Main Symbol", "get_symbol", new Dictionary<string, object?> { ["path"] = "Program.cs", ["symbolName"] = "Main" }, "Read only Program.Main from Program.cs."),
+            new("Get Program Ledger", "get_ledger", new Dictionary<string, object?> { ["sourceFilePath"] = "Program.cs" }, "Read Program.cs ledger if present."),
             new("Stage Program.cs", "submit_file", new Dictionary<string, object?> { ["path"] = "Program.cs", ["content"] = File.ReadAllText(Path.Combine(Path.GetDirectoryName(settings.WatchedSolutionPath) ?? string.Empty, "Program.cs")), ["launchDiff"] = false }, "Stage a full-file replacement identical to Program.cs without touching source."),
             new("Start Session", "start_monitor_session", new Dictionary<string, object?> { ["purpose"] = "scripted smoke test for Program.cs" }, "Create durable session handle.")
         ];

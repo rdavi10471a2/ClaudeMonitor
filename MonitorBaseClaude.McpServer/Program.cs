@@ -62,6 +62,13 @@ public sealed class MonitorTools
     }
 
     [McpServerTool]
+    [Description("Return a self-check snapshot for configured roots, working folders, diff tool availability, and safety guardrails.")]
+    public MonitorSelfCheckResult GetSelfCheck()
+    {
+        return workflowService.GetSelfCheck();
+    }
+
+    [McpServerTool]
     [Description("Create a durable monitor session handle. Handles are explicit state references that clients should pass through later calls.")]
     public MonitorSessionState StartMonitorSession(
         [Description("Short purpose for this monitor session, such as 'local Ollama tool exploration' or 'Claude feature edit'.")] string purpose = "monitor workflow")
@@ -173,6 +180,47 @@ public sealed class MonitorTools
         [Description("Refresh from source first if the Working copy is missing.")] bool refreshIfMissing = true)
     {
         return workflowService.CompareFile(sourceFilePath, ledgerSummary, refreshIfMissing);
+    }
+
+    [McpServerTool]
+    [Description("List monitor run/history entries recorded under monitor-owned Working\\History.")]
+    public IReadOnlyList<MonitorRunEntry> ListMonitorRuns(
+        [Description("Maximum entries to return.")] int maxEntries = 100)
+    {
+        return workflowService.ListMonitorRuns(maxEntries);
+    }
+
+    [McpServerTool]
+    [Description("Return all recorded entries for one monitor run id.")]
+    public MonitorRunDetail GetMonitorRun(
+        [Description("Run id from list_monitor_runs.")] string runId)
+    {
+        return workflowService.GetMonitorRun(runId);
+    }
+
+    [McpServerTool]
+    [Description("List monitor-owned per-file ledgers.")]
+    public IReadOnlyList<MonitorLedgerInfo> ListLedgers(
+        [Description("Maximum ledgers to return.")] int maxEntries = 100)
+    {
+        return workflowService.ListLedgers(maxEntries);
+    }
+
+    [McpServerTool]
+    [Description("Read one monitor-owned per-file ledger by source file or ledger path.")]
+    public MonitorLedgerReadResult GetLedger(
+        [Description("Optional source file path, absolute or relative to the watched solution folder.")] string? sourceFilePath = null,
+        [Description("Optional absolute ledger path under monitor Working\\History\\Ledgers.")] string? ledgerPath = null)
+    {
+        return workflowService.GetLedger(sourceFilePath, ledgerPath);
+    }
+
+    [McpServerTool]
+    [Description("Archive old monitor-owned history snapshots and prune old ledgers.")]
+    public MonitorPruneResult PruneMonitorHistory(
+        [Description("Retention window in days.")] int retentionDays = 7)
+    {
+        return workflowService.PruneMonitorHistory(retentionDays);
     }
 
     [McpServerTool]

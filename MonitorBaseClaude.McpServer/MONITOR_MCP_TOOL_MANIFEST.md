@@ -35,7 +35,7 @@ The WinForms UI should call this MCP server for workflow state, file operations,
 | Source behavior | MCP tool target | Status |
 | --- | --- | --- |
 | `--help` | `get_tool_manifest` | scaffolded |
-| `--self-check` | `get_monitor_status` | scaffolded |
+| `--self-check` | `get_self_check` | scaffolded |
 | `WorkflowSettings:ObservedRoot` | `get_monitor_status.watchedSolutionPath` | scaffolded |
 | source file path argument | `refresh_file.sourceFilePath` | scaffolded |
 | `--refresh-only` | `refresh_file` | scaffolded |
@@ -44,8 +44,9 @@ The WinForms UI should call this MCP server for workflow state, file operations,
 | `--ledger-summary` | `ledgerSummary` argument on compare tools | scaffolded |
 | `--observed-root` | `watchedSolutionPath` / project context argument | planned |
 | `--telemetry-window` | WinForms telemetry surface | planned |
-| `_runs.json`, `_telemetry.json` | `list_monitor_runs`, `get_monitor_run` | planned |
-| Ledgers under `Working\History\Ledgers` | `list_ledgers`, `get_ledger` | planned |
+| `_runs.json` | `list_monitor_runs`, `get_monitor_run` | scaffolded |
+| `_telemetry.json` | `list_telemetry_runs`, `get_telemetry_run` | planned |
+| Ledgers under `Working\History\Ledgers` | `list_ledgers`, `get_ledger` | scaffolded |
 | source file read | `get_file` | scaffolded |
 | source file discovery | `find_file` | scaffolded |
 | explicit durable state handle | `start_monitor_session`, `get_monitor_session`, `record_monitor_session_event`, `list_monitor_sessions` | scaffolded |
@@ -56,6 +57,7 @@ The WinForms UI should call this MCP server for workflow state, file operations,
 | Roslyn symbol insertion | `add_symbol`, `add_class`, `add_using` | planned |
 | Roslyn symbol removal | `remove_symbol`, `remove_class`, `remove_using` | planned |
 | operator diff decision | `record_diff_decision` | planned |
+| old executable command flags | future command-line bridge | breadcrumb only |
 
 ## Current Tools
 
@@ -76,6 +78,10 @@ Temporary discovery helper. This may go away once watched solution configuration
 ### `get_workflow_status`
 
 Returns the watched solution, watched project folder, monitor Working folder, and WinMerge resolution.
+
+### `get_self_check`
+
+Returns configured roots, monitor-owned Working and History paths, watched solution existence, diff tool resolution, and guardrail decisions.
 
 ### Session State Tools
 
@@ -152,6 +158,33 @@ Arguments:
 - `sourceFilePath`: absolute path or path relative to the watched solution folder.
 - `ledgerSummary`: optional compact summary appended to the monitor-owned ledger.
 - `refreshIfMissing`: refreshes from source if the Working copy does not exist.
+
+### Run History Tools
+
+- `list_monitor_runs(maxEntries?)`: reads monitor-owned run history entries from `Working\History\_runs.json`.
+- `get_monitor_run(runId)`: returns entries for one recorded run id.
+
+### Ledger Tools
+
+- `list_ledgers(maxEntries?)`: lists monitor-owned per-file ledgers under `Working\History\Ledgers`.
+- `get_ledger(sourceFilePath?, ledgerPath?)`: reads one ledger by watched source path or explicit ledger path under the ledger root.
+
+### `prune_monitor_history`
+
+Archives old monitor-owned history snapshots and prunes old ledgers. This does not touch watched source files.
+
+### Command-Line Breadcrumb
+
+The old monitor executable accepted flags such as `--refresh-only`, `--compare-only`, `--no-prune`, and `--ledger-summary`.
+
+Those flags are not exposed as the primary MCP API. MCP clients should call typed tools directly:
+
+- `--refresh-only` -> `refresh_file`
+- `--compare-only` -> `compare_file`
+- `--ledger-summary` -> `compare_file.ledgerSummary`
+- `--no-prune` -> do not call `prune_monitor_history`
+
+A future command-line bridge can translate legacy flags into these typed tool calls if needed.
 
 ### `get_tool_manifest`
 
