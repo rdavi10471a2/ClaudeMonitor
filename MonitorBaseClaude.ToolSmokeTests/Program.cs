@@ -15,6 +15,7 @@ internal static class Program
     {
         bool pause = args.Contains("--pause", StringComparer.OrdinalIgnoreCase);
         bool scriptedMode = args.Contains("--scripted", StringComparer.OrdinalIgnoreCase);
+        bool stageCommentDiffMode = args.Contains("--stage-comment-diff", StringComparer.OrdinalIgnoreCase);
         string? modelOverride = ReadOption(args, "--model");
 
         MonitorClientSettings settings = MonitorClientSettings.Load();
@@ -25,6 +26,11 @@ internal static class Program
         string model = modelOverride ?? settings.OllamaModel;
         string runRoot = Path.Combine(settings.UiRoot, "Working", "History", "ToolSmokeTests", DateTime.Now.ToString("yyyyMMdd_HHmmss"));
         Directory.CreateDirectory(runRoot);
+
+        if (stageCommentDiffMode)
+        {
+            return await RunStageCommentDiffAsync(settings, monitorClient, runRoot);
+        }
 
         if (scriptedMode)
         {
@@ -151,6 +157,72 @@ internal static class Program
         await File.WriteAllTextAsync(reportPath, BuildScriptedMarkdownReport(results));
         Console.WriteLine($"Summary report: {reportPath}");
         return results.Any(result => result.ToolResult.IsError) ? 1 : 0;
+    }
+
+    private static async Task<int> RunStageCommentDiffAsync(
+        MonitorClientSettings settings,
+        MonitorMcpClientService monitorClient,
+        string runRoot)
+    {
+        const string relativePath = "Data\\BaseTableRepository.cs";
+        const string marker = "            // Monitor proposal smoke test: verify staged repository diffs without touching source.";
+        string watchedRoot = Path.GetDirectoryName(settings.WatchedSolutionPath) ?? string.Empty;
+        string sourcePath = Path.Combine(watchedRoot, relativePath);
+        string original = await File.ReadAllTextAsync(sourcePath);
+        string proposed = original.Contains(marker, StringComparison.Ordinal)
+            ? original
+            : original.Replace(
+                "            using var conn = new SqlConnection(ConnectionString);\r\n\r\n            const string sql = @\"",
+                $"            using var conn = new SqlConnection(ConnectionString);\r\n{marker}\r\n\r\n            const string sql = @\"");
+
+        if (string.Equals(original, proposed, StringComparison.Ordinal))
+        {
+            Console.WriteLine("Proposal content is identical to source; marker may already exist or anchor was not found.");
+            return 1;
+        }
+
+        Dictionary<string, object?> arguments = new()
+        {
+            ["path"] = relativePath,
+            ["content"] = proposed,
+            ["manifestJson"] = JsonSerializer.Serialize(new
+            {
+                operation = "submit_file",
+                filePath = relativePath,
+                added = Array.Empty<string>(),
+                removed = Array.Empty<string>(),
+                note = "Smoke-test staged repository comment proposal."
+            }, JsonOptions),
+            ["launchDiff"] = true
+        };
+
+        Console.WriteLine("MonitorBaseClaude staged comment diff test");
+        Console.WriteLine($"Source: {sourcePath}");
+        Console.WriteLine($"Log root: {runRoot}");
+        Console.WriteLine();
+
+        DateTimeOffset startedAt = DateTimeOffset.Now;
+        MonitorMcpToolCallResult toolResult = await monitorClient.CallToolAsync("submit_file", arguments);
+        ScriptedSmokeResult result = new(
+            new ScriptedSmokeStep(
+                "Stage repository comment diff",
+                "submit_file",
+                arguments,
+                "Stage a harmless comment in BaseTableRepository.GetByDatabase and launch WinMerge."),
+            startedAt,
+            DateTimeOffset.Now,
+            toolResult,
+            FormatPayloadForDisplay(toolResult.ResponseJson));
+
+        string logPath = Path.Combine(runRoot, "stage-comment-diff.json");
+        await File.WriteAllTextAsync(logPath, JsonSerializer.Serialize(result, JsonOptions));
+        WriteScriptedSummary(result);
+
+        string after = await File.ReadAllTextAsync(sourcePath);
+        bool sourceUnchanged = string.Equals(original, after, StringComparison.Ordinal);
+        Console.WriteLine($"Watched source unchanged: {sourceUnchanged}");
+        Console.WriteLine($"Trace: {logPath}");
+        return toolResult.IsError || !sourceUnchanged ? 1 : 0;
     }
 
     private static async Task<ScriptedSmokeResult> RunScriptedStepAsync(
