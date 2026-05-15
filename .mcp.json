@@ -1,0 +1,16 @@
+{
+  "mcpServers": {
+    "monitor-base-claude": {
+      "command": "C:\\VSCodeProjects\\MonitorBaseClaude\\MonitorBaseClaude.McpServer\\bin\\Debug\\net10.0\\MonitorBaseClaude.McpServer.exe",
+      "args": [],
+      "env": {}
+    },
+    "roslyn-codelens": {
+      "command": "C:\\Users\\rdavi\\.dotnet\\tools\\roslyn-codelens-mcp.exe",
+      "args": [
+        "C:\\Schema Studio - DBV2\\Schema Studio.sln"
+      ],
+      "env": {}
+    }
+  }
+}

@@ -1,0 +1,26 @@
+# Build output
+bin/
+obj/
+**/bin/
+**/obj/
+
+# Visual Studio / local IDE state
+.vs/
+*.user
+*.suo
+*.lscache
+
+# Local runtime configuration
+appsettings.json
+
+# Monitor-owned generated state
+Working/
+
+# Logs / temporary files
+*.log
+*.tmp
+*.bak
+
+# OS noise
+Thumbs.db
+Desktop.ini

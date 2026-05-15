@@ -1,0 +1,35 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <Nullable>enable</Nullable>
+    <UseWindowsForms>true</UseWindowsForms>
+    <ImplicitUsings>enable</ImplicitUsings>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Compile Remove="MainForm.Designer.cs" />
+    <Compile Remove="MonitorBaseClaude.McpServer\**\*.cs" />
+    <Compile Remove="MonitorBaseClaude.ToolSmokeTests\**\*.cs" />
+    <Compile Remove="Working\**\*.cs" />
+    <EmbeddedResource Remove="MonitorBaseClaude.McpServer\**\*" />
+    <EmbeddedResource Remove="MonitorBaseClaude.ToolSmokeTests\**\*" />
+    <EmbeddedResource Remove="Working\**\*" />
+    <None Remove="MonitorBaseClaude.McpServer\**\*" />
+    <None Remove="MonitorBaseClaude.ToolSmokeTests\**\*" />
+    <None Remove="Working\**\*" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="DockPanelSuite" Version="3.1.1" />
+    <PackageReference Include="DockPanelSuite.ThemeVS2015" Version="3.1.1" />
+    <PackageReference Include="ModelContextProtocol" Version="1.3.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Update="appsettings.json" CopyToOutputDirectory="PreserveNewest" />
+    <None Update="appsettings.template.json" CopyToOutputDirectory="Never" />
+  </ItemGroup>
+
+</Project>
