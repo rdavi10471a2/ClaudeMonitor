@@ -1,0 +1,5 @@
+<Solution>
+  <Project Path="MonitorBaseClaude.csproj" />
+  <Project Path="MonitorBaseClaude.McpServer/MonitorBaseClaude.McpServer.csproj" />
+  <Project Path="MonitorBaseClaude.ToolSmokeTests/MonitorBaseClaude.ToolSmokeTests.csproj" />
+</Solution>
