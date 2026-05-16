@@ -42,6 +42,7 @@ public sealed partial class MonitorWorkflowService
         Directory.CreateDirectory(Path.GetDirectoryName(context.WorkingFilePath)!);
         Directory.CreateDirectory(Path.GetDirectoryName(context.RefreshStatePath)!);
         File.Copy(context.SourceFilePath, context.WorkingFilePath, overwrite: true);
+        RecoverBlockedDirtyUnexpectedRecords(context.SourceFilePath);
 
         MonitorRefreshState state = new(
             context.SourceFilePath,
@@ -383,7 +384,15 @@ public sealed partial class MonitorWorkflowService
         string? manifestJson,
         bool launchDiff)
     {
+        EnsureFileIsNotBlockedByDirtyUnexpected(context);
         MonitorSyntaxValidationResult validation = ValidateSyntaxIfCSharp(context.SourceFilePath, content);
+        if (validation.HasErrors)
+        {
+            MonitorSyntaxDiagnostic first = validation.Diagnostics[0];
+            throw new InvalidOperationException(
+                $"C# syntax validation failed for {context.RelativeSourcePath} at line {first.Line}, column {first.Column}: {first.Id} {first.Message}");
+        }
+
         string recordId = CreateStagedRecordId(operation, Path.GetFileNameWithoutExtension(context.SourceFilePath));
         string stagedPath = CreateStagedFile(context, content, recordId);
         MonitorOverlayValidationResult overlayValidation = ValidateOverlayCompilation(context, stagedPath, sessionId);
@@ -415,7 +424,7 @@ public sealed partial class MonitorWorkflowService
         }
 
         return new MonitorFileSubmitResult(
-            isNoOp ? "no-op-staged" : validation.HasErrors ? "staged-with-syntax-errors" : "staged",
+            isNoOp ? "no-op-staged" : "staged",
             context.SourceFilePath,
             context.RelativeSourcePath,
             stagedPath,
@@ -898,6 +907,73 @@ public sealed partial class MonitorWorkflowService
         string recordPath = Path.Combine(recordsRoot, SanitizeForFileName(record.RecordId) + ".json");
         File.WriteAllText(recordPath, JsonSerializer.Serialize(record, JsonOptions));
         return recordPath;
+    }
+
+    private void EnsureFileIsNotBlockedByDirtyUnexpected(MonitorFileContext context)
+    {
+        (StagedEditRecord Record, string RecordPath)? blocked = FindBlockedDirtyUnexpectedRecord(context.SourceFilePath);
+        if (blocked is null)
+        {
+            return;
+        }
+
+        throw new InvalidOperationException(
+            $"Further staged edits are blocked for {context.RelativeSourcePath} because staged record {blocked.Value.Record.RecordId} is dirty-unexpected. Run refresh_file after Host/Operator inspection before staging another candidate.");
+    }
+
+    private void RecoverBlockedDirtyUnexpectedRecords(string sourceFilePath)
+    {
+        foreach ((StagedEditRecord record, string recordPath) in ReadStagedEditRecordsForSource(sourceFilePath))
+        {
+            if (!record.QueueStatus.Equals("blocked-dirty-unexpected", StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            StagedEditRecord recoveredRecord = record with { QueueStatus = "recovered-by-refresh" };
+            File.WriteAllText(recordPath, JsonSerializer.Serialize(recoveredRecord, JsonOptions));
+        }
+    }
+
+    private (StagedEditRecord Record, string RecordPath)? FindBlockedDirtyUnexpectedRecord(string sourceFilePath)
+    {
+        foreach ((StagedEditRecord record, string recordPath) in ReadStagedEditRecordsForSource(sourceFilePath)
+            .Where(item => item.Record.QueueStatus.Equals("blocked-dirty-unexpected", StringComparison.OrdinalIgnoreCase))
+            .OrderByDescending(item => item.Record.CreatedAt))
+        {
+            return (record, recordPath);
+        }
+
+        return null;
+    }
+
+    private IEnumerable<(StagedEditRecord Record, string RecordPath)> ReadStagedEditRecordsForSource(string sourceFilePath)
+    {
+        string recordsRoot = Path.Combine(settings.UiRoot, "Working", "Staged", "Records");
+        if (!Directory.Exists(recordsRoot))
+        {
+            yield break;
+        }
+
+        string fullSourcePath = Path.GetFullPath(sourceFilePath);
+        foreach (string recordPath in Directory.EnumerateFiles(recordsRoot, "*.json", SearchOption.AllDirectories))
+        {
+            StagedEditRecord? record = null;
+            try
+            {
+                record = JsonSerializer.Deserialize<StagedEditRecord>(File.ReadAllText(recordPath), JsonOptions);
+            }
+            catch (JsonException)
+            {
+                continue;
+            }
+
+            if (record is not null
+                && Path.GetFullPath(record.SourceFilePath).Equals(fullSourcePath, StringComparison.OrdinalIgnoreCase))
+            {
+                yield return (record, recordPath);
+            }
+        }
     }
 
     private (StagedEditRecord Record, string RecordPath) ReadStagedEditRecord(string stagedRecordId)

@@ -352,7 +352,7 @@ Selector behavior:
 
 ### `submit_file`
 
-Stages a complete replacement file under monitor-owned `Working\Staged`, writes a timestamped `StagedEditRecord`, derives Roslyn metadata, runs syntax validation, runs overlay compile validation, and returns staged/source paths.
+Stages a complete replacement file under monitor-owned `Working\Staged`, writes a timestamped `StagedEditRecord`, derives Roslyn metadata, runs syntax validation, runs overlay compile validation, and returns staged/source paths. C# parse/syntax errors are rejected before a staged record is written. Overlay compile diagnostics are reported on staged candidates because project/reference state can produce false positives.
 
 Arguments:
 
@@ -510,6 +510,7 @@ These tools are token-saving and safety tools for later phases. They should stag
 - All add/replace/remove operations go through temp staging and diff before touching real files.
 - Roslyn validates syntactic completeness before diff launch.
 - The Tool Server must reject half-open syntax, unmatched braces, and incomplete symbol submissions.
+- C# parse/syntax errors block staging. Overlay compile diagnostics are reported as validation metadata and do not automatically block staging.
 - Model clients should prefer outline/symbol tools before requesting full file content when possible.
 
 ### Diff workflow tools

@@ -50,14 +50,26 @@ Current add/remove metadata is proven. Replacement metadata is simply not repres
 Priority 1: Syntax-error rejection smoke
 
 - Submit a C# candidate with deliberate syntax errors.
-- Prove the server rejects it before staging, or explicitly document current behavior if staged syntax-error candidates remain intentional.
-- If strict rejection is the desired contract, prove no staged record is written for invalid C#.
+- Prove the server rejects it before staging.
+- Prove no staged record is returned for invalid C#.
+
+Status after safety-gate update:
+
+- Implemented in `MonitorWorkflowService.StageFileReplacement`.
+- Covered by `MonitorBaseClaude.ToolSmokeTests --fixture-decision-gate-smoke`.
+- The strict rejection applies to C# parse/syntax errors. Overlay compile diagnostics remain validation metadata because project/reference state can produce false positives.
 
 Priority 2: Dirty-unexpected recovery smoke
 
 - Create a `dirty-unexpected` classification.
 - Run the intended Host/operator recovery path.
 - Prove a new staging operation can proceed only after explicit recovery/refresh/inspection.
+
+Status after safety-gate update:
+
+- Implemented as a pre-stage block for source files with a latest `blocked-dirty-unexpected` staged record.
+- `refresh_file` is the explicit recovery operation for v1; it refreshes the monitor Working copy and marks blocked records as `recovered-by-refresh`.
+- Covered by `MonitorBaseClaude.ToolSmokeTests --fixture-decision-gate-smoke`.
 
 Priority 3: Submit-symbol changed-metadata smoke
 

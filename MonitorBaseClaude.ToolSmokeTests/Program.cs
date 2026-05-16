@@ -953,6 +953,46 @@ internal static class Program
             return (stage, stagedRecordId);
         }
 
+        async Task<bool> VerifyBlockedStageAsync(string name)
+        {
+            string current = await File.ReadAllTextAsync(fixture.TargetSourcePath);
+            string proposed = current.Replace(
+                "            return name.Trim();",
+                "            // Decision gate smoke: this stage must be blocked." + Environment.NewLine + "            return name.Trim();",
+                StringComparison.Ordinal);
+            ScriptedSmokeResult blockedStage = await StepAsync(
+                name,
+                "submit_file",
+                new Dictionary<string, object?>
+                {
+                    ["path"] = fixture.TargetRelativePath,
+                    ["content"] = proposed,
+                    ["manifestJson"] = JsonSerializer.Serialize(new
+                    {
+                        operation = "submit_file",
+                        filePath = fixture.TargetRelativePath,
+                        operationKind = "BlockedAfterDirtyUnexpected",
+                        note = name
+                    }, JsonOptions),
+                    ["launchDiff"] = false
+                },
+                "Verify dirty-unexpected blocks additional staging until explicit recovery.");
+            return blockedStage.ToolResult.IsError
+                && string.IsNullOrWhiteSpace(ExtractStagedRecordId(blockedStage.ToolResult.ResponseJson));
+        }
+
+        async Task<bool> RefreshFixtureAsync(string name)
+        {
+            ScriptedSmokeResult refreshResult = await StepAsync(
+                name,
+                "refresh_file",
+                new Dictionary<string, object?> { ["sourceFilePath"] = fixture.TargetRelativePath },
+                "Refresh fixture source to recover from dirty-unexpected after Host/Operator inspection.");
+            string status = FindPropertyValue(JsonNode.Parse(refreshResult.ToolResult.ResponseJson), "status") ?? string.Empty;
+            return !refreshResult.ToolResult.IsError
+                && status.Equals("refreshed", StringComparison.OrdinalIgnoreCase);
+        }
+
         async Task<string> RecordDecisionAsync(string name, string stagedRecordId, string decision)
         {
             ScriptedSmokeResult result = await StepAsync(
@@ -998,6 +1038,29 @@ internal static class Program
             && noOpStatus.Equals("no-op-staged", StringComparison.OrdinalIgnoreCase)
             && noOpDiffRequested.Equals("False", StringComparison.OrdinalIgnoreCase);
 
+        ScriptedSmokeResult syntaxErrorStage = await StepAsync(
+            "Reject Syntax Error Candidate",
+            "submit_file",
+            new Dictionary<string, object?>
+            {
+                ["path"] = fixture.TargetRelativePath,
+                ["content"] = original.Replace(
+                    "            return name.Trim();",
+                    "            return name.Trim(",
+                    StringComparison.Ordinal),
+                ["manifestJson"] = JsonSerializer.Serialize(new
+                {
+                    operation = "submit_file",
+                    filePath = fixture.TargetRelativePath,
+                    operationKind = "SyntaxError",
+                    note = "Decision gate fixture syntax rejection candidate."
+                }, JsonOptions),
+                ["launchDiff"] = false
+            },
+            "Verify malformed C# is rejected before any staged record is created.");
+        bool syntaxErrorRejected = syntaxErrorStage.ToolResult.IsError
+            && string.IsNullOrWhiteSpace(ExtractStagedRecordId(syntaxErrorStage.ToolResult.ResponseJson));
+
         (ScriptedSmokeResult acceptStage, string acceptRecordId) = await StageCandidateAsync(
             "Clean Accept",
             "            // Decision gate smoke: clean accept.");
@@ -1022,6 +1085,8 @@ internal static class Program
         bool acceptNotAppliedPassed = acceptNotAppliedStage.ToolResult.IsError == false
             && acceptNotApplied.Equals("dirty-unexpected", StringComparison.OrdinalIgnoreCase)
             && string.Equals(await File.ReadAllTextAsync(fixture.TargetSourcePath), original, StringComparison.Ordinal);
+        bool acceptNotAppliedBlocked = await VerifyBlockedStageAsync("Stage Blocked After Accept Not Applied");
+        bool acceptNotAppliedRecovered = await RefreshFixtureAsync("Recover After Accept Not Applied");
 
         (ScriptedSmokeResult rejectAfterSaveStage, string rejectAfterSaveRecordId) = await StageCandidateAsync(
             "Reject After Save",
@@ -1032,30 +1097,42 @@ internal static class Program
             && rejectAfterSave.Equals("dirty-unexpected", StringComparison.OrdinalIgnoreCase);
 
         await File.WriteAllTextAsync(fixture.TargetSourcePath, original);
+        bool rejectAfterSaveRecovered = await RefreshFixtureAsync("Recover After Reject After Save");
         (ScriptedSmokeResult dirtyStage, string dirtyRecordId) = await StageCandidateAsync(
             "Dirty External Edit",
             "            // Decision gate smoke: staged candidate should not match dirty source.");
         await File.AppendAllTextAsync(fixture.TargetSourcePath, Environment.NewLine + "// Decision gate smoke: external dirty edit." + Environment.NewLine);
         string dirtyExternal = await RecordDecisionAsync("Decision Dirty External Edit", dirtyRecordId, "rejected");
         bool dirtyExternalPassed = dirtyExternal.Equals("dirty-unexpected", StringComparison.OrdinalIgnoreCase);
+        bool dirtyExternalBlocked = await VerifyBlockedStageAsync("Stage Blocked After Dirty External Edit");
 
         bool passed = noOpPassed
+            && syntaxErrorRejected
             && cleanAcceptPassed
             && cleanRejectPassed
             && acceptNotAppliedPassed
+            && acceptNotAppliedBlocked
+            && acceptNotAppliedRecovered
             && rejectAfterSavePassed
-            && dirtyExternalPassed;
+            && rejectAfterSaveRecovered
+            && dirtyExternalPassed
+            && dirtyExternalBlocked;
 
         string reportPath = Path.Combine(runRoot, "fixture-decision-gate-summary.md");
         await File.WriteAllTextAsync(reportPath, BuildScriptedMarkdownReport(results));
         Console.WriteLine();
         Console.WriteLine($"Fixture decision gate verified: {passed}");
         Console.WriteLine($"no-op staged: {noOpStatus} ({noOpPassed})");
+        Console.WriteLine($"syntax error rejected: {syntaxErrorRejected}");
         Console.WriteLine($"clean accept: {cleanAccept} ({cleanAcceptPassed})");
         Console.WriteLine($"clean reject: {cleanReject} ({cleanRejectPassed})");
         Console.WriteLine($"accept not applied: {acceptNotApplied} ({acceptNotAppliedPassed})");
+        Console.WriteLine($"accept not applied blocks next stage: {acceptNotAppliedBlocked}");
+        Console.WriteLine($"accept not applied recovery: {acceptNotAppliedRecovered}");
         Console.WriteLine($"reject after save: {rejectAfterSave} ({rejectAfterSavePassed})");
+        Console.WriteLine($"reject after save recovery: {rejectAfterSaveRecovered}");
         Console.WriteLine($"dirty external edit: {dirtyExternal} ({dirtyExternalPassed})");
+        Console.WriteLine($"dirty external edit blocks next stage: {dirtyExternalBlocked}");
         Console.WriteLine($"Summary report: {reportPath}");
 
         return passed ? 0 : 1;
