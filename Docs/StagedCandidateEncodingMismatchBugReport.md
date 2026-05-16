@@ -4,7 +4,7 @@
 
 **Discovered against**: the new `launch_staged_diff` tool (PR #6).
 
-**Status**: fixed by PR #7 (`Preserve staged candidate text shape`). This report is retained as the repro and design record for the staged-candidate byte-shape bug.
+**Status**: **staging-emitter direction fixed by PR #7** (`Preserve staged candidate text shape`) — the staged candidate is now written with the watched file's BOM and dominant EOL convention. **The WinMerge-save round-trip direction remains open** and is filed separately in [StagedCandidateRoundTripEOLBugReport.md](StagedCandidateRoundTripEOLBugReport.md) — when an operator accepts a candidate via WinMerge save, the bytes WinMerge writes to the watched file still differ from the staged candidate's bytes, so the gate continues to classify accepts as `dirty-unexpected`. PR #7 closed half the loop; the other half is the follow-up. This report is retained as the original repro and design record.
 
 ## Symptom
 
