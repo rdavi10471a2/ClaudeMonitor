@@ -64,6 +64,12 @@ The source-map hierarchy is intentional:
 dotnet build .\MonitorBaseClaude.slnx
 ```
 
+## Claude Desktop On Windows
+
+Build the MCP server first, then point Claude Desktop at the server executables directly. Do not use `dotnet run` or PowerShell wrapper scripts as the Desktop MCP command on the Windows MSIX build; the wrapper layer can break stdio forwarding and MSBuild output can pollute the JSON-RPC stream.
+
+Use `Docs/ClaudeDesktopAndCodeSetup.md` for the workstation-local direct-exe config.
+
 ## High-Value Smokes
 
 Decision gate, syntax rejection, dirty blocking, and recovery:

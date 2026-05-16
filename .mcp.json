@@ -1,24 +1,17 @@
 {
   "mcpServers": {
     "monitor-base-claude": {
-      "command": "powershell",
+      "command": "C:\\VSCodeProjects\\MonitorBaseClaude\\MonitorBaseClaude.McpServer\\bin\\Debug\\net10.0\\MonitorBaseClaude.McpServer.exe",
       "args": [
-        "-NoProfile",
-        "-ExecutionPolicy",
-        "Bypass",
-        "-File",
-        ".\\Tools\\Start-MonitorBaseClaudeMcp.ps1"
+        "--settings",
+        "C:\\VSCodeProjects\\MonitorBaseClaude\\appsettings.json"
       ],
       "env": {}
     },
     "roslyn-codelens": {
-      "command": "powershell",
+      "command": "C:\\Users\\rdavi\\.dotnet\\tools\\roslyn-codelens-mcp.exe",
       "args": [
-        "-NoProfile",
-        "-ExecutionPolicy",
-        "Bypass",
-        "-File",
-        ".\\Tools\\Start-RoslynCodeLensMcp.ps1"
+        "C:\\Schema Studio - DBV2\\Schema Studio.sln"
       ],
       "env": {}
     }

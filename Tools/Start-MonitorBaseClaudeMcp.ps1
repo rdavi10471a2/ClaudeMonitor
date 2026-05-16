@@ -1,12 +1,16 @@
 $ErrorActionPreference = 'Stop'
 
 $repoRoot = Resolve-Path (Join-Path $PSScriptRoot '..')
-$projectPath = Join-Path $repoRoot 'MonitorBaseClaude.McpServer\MonitorBaseClaude.McpServer.csproj'
+$exePath = Join-Path $repoRoot 'MonitorBaseClaude.McpServer\bin\Debug\net10.0\MonitorBaseClaude.McpServer.exe'
 $settingsPath = Join-Path $repoRoot 'appsettings.json'
 
 if (-not (Test-Path -LiteralPath $settingsPath)) {
     $settingsPath = Join-Path $repoRoot 'appsettings.template.json'
 }
 
-dotnet run --project $projectPath -- --settings $settingsPath
+if (-not (Test-Path -LiteralPath $exePath)) {
+    throw "MonitorBaseClaude.McpServer.exe not found. Build the project first: dotnet build $($exePath -replace '\\bin\\.*$','\\MonitorBaseClaude.McpServer.csproj')"
+}
+
+& $exePath --settings $settingsPath
 exit $LASTEXITCODE

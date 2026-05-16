@@ -27,7 +27,7 @@ Machine-local paths live in `appsettings.json`. Start from `appsettings.template
 - `MonitorClient:CodeLensSolutionPath`
 - `WorkflowSettings:ObservedRoot`
 
-Relative paths in `appsettings.json` are resolved from the config file folder. The project `.mcp.json` calls repo-local PowerShell launch scripts under `Tools`, so it does not need a user-specific `C:\Users\...\roslyn-codelens-mcp.exe` path.
+Relative paths in `appsettings.json` are resolved from the config file folder. The project `.mcp.json` intentionally points at pre-built `.exe` commands so stdio stays clean and startup does not run MSBuild.
 
 Build the Monitor MCP server first:
 
@@ -73,14 +73,26 @@ Claude Desktop may not automatically read `CLAUDE.md` the same way Claude Code d
 - Do not use source process markers or glyph anchors.
 - Diff review is all-or-none.
 
-Desktop MCP configuration should point to the built Monitor MCP server executable or use the same stdio command pattern as `.mcp.json`. Machine-local absolute paths belong in local config, not shared docs, unless the doc is explicitly for this workstation.
+Desktop MCP configuration must point to the built server executables directly. Do not launch the servers through PowerShell wrappers from Desktop's MSIX build; that path can break stdio forwarding before the MCP `initialize` request reaches the server.
 
-For Claude Desktop, if relative `.mcp.json` script paths are not resolved from the project root, use absolute script paths to:
+Use this workstation-local shape after building the Monitor MCP server:
 
-```text
-<repo>\Tools\Start-MonitorBaseClaudeMcp.ps1
-<repo>\Tools\Start-RoslynCodeLensMcp.ps1
+```json
+{
+  "mcpServers": {
+    "monitor-base-claude": {
+      "command": "C:\\VSCodeProjects\\MonitorBaseClaude\\MonitorBaseClaude.McpServer\\bin\\Debug\\net10.0\\MonitorBaseClaude.McpServer.exe",
+      "args": ["--settings", "C:\\VSCodeProjects\\MonitorBaseClaude\\appsettings.json"]
+    },
+    "roslyn-codelens": {
+      "command": "C:\\Users\\rdavi\\.dotnet\\tools\\roslyn-codelens-mcp.exe",
+      "args": ["C:\\Schema Studio - DBV2\\Schema Studio.sln"]
+    }
+  }
+}
 ```
+
+The PowerShell scripts under `Tools` remain useful for developer shells and Claude Code experiments, but they are not the canonical Claude Desktop entry point on Windows MSIX.
 
 ## Roslyn CodeLens Pairing
 
