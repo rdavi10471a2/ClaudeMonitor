@@ -27,7 +27,7 @@ Machine-local paths live in `appsettings.json`. Start from `appsettings.template
 - `MonitorClient:CodeLensSolutionPath`
 - `WorkflowSettings:ObservedRoot`
 
-Relative paths in `appsettings.json` are resolved from the config file folder. The project `.mcp.json` intentionally points at pre-built `.exe` commands so stdio stays clean and startup does not run MSBuild.
+Relative paths in `appsettings.json` are resolved from the config file folder. The project `.mcp.json` uses repo-local PowerShell scripts for Claude Code and developer shells. Claude Desktop on Windows MSIX should use the direct-exe configuration in the Desktop section below.
 
 Build the Monitor MCP server first:
 
@@ -108,6 +108,8 @@ Use CodeLens for:
 - source generator inspection
 - generated code inspection
 - code actions in preview mode
+
+Do not use CodeLens `apply_code_action` as the normal write path for the watched solution. If CodeLens suggests a refactoring or fix, use it as analysis input, then stage the resulting watched-source change through Monitor MCP so the Operator review and vote-plus-hash gate still apply.
 
 Use Monitor MCP for:
 

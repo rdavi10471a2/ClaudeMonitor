@@ -96,6 +96,8 @@ Use the Monitor MCP server for workflow state, sessions, staged candidates, hash
 
 Use Roslyn CodeLens MCP for external code intelligence: diagnostics, references, callers, type hierarchy, dependency analysis, generated code, and broad semantic questions.
 
+Do not use Roslyn CodeLens `apply_code_action` against watched source in this workflow. Treat CodeLens as read/analysis-only unless the Operator explicitly authorizes a separate non-monitor mutation path. Refactorings and fixes for watched source should be converted into a complete candidate and staged through Monitor MCP so WinMerge review and vote-plus-hash classification remain authoritative.
+
 `get_source_map` is a Monitor-owned read/discovery tool. It is expected before C# edits because it gives compact current structure and stable lexical symbol keys without loading full bodies. Use `navigation` mode to choose a file/member, `selector` mode to get stable keys and hashes for a chosen file, and `full` mode only for audit/debug.
 
 ## Marker And Glyph Rules

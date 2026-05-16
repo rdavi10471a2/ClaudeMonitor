@@ -1,8 +1,22 @@
 $ErrorActionPreference = 'Stop'
 
-$roslynCodelensExe = Join-Path $env:USERPROFILE '.dotnet\tools\roslyn-codelens-mcp.exe'
-if (-not (Test-Path -LiteralPath $roslynCodelensExe)) {
-    throw "roslyn-codelens-mcp.exe not found. Install the global tool or update the path: $roslynCodelensExe"
+$defaultRoslynCodelensExe = Join-Path $env:USERPROFILE '.dotnet\tools\roslyn-codelens-mcp.exe'
+$roslynCodelensCommand = $null
+if (Test-Path -LiteralPath $defaultRoslynCodelensExe) {
+    $roslynCodelensCommand = $defaultRoslynCodelensExe
+} else {
+    $resolvedCommand = Get-Command 'roslyn-codelens-mcp.exe' -ErrorAction SilentlyContinue
+    if ($null -eq $resolvedCommand) {
+        $resolvedCommand = Get-Command 'roslyn-codelens-mcp' -ErrorAction SilentlyContinue
+    }
+
+    if ($null -ne $resolvedCommand) {
+        $roslynCodelensCommand = $resolvedCommand.Source
+    }
+}
+
+if ([string]::IsNullOrWhiteSpace($roslynCodelensCommand)) {
+    throw "roslyn-codelens-mcp was not found at $defaultRoslynCodelensExe or on PATH. Install the global tool or update the launcher."
 }
 
 $repoRoot = Resolve-Path (Join-Path $PSScriptRoot '..')
@@ -34,5 +48,5 @@ if (-not (Test-Path -LiteralPath $solutionPath)) {
     throw "CodeLens solution path not found: $solutionPath"
 }
 
-& $roslynCodelensExe $solutionPath
+& $roslynCodelensCommand $solutionPath
 exit $LASTEXITCODE
