@@ -867,6 +867,15 @@ internal static class Program
             },
             "Stage a harmless fixture edit without touching the fixture source before Accept.");
 
+        string? stagedFilePath = FindPropertyValue(JsonNode.Parse(submitResult.ToolResult.ResponseJson), "stagedFilePath")
+            ?? FindPropertyValue(JsonNode.Parse(submitResult.ToolResult.ResponseJson), "StagedFilePath");
+        if (string.IsNullOrWhiteSpace(stagedFilePath)
+            || !TextFileShapeMatches(fixture.TargetSourcePath, stagedFilePath))
+        {
+            Console.WriteLine("Staged candidate did not preserve fixture source encoding/EOL shape.");
+            return 1;
+        }
+
         string? stagedRecordId = ExtractStagedRecordId(submitResult.ToolResult.ResponseJson);
         if (string.IsNullOrWhiteSpace(stagedRecordId))
         {
@@ -2553,7 +2562,7 @@ internal static class Program
                 }
             }
             """);
-        File.WriteAllText(targetSourcePath, """
+        WriteUtf8BomCrLf(targetSourcePath, """
             using SchemaStudio.AIHelpers;
 
             namespace SchemaStudio.Data
@@ -2747,6 +2756,61 @@ internal static class Program
         {
             return false;
         }
+    }
+
+    private static void WriteUtf8BomCrLf(string path, string content)
+    {
+        string normalized = content.Replace("\r\n", "\n", StringComparison.Ordinal).Replace("\r", "\n", StringComparison.Ordinal).Replace("\n", "\r\n", StringComparison.Ordinal);
+        File.WriteAllText(path, normalized, new UTF8Encoding(encoderShouldEmitUTF8Identifier: true));
+    }
+
+    private static bool TextFileShapeMatches(string expectedPath, string actualPath)
+    {
+        byte[] expected = File.ReadAllBytes(expectedPath);
+        byte[] actual = File.ReadAllBytes(actualPath);
+        bool expectedUsesCrlf = UsesCrlf(expected);
+        return HasUtf8Bom(expected) == HasUtf8Bom(actual)
+            && expectedUsesCrlf == UsesCrlf(actual)
+            && (!expectedUsesCrlf || CountLoneLf(actual) == 0);
+    }
+
+    private static bool HasUtf8Bom(byte[] bytes)
+    {
+        return bytes.Length >= 3 && bytes[0] == 0xEF && bytes[1] == 0xBB && bytes[2] == 0xBF;
+    }
+
+    private static int CountCrlf(byte[] bytes)
+    {
+        int count = 0;
+        for (int i = 0; i + 1 < bytes.Length; i++)
+        {
+            if (bytes[i] == '\r' && bytes[i + 1] == '\n')
+            {
+                count++;
+                i++;
+            }
+        }
+
+        return count;
+    }
+
+    private static bool UsesCrlf(byte[] bytes)
+    {
+        return CountCrlf(bytes) > 0;
+    }
+
+    private static int CountLoneLf(byte[] bytes)
+    {
+        int count = 0;
+        for (int i = 0; i < bytes.Length; i++)
+        {
+            if (bytes[i] == '\n' && (i == 0 || bytes[i - 1] != '\r'))
+            {
+                count++;
+            }
+        }
+
+        return count;
     }
 
     private static string? FindPropertyValue(JsonNode? node, string propertyName)
