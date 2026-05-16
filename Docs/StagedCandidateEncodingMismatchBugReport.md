@@ -4,7 +4,7 @@
 
 **Discovered against**: the new `launch_staged_diff` tool (PR #6).
 
-**Status**: real-source repro on first end-to-end run; affects the all-or-none gate's happy path.
+**Status**: fixed by PR #7 (`Preserve staged candidate text shape`). This report is retained as the repro and design record for the staged-candidate byte-shape bug.
 
 ## Symptom
 
