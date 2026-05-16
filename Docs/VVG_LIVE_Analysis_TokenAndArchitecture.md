@@ -95,7 +95,7 @@ A representative end-to-end edit — "add a null guard to one method in `TargetS
 | Classify | `record_diff_decision(accepted)` | ~150 |
 | **Total** | | **~5,000** |
 
-The same edit via full-file workflows:
+The same edit via a full-file workflow (read whole file, emit whole file with the change, re-read to verify):
 
 | Step | Cost |
 | --- | ---:|
@@ -106,10 +106,10 @@ The same edit via full-file workflows:
 
 Already a meaningful saving on a *small* file. The advantage compounds for larger files and longer sessions:
 
-- 50 edits in a session on the Codex pattern: ~390,000 tokens read+emit.
+- 50 edits in a session on a pure full-file pattern: ~390,000 tokens read+emit.
 - 50 edits in the Monitor pattern: ~250,000 tokens, *with most of the cost being the one-time selector reads that get amortized across multiple edits in the same file*.
 
-In practice, with selector re-use, multi-hour Monitor sessions land **5× to 20× under** equivalent full-file sessions. The encoding-mismatch bug currently dampens this — when accepts classify as dirty-unexpected, the model has to recover and retry — but that's a fixable bug, not a design flaw.
+In practice, with selector re-use, multi-hour Monitor sessions land **5× to 20× under** an equivalent pure full-file session. Patch-based workflows (e.g. some Codex sessions) sit between the two; exact comparison would need telemetry from that side, which isn't in scope here. The encoding-mismatch bug currently dampens the Monitor numbers — when accepts classify as dirty-unexpected, the model has to recover and retry — but that's a fixable bug, not a design flaw.
 
 ## 4. Architecture: Why This Is Right (Not Just Cheap)
 
@@ -136,6 +136,8 @@ The Monitor's all-or-none gate makes drift visible. Any structural drift shows u
 > Pattern conformance does not freeze structure. Structural changes are allowed when they are explicit, bounded, staged, reviewed, and accepted all-or-none. We are preventing accidental structural drift, not deliberate architectural evolution.
 
 The architecture is right because it operationalizes this distinction. Deliberate change is fine (stage a bounded structural candidate). Accidental drift is not (the gate catches it).
+
+**Historical note** — the watched project still contains `AI*` attributes (`AIFileContext`, `AIChange`, `AIInstructions`, `AIHistory`, `UserHistory`, `FileVersion`) on classes like `DatabaseDefinition` and `SchemaObjectColumnDefinition`. These were an *earlier* iteration of the same goal: keep the AI audit trail close to the code so it never gets lost. Reasonable instinct, wrong location. Every read of the file pays for the audit trail in tokens; the human reads it in their editor as noise; any edit risks drifting it. The Monitor's staged records, sessions, ledgers, and history files moved that data out-of-band where it belongs — it can grow without bloating reads, it can be queried structurally, and an edit can't accidentally modify it. The CLAUDE.md rule *"routine workflow notes belong in monitor-owned staged records, sessions, ledgers, or docs"* is the operationalization of the lesson. The `AI*` attributes are now inert legacy noise — functionally harmless, but their continued presence in selector-mode signatures is the single biggest source of unnecessary token cost in the source-map responses today.
 
 ### 4.3 Vote-plus-hash classification replaces verbal trust
 
@@ -193,9 +195,17 @@ Claude Code's built-in `Edit` tool does string-replace edits with file-state tra
 
 `Edit` is fine for greenfield projects or scratch code. It is not fine for a codebase with a converged structure that the team has invested in.
 
-### 5.2 Full-file rewrite (Codex pattern)
+### 5.2 Full-file rewrite workflows
 
-Already analyzed above. Token-wasteful, review-fatiguing, drift-prone, low blast-radius bounding. Works for solo prototype work; collapses under sustained work on a real codebase.
+Common pattern in many AI-editor sessions, including ones the maintainer has used successfully on other codebases — not just trivial ones. The pattern is fine when one person owns the full loop, the codebase is familiar enough that reviewing whole-file diffs isn't fatiguing, and the token cost is acceptable for the convenience.
+
+It doesn't fit *this project's* specific constraints:
+
+- Watched-source pattern preservation: the existing file is a voting member, and whole-file rewrites override that vote whether intended or not. Drift refactoring slips through as a side effect of unrelated edits.
+- Long sustained sessions on the same files compound the drift sensitivity.
+- Operator review via WinMerge needs the diff to *be* the change, not the change plus reformatting noise.
+
+The Monitor's stage-bounded design closes those gaps. It's not "better than full-file workflows in general"; it's the right fit for a project where structural convention matters and drift accumulates.
 
 ### 5.3 Snippet copy/paste
 
@@ -255,9 +265,11 @@ Why Desktop is right here:
 These aren't blockers for the architecture's correctness, but they're worth tracking:
 
 1. **EOL/BOM preservation in `submit_*`** — see [StagedCandidateEncodingMismatchBugReport.md](StagedCandidateEncodingMismatchBugReport.md). Currently breaks the happy-path accept on Windows-encoded source. Fixable; design is right, implementation upstream needs an encoding-mirror step.
-2. **Token telemetry plumbing** — the manifest lists fields like `providerPromptTokens` and `contextBudgetWarning` as planned. Implementing them closes the observability loop between the proxy and actual usage.
-3. **Razor-aware validation** — currently out of scope. `submit_*` will refuse `.razor` mutation; whole-file staging only. Worth implementing once syntax-tree support is available.
-4. **Manifest hygiene** — the manifest still references `C:\VSCodeProjects\ClaudeMonitor\Monitor` as the source implementation root, which doesn't exist on this machine. Cosmetic but the manifest is the tool contract; should match reality.
+2. **Source-map metadata trim** — selector mode currently propagates full attribute argument bodies (including the inert AI* legacy attributes) into `signature` fields. Eliding `AI*` and `FileVersion` attribute argument bodies in selector mode would likely cut selector-read cost by 30–50% on attribute-heavy files and bring whole-project navigation back under budget. `hasAttributes` and the `attributes` array names retain the structural signal; full bodies remain available in `full` mode for audits. Also worth considering: drop `parameterNames` (only `parameterTypes` is needed for selectors), suppress always-false bool fields on members that can't carry them, make `textHash` opt-in for orientation reads.
+3. **Token telemetry plumbing** — the manifest lists fields like `providerPromptTokens` and `contextBudgetWarning` as planned. Implementing them closes the observability loop between the proxy and actual usage.
+4. **Razor-aware validation** — currently out of scope. `submit_*` will refuse `.razor` mutation; whole-file staging only. Worth implementing once syntax-tree support is available.
+5. **Manifest hygiene** — the manifest still references `C:\VSCodeProjects\ClaudeMonitor\Monitor` as the source implementation root, which doesn't exist on this machine. Cosmetic but the manifest is the tool contract; should match reality.
+6. **AI* attribute removal (future structural pass)** — the legacy `AI*` attributes in watched source could be scrubbed in a bounded staged candidate now that they carry no live behavior. Not urgent; listed so they don't outlive their usefulness.
 
 ## 8. Conclusions
 
