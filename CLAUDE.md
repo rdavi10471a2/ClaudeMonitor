@@ -11,12 +11,14 @@ For watched project source edits, use the Monitor MCP workflow:
 3. Read the smallest needed body with `get_symbol`.
 4. Use `get_file` only when symbol/source-map context is not enough.
 5. Stage a complete candidate with `submit_file` or a symbol staging tool.
-6. Let the Host or sidecar open WinMerge between the real watched file and the staged candidate.
+6. Use `launch_staged_diff`, or let the Host or sidecar open WinMerge between the real watched file and the staged candidate.
 7. The Operator either saves the whole candidate in WinMerge or leaves source unchanged.
 8. Call `record_diff_decision`.
 9. Trust vote-plus-hash classification, not the reported outcome text alone.
 
 The Monitor Tool Server never directly overwrites watched source. WinMerge save/no-save is the physical mutation path in the current workflow.
+
+If no separate Host or sidecar is available to open WinMerge, use `launch_staged_diff(stagedRecordId)` after staging. This only launches review; it does not accept, reject, classify, or replace `record_diff_decision`.
 
 ## Expected Tool Sequences
 
@@ -48,7 +50,7 @@ Expected:
 ```text
 Complete candidate prepared
 -> submit_file or submit_symbol
--> Host/sidecar opens WinMerge using returned source/staged paths
+-> launch_staged_diff, or Host/sidecar opens WinMerge using returned source/staged paths
 -> Operator saves the whole candidate or leaves source unchanged
 -> record_diff_decision(stagedRecordId, accepted|rejected)
 -> obey the returned classification

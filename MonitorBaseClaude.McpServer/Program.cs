@@ -268,6 +268,14 @@ public sealed class MonitorTools
     }
 
     [McpServerTool]
+    [Description("Launch WinMerge for a staged edit record and return review paths. This does not classify or accept the edit; after review call record_diff_decision.")]
+    public MonitorStagedDiffLaunchResult LaunchStagedDiff(
+        [Description("Staged edit record id returned by submit_file, submit_symbol, add_symbol, remove_symbol, add_using, or remove_using.")] string stagedRecordId)
+    {
+        return workflowService.LaunchStagedDiff(stagedRecordId);
+    }
+
+    [McpServerTool]
     [Description("Create a proposed compare snapshot for a monitor Working file and return paths for Host-launched review. The path may be absolute or relative to the watched solution folder.")]
     public MonitorFileCompareResult CompareFile(
         [Description("Source file path, absolute or relative to the watched solution folder.")] string sourceFilePath,
