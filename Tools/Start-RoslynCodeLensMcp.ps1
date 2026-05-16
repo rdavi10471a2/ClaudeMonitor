@@ -1,6 +1,9 @@
 $ErrorActionPreference = 'Stop'
 
 $roslynCodelensExe = Join-Path $env:USERPROFILE '.dotnet\tools\roslyn-codelens-mcp.exe'
+if (-not (Test-Path -LiteralPath $roslynCodelensExe)) {
+    throw "roslyn-codelens-mcp.exe not found. Install the global tool or update the path: $roslynCodelensExe"
+}
 
 $repoRoot = Resolve-Path (Join-Path $PSScriptRoot '..')
 $settingsPath = Join-Path $repoRoot 'appsettings.json'
