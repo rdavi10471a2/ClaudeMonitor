@@ -38,11 +38,19 @@ public sealed partial class MonitorWorkflowService
 
     public MonitorFileRefreshResult RefreshFile(string sourceFilePath)
     {
+        return RefreshFile(sourceFilePath, recoverDirtyUnexpected: true);
+    }
+
+    private MonitorFileRefreshResult RefreshFile(string sourceFilePath, bool recoverDirtyUnexpected)
+    {
         MonitorFileContext context = ResolveFileContext(sourceFilePath);
         Directory.CreateDirectory(Path.GetDirectoryName(context.WorkingFilePath)!);
         Directory.CreateDirectory(Path.GetDirectoryName(context.RefreshStatePath)!);
         File.Copy(context.SourceFilePath, context.WorkingFilePath, overwrite: true);
-        RecoverBlockedDirtyUnexpectedRecords(context.SourceFilePath);
+        if (recoverDirtyUnexpected)
+        {
+            RecoverBlockedDirtyUnexpectedRecords(context.SourceFilePath);
+        }
 
         MonitorRefreshState state = new(
             context.SourceFilePath,
@@ -77,7 +85,7 @@ public sealed partial class MonitorWorkflowService
                     "Working copy is missing. Run refresh_file first.");
             }
 
-            RefreshFile(context.SourceFilePath);
+            RefreshFile(context.SourceFilePath, recoverDirtyUnexpected: false);
             refreshed = true;
         }
 
@@ -98,7 +106,8 @@ public sealed partial class MonitorWorkflowService
                 context.SourceFilePath,
                 context.WorkingFilePath,
                 string.Empty,
-                "No differences found between source and Working copy.");
+                "No differences found between source and Working copy.",
+                refreshed);
         }
 
         string? winMergePath = ResolveWinMergePath();
@@ -449,6 +458,12 @@ public sealed partial class MonitorWorkflowService
     {
         string normalizedDecision = NormalizeOperatorDecision(decision);
         (StagedEditRecord record, string recordPath) = ReadStagedEditRecord(stagedRecordId);
+        if (IsBlockedDirtyUnexpected(record))
+        {
+            throw new InvalidOperationException(
+                $"Staged record {record.RecordId} is blocked-dirty-unexpected and cannot be reclassified. Run refresh_file after Host/Operator inspection before staging another candidate.");
+        }
+
         string effectiveSessionId = string.IsNullOrWhiteSpace(sessionId) ? record.SessionId ?? string.Empty : sessionId;
         (string currentHash, string classification) = ClassifyStrictDiffDecision(record, normalizedDecision);
         bool decisionMatchesClassification = normalizedDecision.Equals(classification, StringComparison.OrdinalIgnoreCase);
@@ -925,7 +940,7 @@ public sealed partial class MonitorWorkflowService
     {
         foreach ((StagedEditRecord record, string recordPath) in ReadStagedEditRecordsForSource(sourceFilePath))
         {
-            if (!record.QueueStatus.Equals("blocked-dirty-unexpected", StringComparison.OrdinalIgnoreCase))
+            if (!IsBlockedDirtyUnexpected(record))
             {
                 continue;
             }
@@ -938,13 +953,18 @@ public sealed partial class MonitorWorkflowService
     private (StagedEditRecord Record, string RecordPath)? FindBlockedDirtyUnexpectedRecord(string sourceFilePath)
     {
         foreach ((StagedEditRecord record, string recordPath) in ReadStagedEditRecordsForSource(sourceFilePath)
-            .Where(item => item.Record.QueueStatus.Equals("blocked-dirty-unexpected", StringComparison.OrdinalIgnoreCase))
+            .Where(item => IsBlockedDirtyUnexpected(item.Record))
             .OrderByDescending(item => item.Record.CreatedAt))
         {
             return (record, recordPath);
         }
 
         return null;
+    }
+
+    private static bool IsBlockedDirtyUnexpected(StagedEditRecord record)
+    {
+        return record.QueueStatus.Equals("blocked-dirty-unexpected", StringComparison.OrdinalIgnoreCase);
     }
 
     private IEnumerable<(StagedEditRecord Record, string RecordPath)> ReadStagedEditRecordsForSource(string sourceFilePath)
@@ -2262,9 +2282,10 @@ public sealed record MonitorFileCompareResult(
         string sourceFilePath,
         string workingFilePath,
         string proposedFilePath,
-        string message)
+        string message,
+        bool refreshedBeforeCompare = false)
     {
-        return new MonitorFileCompareResult(status, sourceFilePath, workingFilePath, proposedFilePath, null, null, message, false);
+        return new MonitorFileCompareResult(status, sourceFilePath, workingFilePath, proposedFilePath, null, null, message, refreshedBeforeCompare);
     }
 }
 

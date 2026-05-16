@@ -98,6 +98,7 @@ Direct watched-source write -> refuse and use staging.
 Manual WinMerge repair or partial hunk merge -> refuse and regenerate a smaller candidate.
 Name-only mutation -> read source map and build a structured selector.
 dirty-unexpected -> stop editing that file until Host/Operator refreshes or inspects state.
+blocked-dirty-unexpected record -> do not re-vote to accepted/rejected; recover explicitly.
 ```
 
 ### No-Op Candidate
@@ -511,11 +512,12 @@ These tools are token-saving and safety tools for later phases. They should stag
 - Roslyn validates syntactic completeness before diff launch.
 - The Tool Server must reject half-open syntax, unmatched braces, and incomplete symbol submissions.
 - C# parse/syntax errors block staging. Overlay compile diagnostics are reported as validation metadata and do not automatically block staging.
+- `dirty-unexpected` recovery must be explicit. Internal compare refreshes may recreate missing Working copies, but they must not clear blocked staged records.
 - Model clients should prefer outline/symbol tools before requesting full file content when possible.
 
 ### Diff workflow tools
 
-- `compare_file(path, sessionId)`: returns one staged/source pair for Host-launched diff review and moves workflow state to `awaiting-operator-decision`.
+- `compare_file(path, sessionId)`: returns one staged/source pair for Host-launched diff review and moves workflow state to `awaiting-operator-decision`. If `refreshIfMissing` recreates a missing Working copy, that is not a dirty-state recovery operation.
 - `record_diff_decision(stagedRecordId, decision, note?, sessionId?)`: records the reported review outcome, classifies by strict vote-plus-hash gate, updates session hash when a session is present, and returns a small envelope only.
 
 `record_diff_decision` arguments:

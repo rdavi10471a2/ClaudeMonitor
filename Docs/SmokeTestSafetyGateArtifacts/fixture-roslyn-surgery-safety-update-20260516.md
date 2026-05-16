@@ -1,6 +1,6 @@
 # Scripted Tool Smoke Test Summary
 
-Generated: 2026-05-16T07:50:52.3010779-05:00
+Generated: 2026-05-16T08:43:03.4112519-05:00
 
 ## Fixture Status
 
@@ -13,8 +13,8 @@ Error: `False`
   "uiRoot": "C:\\VSCodeProjects\\MonitorBaseClaude",
   "mcpServerRoot": "C:\\VSCodeProjects\\MonitorBaseClaude\\MonitorBaseClaude.McpServer",
   "legacyMonitorRoot": "C:\\VSCodeProjects\\ClaudeMonitor\\Monitor",
-  "watchedSolutionPath": "C:\\VSCodeProjects\\MonitorBaseClaude\\Working\\Fixtures\\Dbv2ShapeAcceptSmoke\\20260516_075050512\\Schema Studio.sln",
-  "watchedProjectFolder": "C:\\VSCodeProjects\\MonitorBaseClaude\\Working\\Fixtures\\Dbv2ShapeAcceptSmoke\\20260516_075050512",
+  "watchedSolutionPath": "C:\\VSCodeProjects\\MonitorBaseClaude\\Working\\Fixtures\\Dbv2ShapeAcceptSmoke\\20260516_084301578\\Schema Studio.sln",
+  "watchedProjectFolder": "C:\\VSCodeProjects\\MonitorBaseClaude\\Working\\Fixtures\\Dbv2ShapeAcceptSmoke\\20260516_084301578",
   "mcpServerRootExists": true,
   "legacyMonitorRootExists": true,
   "watchedSolutionExists": true
@@ -33,7 +33,7 @@ Error: `False`
   "mode": "selector",
   "modePurpose": "stable-symbol-selection",
   "requestedPath": "Data\\BaseTableRepository.cs",
-  "watchedProjectAlias": "20260516_075050512",
+  "watchedProjectAlias": "20260516_084301578",
   "fileCount": 1,
   "symbolCount": 2,
   "estimatedTokenProxy": 665,
@@ -152,11 +152,11 @@ Error: `False`
 ```text
 {
   "status": "staged",
-  "sourceFilePath": "C:\\VSCodeProjects\\MonitorBaseClaude\\Working\\Fixtures\\Dbv2ShapeAcceptSmoke\\20260516_075050512\\Data\\BaseTableRepository.cs",
+  "sourceFilePath": "C:\\VSCodeProjects\\MonitorBaseClaude\\Working\\Fixtures\\Dbv2ShapeAcceptSmoke\\20260516_084301578\\Data\\BaseTableRepository.cs",
   "relativeSourcePath": "Data\\BaseTableRepository.cs",
-  "stagedFilePath": "C:\\VSCodeProjects\\MonitorBaseClaude\\Working\\Staged\\20260516_075050512_2c70767a64a4\\Data\\20260516_075051045_add_using_BaseTableRepository_08af1466.cs",
-  "stagedRecordId": "20260516_075051045_add_using_BaseTableRepository_08af1466",
-  "stagedRecordPath": "C:\\VSCodeProjects\\MonitorBaseClaude\\Working\\Staged\\Records\\20260516\\20260516_075051045_add_using_BaseTableRepository_08af1466.json",
+  "stagedFilePath": "C:\\VSCodeProjects\\MonitorBaseClaude\\Working\\Staged\\20260516_084301578_5f0627e90a27\\Data\\20260516_084302126_add_using_BaseTableRepository_8296add8.cs",
+  "stagedRecordId": "20260516_084302126_add_using_BaseTableRepository_8296add8",
+  "stagedRecordPath": "C:\\VSCodeProjects\\MonitorBaseClaude\\Working\\Staged\\Records\\20260516\\20260516_084302126_add_using_BaseTableRepository_8296add8.json",
   "originalHash": "6686295d65f760d371d3a6b556f4aa6131cebe94c6aa600cea5e820e2fb4f496",
   "stagedHash": "735b751aacdbfb4282db71ab2bc92c4c32e266d01a657e8fc003e971c6822184",
   "serverDerivedMetadata": {
@@ -166,7 +166,7 @@ Error: `False`
       "System.Globalization"
     ],
     "usingsRemoved": [],
-    "stagedFilePath": "C:\\VSCodeProjects\\MonitorBaseClaude\\Working\\Staged\\20260516_075050512_2c70767a64a4\\Data\\20260516_075051045_add_using_BaseTableRepository_08af1466.cs"
+    "stagedFilePath": "C:\\VSCodeProjects\\MonitorBaseClaude\\Working\\Staged\\20260516_084301578_5f0627e90a27\\Data\\20260516_084302126_add_using_BaseTableRepository_8296add8.cs"
   },
   "syntaxValidation": {
     "hasErrors": false,
@@ -191,11 +191,11 @@ Error: `False`
 
 ```text
 {
-  "stagedRecordId": "20260516_075051045_add_using_BaseTableRepository_08af1466",
-  "sourceFilePath": "C:\\VSCodeProjects\\MonitorBaseClaude\\Working\\Fixtures\\Dbv2ShapeAcceptSmoke\\20260516_075050512\\Data\\BaseTableRepository.cs",
+  "stagedRecordId": "20260516_084302126_add_using_BaseTableRepository_8296add8",
+  "sourceFilePath": "C:\\VSCodeProjects\\MonitorBaseClaude\\Working\\Fixtures\\Dbv2ShapeAcceptSmoke\\20260516_084301578\\Data\\BaseTableRepository.cs",
   "relativeSourcePath": "Data\\BaseTableRepository.cs",
-  "stagedRecordPath": "C:\\VSCodeProjects\\MonitorBaseClaude\\Working\\Staged\\Records\\20260516\\20260516_075051045_add_using_BaseTableRepository_08af1466.json",
-  "stagedFilePath": "C:\\VSCodeProjects\\MonitorBaseClaude\\Working\\Staged\\20260516_075050512_2c70767a64a4\\Data\\20260516_075051045_add_using_BaseTableRepository_08af1466.cs",
+  "stagedRecordPath": "C:\\VSCodeProjects\\MonitorBaseClaude\\Working\\Staged\\Records\\20260516\\20260516_084302126_add_using_BaseTableRepository_8296add8.json",
+  "stagedFilePath": "C:\\VSCodeProjects\\MonitorBaseClaude\\Working\\Staged\\20260516_084301578_5f0627e90a27\\Data\\20260516_084302126_add_using_BaseTableRepository_8296add8.cs",
   "operatorDecision": "accepted",
   "classification": "accepted",
   "decisionMatchesClassification": true,
@@ -205,8 +205,8 @@ Error: `False`
   "currentHash": "735b751aacdbfb4282db71ab2bc92c4c32e266d01a657e8fc003e971c6822184",
   "queueStatus": "accepted",
   "note": "Fixture Roslyn surgery smoke accepted add_using.",
-  "decidedAt": "2026-05-16T12:50:51.6023339\u002B00:00",
-  "decisionRecordPath": "C:\\VSCodeProjects\\MonitorBaseClaude\\Working\\Staged\\Decisions\\20260516\\20260516_075051045_add_using_BaseTableRepository_08af1466_075051603_accepted.json"
+  "decidedAt": "2026-05-16T13:43:02.7011082\u002B00:00",
+  "decisionRecordPath": "C:\\VSCodeProjects\\MonitorBaseClaude\\Working\\Staged\\Decisions\\20260516\\20260516_084302126_add_using_BaseTableRepository_8296add8_084302701_accepted.json"
 }
 ```
 
@@ -219,11 +219,11 @@ Error: `False`
 ```text
 {
   "status": "staged",
-  "sourceFilePath": "C:\\VSCodeProjects\\MonitorBaseClaude\\Working\\Fixtures\\Dbv2ShapeAcceptSmoke\\20260516_075050512\\Data\\BaseTableRepository.cs",
+  "sourceFilePath": "C:\\VSCodeProjects\\MonitorBaseClaude\\Working\\Fixtures\\Dbv2ShapeAcceptSmoke\\20260516_084301578\\Data\\BaseTableRepository.cs",
   "relativeSourcePath": "Data\\BaseTableRepository.cs",
-  "stagedFilePath": "C:\\VSCodeProjects\\MonitorBaseClaude\\Working\\Staged\\20260516_075050512_2c70767a64a4\\Data\\20260516_075051623_submit_symbol_BaseTableRepository_14672154.cs",
-  "stagedRecordId": "20260516_075051623_submit_symbol_BaseTableRepository_14672154",
-  "stagedRecordPath": "C:\\VSCodeProjects\\MonitorBaseClaude\\Working\\Staged\\Records\\20260516\\20260516_075051623_submit_symbol_BaseTableRepository_14672154.json",
+  "stagedFilePath": "C:\\VSCodeProjects\\MonitorBaseClaude\\Working\\Staged\\20260516_084301578_5f0627e90a27\\Data\\20260516_084302718_submit_symbol_BaseTableRepository_d6d8757e.cs",
+  "stagedRecordId": "20260516_084302718_submit_symbol_BaseTableRepository_d6d8757e",
+  "stagedRecordPath": "C:\\VSCodeProjects\\MonitorBaseClaude\\Working\\Staged\\Records\\20260516\\20260516_084302718_submit_symbol_BaseTableRepository_d6d8757e.json",
   "originalHash": "735b751aacdbfb4282db71ab2bc92c4c32e266d01a657e8fc003e971c6822184",
   "stagedHash": "21e5d91b1d0677222d3b811ecc318705d82a1404cec06080782c56d1fec83cb5",
   "serverDerivedMetadata": {
@@ -231,7 +231,7 @@ Error: `False`
     "symbolsRemoved": [],
     "usingsAdded": [],
     "usingsRemoved": [],
-    "stagedFilePath": "C:\\VSCodeProjects\\MonitorBaseClaude\\Working\\Staged\\20260516_075050512_2c70767a64a4\\Data\\20260516_075051623_submit_symbol_BaseTableRepository_14672154.cs"
+    "stagedFilePath": "C:\\VSCodeProjects\\MonitorBaseClaude\\Working\\Staged\\20260516_084301578_5f0627e90a27\\Data\\20260516_084302718_submit_symbol_BaseTableRepository_d6d8757e.cs"
   },
   "syntaxValidation": {
     "hasErrors": false,
@@ -256,11 +256,11 @@ Error: `False`
 
 ```text
 {
-  "stagedRecordId": "20260516_075051623_submit_symbol_BaseTableRepository_14672154",
-  "sourceFilePath": "C:\\VSCodeProjects\\MonitorBaseClaude\\Working\\Fixtures\\Dbv2ShapeAcceptSmoke\\20260516_075050512\\Data\\BaseTableRepository.cs",
+  "stagedRecordId": "20260516_084302718_submit_symbol_BaseTableRepository_d6d8757e",
+  "sourceFilePath": "C:\\VSCodeProjects\\MonitorBaseClaude\\Working\\Fixtures\\Dbv2ShapeAcceptSmoke\\20260516_084301578\\Data\\BaseTableRepository.cs",
   "relativeSourcePath": "Data\\BaseTableRepository.cs",
-  "stagedRecordPath": "C:\\VSCodeProjects\\MonitorBaseClaude\\Working\\Staged\\Records\\20260516\\20260516_075051623_submit_symbol_BaseTableRepository_14672154.json",
-  "stagedFilePath": "C:\\VSCodeProjects\\MonitorBaseClaude\\Working\\Staged\\20260516_075050512_2c70767a64a4\\Data\\20260516_075051623_submit_symbol_BaseTableRepository_14672154.cs",
+  "stagedRecordPath": "C:\\VSCodeProjects\\MonitorBaseClaude\\Working\\Staged\\Records\\20260516\\20260516_084302718_submit_symbol_BaseTableRepository_d6d8757e.json",
+  "stagedFilePath": "C:\\VSCodeProjects\\MonitorBaseClaude\\Working\\Staged\\20260516_084301578_5f0627e90a27\\Data\\20260516_084302718_submit_symbol_BaseTableRepository_d6d8757e.cs",
   "operatorDecision": "accepted",
   "classification": "accepted",
   "decisionMatchesClassification": true,
@@ -270,8 +270,8 @@ Error: `False`
   "currentHash": "21e5d91b1d0677222d3b811ecc318705d82a1404cec06080782c56d1fec83cb5",
   "queueStatus": "accepted",
   "note": "Fixture Roslyn surgery smoke accepted submit_symbol.",
-  "decidedAt": "2026-05-16T12:50:51.7781087\u002B00:00",
-  "decisionRecordPath": "C:\\VSCodeProjects\\MonitorBaseClaude\\Working\\Staged\\Decisions\\20260516\\20260516_075051623_submit_symbol_BaseTableRepository_14672154_075051778_accepted.json"
+  "decidedAt": "2026-05-16T13:43:02.8662124\u002B00:00",
+  "decisionRecordPath": "C:\\VSCodeProjects\\MonitorBaseClaude\\Working\\Staged\\Decisions\\20260516\\20260516_084302718_submit_symbol_BaseTableRepository_d6d8757e_084302866_accepted.json"
 }
 ```
 
@@ -284,11 +284,11 @@ Error: `False`
 ```text
 {
   "status": "staged",
-  "sourceFilePath": "C:\\VSCodeProjects\\MonitorBaseClaude\\Working\\Fixtures\\Dbv2ShapeAcceptSmoke\\20260516_075050512\\Data\\BaseTableRepository.cs",
+  "sourceFilePath": "C:\\VSCodeProjects\\MonitorBaseClaude\\Working\\Fixtures\\Dbv2ShapeAcceptSmoke\\20260516_084301578\\Data\\BaseTableRepository.cs",
   "relativeSourcePath": "Data\\BaseTableRepository.cs",
-  "stagedFilePath": "C:\\VSCodeProjects\\MonitorBaseClaude\\Working\\Staged\\20260516_075050512_2c70767a64a4\\Data\\20260516_075051799_add_symbol_BaseTableRepository_ae5b626e.cs",
-  "stagedRecordId": "20260516_075051799_add_symbol_BaseTableRepository_ae5b626e",
-  "stagedRecordPath": "C:\\VSCodeProjects\\MonitorBaseClaude\\Working\\Staged\\Records\\20260516\\20260516_075051799_add_symbol_BaseTableRepository_ae5b626e.json",
+  "stagedFilePath": "C:\\VSCodeProjects\\MonitorBaseClaude\\Working\\Staged\\20260516_084301578_5f0627e90a27\\Data\\20260516_084302887_add_symbol_BaseTableRepository_b53ff604.cs",
+  "stagedRecordId": "20260516_084302887_add_symbol_BaseTableRepository_b53ff604",
+  "stagedRecordPath": "C:\\VSCodeProjects\\MonitorBaseClaude\\Working\\Staged\\Records\\20260516\\20260516_084302887_add_symbol_BaseTableRepository_b53ff604.json",
   "originalHash": "21e5d91b1d0677222d3b811ecc318705d82a1404cec06080782c56d1fec83cb5",
   "stagedHash": "4b379cded8a49b76c3378604eb2f0fcb513a4b911dcf3eeb96aa9aac630eb829",
   "serverDerivedMetadata": {
@@ -304,7 +304,7 @@ Error: `False`
     "symbolsRemoved": [],
     "usingsAdded": [],
     "usingsRemoved": [],
-    "stagedFilePath": "C:\\VSCodeProjects\\MonitorBaseClaude\\Working\\Staged\\20260516_075050512_2c70767a64a4\\Data\\20260516_075051799_add_symbol_BaseTableRepository_ae5b626e.cs"
+    "stagedFilePath": "C:\\VSCodeProjects\\MonitorBaseClaude\\Working\\Staged\\20260516_084301578_5f0627e90a27\\Data\\20260516_084302887_add_symbol_BaseTableRepository_b53ff604.cs"
   },
   "syntaxValidation": {
     "hasErrors": false,
@@ -329,11 +329,11 @@ Error: `False`
 
 ```text
 {
-  "stagedRecordId": "20260516_075051799_add_symbol_BaseTableRepository_ae5b626e",
-  "sourceFilePath": "C:\\VSCodeProjects\\MonitorBaseClaude\\Working\\Fixtures\\Dbv2ShapeAcceptSmoke\\20260516_075050512\\Data\\BaseTableRepository.cs",
+  "stagedRecordId": "20260516_084302887_add_symbol_BaseTableRepository_b53ff604",
+  "sourceFilePath": "C:\\VSCodeProjects\\MonitorBaseClaude\\Working\\Fixtures\\Dbv2ShapeAcceptSmoke\\20260516_084301578\\Data\\BaseTableRepository.cs",
   "relativeSourcePath": "Data\\BaseTableRepository.cs",
-  "stagedRecordPath": "C:\\VSCodeProjects\\MonitorBaseClaude\\Working\\Staged\\Records\\20260516\\20260516_075051799_add_symbol_BaseTableRepository_ae5b626e.json",
-  "stagedFilePath": "C:\\VSCodeProjects\\MonitorBaseClaude\\Working\\Staged\\20260516_075050512_2c70767a64a4\\Data\\20260516_075051799_add_symbol_BaseTableRepository_ae5b626e.cs",
+  "stagedRecordPath": "C:\\VSCodeProjects\\MonitorBaseClaude\\Working\\Staged\\Records\\20260516\\20260516_084302887_add_symbol_BaseTableRepository_b53ff604.json",
+  "stagedFilePath": "C:\\VSCodeProjects\\MonitorBaseClaude\\Working\\Staged\\20260516_084301578_5f0627e90a27\\Data\\20260516_084302887_add_symbol_BaseTableRepository_b53ff604.cs",
   "operatorDecision": "accepted",
   "classification": "accepted",
   "decisionMatchesClassification": true,
@@ -343,8 +343,8 @@ Error: `False`
   "currentHash": "4b379cded8a49b76c3378604eb2f0fcb513a4b911dcf3eeb96aa9aac630eb829",
   "queueStatus": "accepted",
   "note": "Fixture Roslyn surgery smoke accepted add_symbol.",
-  "decidedAt": "2026-05-16T12:50:51.9515688\u002B00:00",
-  "decisionRecordPath": "C:\\VSCodeProjects\\MonitorBaseClaude\\Working\\Staged\\Decisions\\20260516\\20260516_075051799_add_symbol_BaseTableRepository_ae5b626e_075051951_accepted.json"
+  "decidedAt": "2026-05-16T13:43:03.0279357\u002B00:00",
+  "decisionRecordPath": "C:\\VSCodeProjects\\MonitorBaseClaude\\Working\\Staged\\Decisions\\20260516\\20260516_084302887_add_symbol_BaseTableRepository_b53ff604_084303027_accepted.json"
 }
 ```
 
@@ -357,11 +357,11 @@ Error: `False`
 ```text
 {
   "status": "staged",
-  "sourceFilePath": "C:\\VSCodeProjects\\MonitorBaseClaude\\Working\\Fixtures\\Dbv2ShapeAcceptSmoke\\20260516_075050512\\Data\\BaseTableRepository.cs",
+  "sourceFilePath": "C:\\VSCodeProjects\\MonitorBaseClaude\\Working\\Fixtures\\Dbv2ShapeAcceptSmoke\\20260516_084301578\\Data\\BaseTableRepository.cs",
   "relativeSourcePath": "Data\\BaseTableRepository.cs",
-  "stagedFilePath": "C:\\VSCodeProjects\\MonitorBaseClaude\\Working\\Staged\\20260516_075050512_2c70767a64a4\\Data\\20260516_075051963_remove_symbol_BaseTableRepository_79ec8109.cs",
-  "stagedRecordId": "20260516_075051963_remove_symbol_BaseTableRepository_79ec8109",
-  "stagedRecordPath": "C:\\VSCodeProjects\\MonitorBaseClaude\\Working\\Staged\\Records\\20260516\\20260516_075051963_remove_symbol_BaseTableRepository_79ec8109.json",
+  "stagedFilePath": "C:\\VSCodeProjects\\MonitorBaseClaude\\Working\\Staged\\20260516_084301578_5f0627e90a27\\Data\\20260516_084303040_remove_symbol_BaseTableRepository_850a9cf6.cs",
+  "stagedRecordId": "20260516_084303040_remove_symbol_BaseTableRepository_850a9cf6",
+  "stagedRecordPath": "C:\\VSCodeProjects\\MonitorBaseClaude\\Working\\Staged\\Records\\20260516\\20260516_084303040_remove_symbol_BaseTableRepository_850a9cf6.json",
   "originalHash": "4b379cded8a49b76c3378604eb2f0fcb513a4b911dcf3eeb96aa9aac630eb829",
   "stagedHash": "c2ea27a91ceca83d30664b967d9dbdaec725d9786b395a4ea59917b546948fe4",
   "serverDerivedMetadata": {
@@ -377,7 +377,7 @@ Error: `False`
     ],
     "usingsAdded": [],
     "usingsRemoved": [],
-    "stagedFilePath": "C:\\VSCodeProjects\\MonitorBaseClaude\\Working\\Staged\\20260516_075050512_2c70767a64a4\\Data\\20260516_075051963_remove_symbol_BaseTableRepository_79ec8109.cs"
+    "stagedFilePath": "C:\\VSCodeProjects\\MonitorBaseClaude\\Working\\Staged\\20260516_084301578_5f0627e90a27\\Data\\20260516_084303040_remove_symbol_BaseTableRepository_850a9cf6.cs"
   },
   "syntaxValidation": {
     "hasErrors": false,
@@ -402,11 +402,11 @@ Error: `False`
 
 ```text
 {
-  "stagedRecordId": "20260516_075051963_remove_symbol_BaseTableRepository_79ec8109",
-  "sourceFilePath": "C:\\VSCodeProjects\\MonitorBaseClaude\\Working\\Fixtures\\Dbv2ShapeAcceptSmoke\\20260516_075050512\\Data\\BaseTableRepository.cs",
+  "stagedRecordId": "20260516_084303040_remove_symbol_BaseTableRepository_850a9cf6",
+  "sourceFilePath": "C:\\VSCodeProjects\\MonitorBaseClaude\\Working\\Fixtures\\Dbv2ShapeAcceptSmoke\\20260516_084301578\\Data\\BaseTableRepository.cs",
   "relativeSourcePath": "Data\\BaseTableRepository.cs",
-  "stagedRecordPath": "C:\\VSCodeProjects\\MonitorBaseClaude\\Working\\Staged\\Records\\20260516\\20260516_075051963_remove_symbol_BaseTableRepository_79ec8109.json",
-  "stagedFilePath": "C:\\VSCodeProjects\\MonitorBaseClaude\\Working\\Staged\\20260516_075050512_2c70767a64a4\\Data\\20260516_075051963_remove_symbol_BaseTableRepository_79ec8109.cs",
+  "stagedRecordPath": "C:\\VSCodeProjects\\MonitorBaseClaude\\Working\\Staged\\Records\\20260516\\20260516_084303040_remove_symbol_BaseTableRepository_850a9cf6.json",
+  "stagedFilePath": "C:\\VSCodeProjects\\MonitorBaseClaude\\Working\\Staged\\20260516_084301578_5f0627e90a27\\Data\\20260516_084303040_remove_symbol_BaseTableRepository_850a9cf6.cs",
   "operatorDecision": "accepted",
   "classification": "accepted",
   "decisionMatchesClassification": true,
@@ -416,8 +416,8 @@ Error: `False`
   "currentHash": "c2ea27a91ceca83d30664b967d9dbdaec725d9786b395a4ea59917b546948fe4",
   "queueStatus": "accepted",
   "note": "Fixture Roslyn surgery smoke accepted remove_symbol.",
-  "decidedAt": "2026-05-16T12:50:52.1040402\u002B00:00",
-  "decisionRecordPath": "C:\\VSCodeProjects\\MonitorBaseClaude\\Working\\Staged\\Decisions\\20260516\\20260516_075051963_remove_symbol_BaseTableRepository_79ec8109_075052104_accepted.json"
+  "decidedAt": "2026-05-16T13:43:03.1961835\u002B00:00",
+  "decisionRecordPath": "C:\\VSCodeProjects\\MonitorBaseClaude\\Working\\Staged\\Decisions\\20260516\\20260516_084303040_remove_symbol_BaseTableRepository_850a9cf6_084303196_accepted.json"
 }
 ```
 
@@ -430,11 +430,11 @@ Error: `False`
 ```text
 {
   "status": "staged",
-  "sourceFilePath": "C:\\VSCodeProjects\\MonitorBaseClaude\\Working\\Fixtures\\Dbv2ShapeAcceptSmoke\\20260516_075050512\\Data\\BaseTableRepository.cs",
+  "sourceFilePath": "C:\\VSCodeProjects\\MonitorBaseClaude\\Working\\Fixtures\\Dbv2ShapeAcceptSmoke\\20260516_084301578\\Data\\BaseTableRepository.cs",
   "relativeSourcePath": "Data\\BaseTableRepository.cs",
-  "stagedFilePath": "C:\\VSCodeProjects\\MonitorBaseClaude\\Working\\Staged\\20260516_075050512_2c70767a64a4\\Data\\20260516_075052121_remove_using_BaseTableRepository_32e858c9.cs",
-  "stagedRecordId": "20260516_075052121_remove_using_BaseTableRepository_32e858c9",
-  "stagedRecordPath": "C:\\VSCodeProjects\\MonitorBaseClaude\\Working\\Staged\\Records\\20260516\\20260516_075052121_remove_using_BaseTableRepository_32e858c9.json",
+  "stagedFilePath": "C:\\VSCodeProjects\\MonitorBaseClaude\\Working\\Staged\\20260516_084301578_5f0627e90a27\\Data\\20260516_084303207_remove_using_BaseTableRepository_21f10cea.cs",
+  "stagedRecordId": "20260516_084303207_remove_using_BaseTableRepository_21f10cea",
+  "stagedRecordPath": "C:\\VSCodeProjects\\MonitorBaseClaude\\Working\\Staged\\Records\\20260516\\20260516_084303207_remove_using_BaseTableRepository_21f10cea.json",
   "originalHash": "c2ea27a91ceca83d30664b967d9dbdaec725d9786b395a4ea59917b546948fe4",
   "stagedHash": "2891bf6ca6c51bf83fff854c34daa9ef264d783765f47dcdb973241db03e731e",
   "serverDerivedMetadata": {
@@ -444,7 +444,7 @@ Error: `False`
     "usingsRemoved": [
       "System.Globalization"
     ],
-    "stagedFilePath": "C:\\VSCodeProjects\\MonitorBaseClaude\\Working\\Staged\\20260516_075050512_2c70767a64a4\\Data\\20260516_075052121_remove_using_BaseTableRepository_32e858c9.cs"
+    "stagedFilePath": "C:\\VSCodeProjects\\MonitorBaseClaude\\Working\\Staged\\20260516_084301578_5f0627e90a27\\Data\\20260516_084303207_remove_using_BaseTableRepository_21f10cea.cs"
   },
   "syntaxValidation": {
     "hasErrors": false,
@@ -469,11 +469,11 @@ Error: `False`
 
 ```text
 {
-  "stagedRecordId": "20260516_075052121_remove_using_BaseTableRepository_32e858c9",
-  "sourceFilePath": "C:\\VSCodeProjects\\MonitorBaseClaude\\Working\\Fixtures\\Dbv2ShapeAcceptSmoke\\20260516_075050512\\Data\\BaseTableRepository.cs",
+  "stagedRecordId": "20260516_084303207_remove_using_BaseTableRepository_21f10cea",
+  "sourceFilePath": "C:\\VSCodeProjects\\MonitorBaseClaude\\Working\\Fixtures\\Dbv2ShapeAcceptSmoke\\20260516_084301578\\Data\\BaseTableRepository.cs",
   "relativeSourcePath": "Data\\BaseTableRepository.cs",
-  "stagedRecordPath": "C:\\VSCodeProjects\\MonitorBaseClaude\\Working\\Staged\\Records\\20260516\\20260516_075052121_remove_using_BaseTableRepository_32e858c9.json",
-  "stagedFilePath": "C:\\VSCodeProjects\\MonitorBaseClaude\\Working\\Staged\\20260516_075050512_2c70767a64a4\\Data\\20260516_075052121_remove_using_BaseTableRepository_32e858c9.cs",
+  "stagedRecordPath": "C:\\VSCodeProjects\\MonitorBaseClaude\\Working\\Staged\\Records\\20260516\\20260516_084303207_remove_using_BaseTableRepository_21f10cea.json",
+  "stagedFilePath": "C:\\VSCodeProjects\\MonitorBaseClaude\\Working\\Staged\\20260516_084301578_5f0627e90a27\\Data\\20260516_084303207_remove_using_BaseTableRepository_21f10cea.cs",
   "operatorDecision": "accepted",
   "classification": "accepted",
   "decisionMatchesClassification": true,
@@ -483,8 +483,8 @@ Error: `False`
   "currentHash": "2891bf6ca6c51bf83fff854c34daa9ef264d783765f47dcdb973241db03e731e",
   "queueStatus": "accepted",
   "note": "Fixture Roslyn surgery smoke accepted remove_using.",
-  "decidedAt": "2026-05-16T12:50:52.2943183\u002B00:00",
-  "decisionRecordPath": "C:\\VSCodeProjects\\MonitorBaseClaude\\Working\\Staged\\Decisions\\20260516\\20260516_075052121_remove_using_BaseTableRepository_32e858c9_075052294_accepted.json"
+  "decidedAt": "2026-05-16T13:43:03.3949262\u002B00:00",
+  "decisionRecordPath": "C:\\VSCodeProjects\\MonitorBaseClaude\\Working\\Staged\\Decisions\\20260516\\20260516_084303207_remove_using_BaseTableRepository_21f10cea_084303394_accepted.json"
 }
 ```
 
@@ -500,7 +500,7 @@ Error: `False`
   "mode": "selector",
   "modePurpose": "stable-symbol-selection",
   "requestedPath": "Data\\BaseTableRepository.cs",
-  "watchedProjectAlias": "20260516_075050512",
+  "watchedProjectAlias": "20260516_084301578",
   "fileCount": 1,
   "symbolCount": 2,
   "estimatedTokenProxy": 665,
