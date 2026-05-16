@@ -66,7 +66,7 @@ find_file, if the target path is uncertain
 get_source_map(path, scope: "file", mode: "selector")
 get_symbol(path, symbolSelectorJson)
 submit_file or submit_symbol
-Host/sidecar WinMerge review/save
+launch_staged_diff or Host/sidecar WinMerge review/save
 record_diff_decision(stagedRecordId, accepted|rejected)
 ```
 
@@ -77,6 +77,7 @@ Expected behavior:
 - Use a structured selector or `stableSymbolKey` when available.
 - For symbol staging or removal, prefer `stableSymbolKey` or structured `symbolSelectorJson`; name-only `symbolName` is a fallback of last resort for read compatibility, not mutation authority.
 - Stage a complete candidate; do not directly mutate watched source.
+- Use `launch_staged_diff` when the MCP client has no separate Host or sidecar available to open WinMerge.
 - Treat `record_diff_decision` as vote-plus-hash agreement.
 - Do not perform DRY cleanup or helper extraction as a side effect of a narrow change.
 
@@ -139,6 +140,7 @@ This prevents Accept and Reject from collapsing into the same raw hash state.
 | Roslyn symbol insertion | `add_symbol`, `add_using` | scaffolded |
 | Roslyn symbol removal | `remove_symbol`, `remove_using` | scaffolded |
 | Roslyn class insertion/removal | `add_class`, `remove_class` | planned |
+| staged candidate WinMerge launch | `launch_staged_diff` | scaffolded |
 | diff outcome classification | `record_diff_decision` | scaffolded |
 | Roslyn source map | `get_source_map` | implemented |
 | old executable command flags | future command-line bridge | breadcrumb only |
@@ -429,6 +431,23 @@ Decision behavior is vote-plus-hash agreement:
 The Operator report is not authority by itself. The hash is not enough by itself. Final classification is the agreement between the reported decision and the watched file hash.
 
 The response includes hashes, queue status, decision record path, and whether the reported outcome matched the computed classification. It returns no file content.
+
+### `launch_staged_diff`
+
+Launches WinMerge for an existing staged edit record and returns review paths plus launch details. This tool exists for MCP clients such as Claude Desktop that can call Monitor MCP tools but do not have a separate Host or sidecar process available to open the GUI diff.
+
+Arguments:
+
+- `stagedRecordId`: staged edit record id returned by `submit_file`, `submit_symbol`, `add_symbol`, `remove_symbol`, `add_using`, or `remove_using`.
+
+Behavior:
+
+- reads the staged record
+- verifies watched source and staged candidate files still exist
+- launches WinMerge against watched source and staged candidate
+- returns `sourceFilePath`, `stagedFilePath`, `diffToolPath`, `processId`, launch arguments, and a next-step reminder
+
+It does not classify, accept, reject, hash, or mutate source. After Operator review, call `record_diff_decision`.
 
 ### Run History Tools
 
