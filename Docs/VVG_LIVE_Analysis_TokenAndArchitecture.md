@@ -109,7 +109,7 @@ Already a meaningful saving on a *small* file. The advantage compounds for large
 - 50 edits in a session on the Codex pattern: ~390,000 tokens read+emit.
 - 50 edits in the Monitor pattern: ~250,000 tokens, *with most of the cost being the one-time selector reads that get amortized across multiple edits in the same file*.
 
-In practice, with selector re-use, multi-hour Monitor sessions land **5× to 20× under** equivalent full-file sessions. The encoding-mismatch bug currently dampens this — when accepts classify as dirty-unexpected, the model has to recover and retry — but that's a fixable bug, not a design flaw.
+In practice, with selector re-use, multi-hour Monitor sessions land **5× to 20× under** equivalent full-file sessions. The encoding-mismatch bug that initially dampened this path was fixed by PR #7 (`Preserve staged candidate text shape`), so accepted staged candidates now hash against the bytes actually written to disk.
 
 ## 4. Architecture: Why This Is Right (Not Just Cheap)
 
@@ -254,15 +254,14 @@ Why Desktop is right here:
 
 These aren't blockers for the architecture's correctness, but they're worth tracking:
 
-1. **EOL/BOM preservation in `submit_*`** — see [StagedCandidateEncodingMismatchBugReport.md](StagedCandidateEncodingMismatchBugReport.md). Currently breaks the happy-path accept on Windows-encoded source. Fixable; design is right, implementation upstream needs an encoding-mirror step.
-2. **Token telemetry plumbing** — the manifest lists fields like `providerPromptTokens` and `contextBudgetWarning` as planned. Implementing them closes the observability loop between the proxy and actual usage.
-3. **Razor-aware validation** — currently out of scope. `submit_*` will refuse `.razor` mutation; whole-file staging only. Worth implementing once syntax-tree support is available.
-4. **Manifest hygiene** — the manifest still references `C:\VSCodeProjects\ClaudeMonitor\Monitor` as the source implementation root, which doesn't exist on this machine. Cosmetic but the manifest is the tool contract; should match reality.
+1. **Token telemetry plumbing** — the manifest lists fields like `providerPromptTokens` and `contextBudgetWarning` as planned. Implementing them closes the observability loop between the proxy and actual usage.
+2. **Razor-aware validation** — currently out of scope. `submit_*` will refuse `.razor` mutation; whole-file staging only. Worth implementing once syntax-tree support is available.
+3. **Manifest hygiene** — the manifest still references `C:\VSCodeProjects\ClaudeMonitor\Monitor` as the source implementation root, which doesn't exist on this machine. Cosmetic but the manifest is the tool contract; should match reality.
 
 ## 8. Conclusions
 
 - The Monitor MCP server is doing exactly the job it was built to do. The numbers prove the token savings; the architecture explains why those savings come with safety properties full-file workflows cannot offer.
 - The watched file as a voting member, the all-or-none gate, vote-plus-hash classification, and the separation of Monitor (state) from CodeLens (intelligence) are correct architectural choices. Each one independently improves a property the project cares about; together they make the system better than the sum of its parts.
 - The right operational split is Claude Code in VS Code for the edit loop, Claude Desktop for design and writeups. This was confirmed in-session by Desktop's own latency self-diagnosis. Use both, route work to whichever surface matches the task's latency profile.
-- The one currently-visible bug (encoding mismatch on save) is the gate doing its job — it caught a real divergence between staged bytes and post-WinMerge bytes. The bug is upstream of the gate, not in it. Fixing it makes the happy path actually-happy without weakening any of the gate's guarantees.
+- The encoding mismatch on save was the gate doing its job — it caught a real divergence between staged bytes and post-WinMerge bytes. PR #7 fixed the upstream byte-shape mismatch by preserving watched-file encoding/newline shape and hashing the staged bytes on disk, making the happy path actually happy without weakening any of the gate's guarantees.
 - Building the Monitor was the right reaction to the failure modes of unmediated LLM editing. The user's original instinct — that default Claude behavior would push the workflow back into full-file or snippet patterns — was correct. The MCP design closes that gap.
