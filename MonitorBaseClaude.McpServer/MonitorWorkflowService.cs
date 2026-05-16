@@ -512,6 +512,58 @@ public sealed partial class MonitorWorkflowService
         return result with { DecisionRecordPath = decisionRecordPath };
     }
 
+    public MonitorStagedDiffLaunchResult LaunchStagedDiff(string stagedRecordId)
+    {
+        (StagedEditRecord record, string recordPath) = ReadStagedEditRecord(stagedRecordId);
+        string stagedFilePath = record.ServerDerivedMetadata.StagedFilePath;
+        string? winMergePath = ResolveWinMergePath();
+        if (winMergePath is null)
+        {
+            return MonitorStagedDiffLaunchResult.NotLaunched(
+                "winmerge-not-found",
+                record,
+                recordPath,
+                stagedFilePath,
+                null,
+                "WinMerge was not found. Install WinMerge or add it to the standard Program Files path.");
+        }
+
+        if (!File.Exists(record.SourceFilePath))
+        {
+            return MonitorStagedDiffLaunchResult.NotLaunched(
+                "source-missing",
+                record,
+                recordPath,
+                stagedFilePath,
+                winMergePath,
+                "Watched source file was not found.");
+        }
+
+        if (!File.Exists(stagedFilePath))
+        {
+            return MonitorStagedDiffLaunchResult.NotLaunched(
+                "staged-file-missing",
+                record,
+                recordPath,
+                stagedFilePath,
+                winMergePath,
+                "Staged candidate file was not found.");
+        }
+
+        DiffLaunchResult launchResult = LaunchWinMergeDetached(winMergePath, record.SourceFilePath, stagedFilePath);
+        return new MonitorStagedDiffLaunchResult(
+            launchResult.ProcessId is null ? "launch-failed" : "winmerge-launched",
+            record.RecordId,
+            record.SourceFilePath,
+            record.RelativeSourcePath,
+            recordPath,
+            stagedFilePath,
+            winMergePath,
+            launchResult.ProcessId,
+            launchResult.Arguments,
+            "After operator review, call record_diff_decision with accepted only if WinMerge saved the full staged candidate; otherwise call rejected.");
+    }
+
     public IReadOnlyList<MonitorFileMatch> FindFile(string fileNameOrPattern, int maxResults = 25)
     {
         string watchedProjectFolder = Path.GetDirectoryName(settings.WatchedSolutionPath)
@@ -2479,6 +2531,40 @@ public sealed record MonitorDiffDecisionResult(
     string? Note,
     DateTimeOffset DecidedAt,
     string? DecisionRecordPath = null);
+
+public sealed record MonitorStagedDiffLaunchResult(
+    string Status,
+    string StagedRecordId,
+    string SourceFilePath,
+    string RelativeSourcePath,
+    string StagedRecordPath,
+    string StagedFilePath,
+    string? DiffToolPath,
+    int? ProcessId,
+    string? DiffToolArguments,
+    string NextStep)
+{
+    public static MonitorStagedDiffLaunchResult NotLaunched(
+        string status,
+        StagedEditRecord record,
+        string recordPath,
+        string stagedFilePath,
+        string? diffToolPath,
+        string message)
+    {
+        return new MonitorStagedDiffLaunchResult(
+            status,
+            record.RecordId,
+            record.SourceFilePath,
+            record.RelativeSourcePath,
+            recordPath,
+            stagedFilePath,
+            diffToolPath,
+            null,
+            message,
+            "Review was not launched. Fix the reported issue, then retry launch_staged_diff before calling record_diff_decision.");
+    }
+}
 
 public sealed record StagedEditRecord(
     string RecordId,
