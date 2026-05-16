@@ -90,6 +90,22 @@ public sealed class OllamaToolExplorerControl : UserControl
         };
         askButton.Click += async (_, _) => await AskAsync();
 
+        Button routeOnlyButton = new()
+        {
+            Text = "Route Only",
+            AutoSize = true,
+            Height = 32
+        };
+        routeOnlyButton.Click += async (_, _) => await RouteOnlyAsync();
+
+        Button routerDrillButton = new()
+        {
+            Text = "Router Drill",
+            AutoSize = true,
+            Height = 32
+        };
+        routerDrillButton.Click += async (_, _) => await RouterDrillAsync();
+
         Button compareButton = new()
         {
             Text = "Compare Tiny Models",
@@ -105,6 +121,8 @@ public sealed class OllamaToolExplorerControl : UserControl
         };
         actionRail.Controls.Add(modelComboBox);
         actionRail.Controls.Add(askButton);
+        actionRail.Controls.Add(routeOnlyButton);
+        actionRail.Controls.Add(routerDrillButton);
         actionRail.Controls.Add(compareButton);
         actionRail.Controls.Add(statusLabel);
 
@@ -132,13 +150,22 @@ public sealed class OllamaToolExplorerControl : UserControl
         PromptScenario[] scenarios =
         [
             new("Discover API Surface", "What MCP Server tools are available in this Host session? Summarize the Server names and tool purposes."),
-            new("Find File", "Find file Program.cs in the watched project."),
-            new("Read File", "Read Program.cs from the watched project and summarize what application starts."),
-            new("Inspect Workflow", "Inspect the current monitor workflow status and tell me whether WinMerge is available."),
-            new("Refresh File", "Refresh Program.cs into the monitor Working folder."),
-            new("Compare File", "Compare Program.cs using the configured monitor diff workflow."),
-            new("Start Server Session", "Start a Monitor Server session for investigating Program.cs and record that the user asked to inspect startup flow."),
-            new("Resume Server Session", "List Monitor Server sessions and identify the most recent session."),
+            new("Route: Source Structure", "Show me the structure of EditorSurface\\ExplorerControl.cs.", "monitor-base-claude", "get_source_map"),
+            new("Route: Exact Symbol Body", "Show me the body of LoadTable in EditorSurface\\EditorSurfaceControl.cs.", "monitor-base-claude", "get_symbol"),
+            new("Route: File Search", "Find file Program.cs in the watched project.", "monitor-base-claude", "find_file"),
+            new("Route: File Read", "Read Program.cs from the watched project and summarize what application starts.", "monitor-base-claude", "get_file"),
+            new("Route: Workflow Status", "Inspect the current monitor workflow status and tell me whether WinMerge is available.", "monitor-base-claude", "get_workflow_status"),
+            new("Route: Refresh File", "Refresh Program.cs into the monitor Working folder.", "monitor-base-claude", "refresh_file"),
+            new("Route: Compare File", "Compare Program.cs using the configured monitor diff workflow.", "monitor-base-claude", "compare_file"),
+            new("Route: Start Session", "Start a Monitor Server session for investigating Program.cs and record that the user asked to inspect startup flow.", "monitor-base-claude", "start_monitor_session"),
+            new("Route: List Sessions", "List Monitor Server sessions and identify the most recent session.", "monitor-base-claude", "list_monitor_sessions"),
+            new("Drill: Null Guard No Map", "User wants to add a null guard to LoadTable in EditorSurface\\EditorSurfaceControl.cs, but no source map has been read yet.", ExpectedRouterAction: "SOURCE_MAP"),
+            new("Drill: Null Guard Has Map", "Source map for EditorSurface\\EditorSurfaceControl.cs already shows LoadTable(BaseTableDefinition table), but the method body has not been read.", ExpectedRouterAction: "GET_SYMBOL"),
+            new("Drill: Candidate Ready", "The model has the symbol body and proposes a complete updated file candidate.", ExpectedRouterAction: "STAGE_FILE"),
+            new("Drill: Accepted Hash Match", "Operator reports accepted and watched hash equals staged candidate hash.", ExpectedRouterAction: "RECORD_DECISION"),
+            new("Drill: Direct Source Write", "User asks the model to write the changed file directly into watched source.", ExpectedRouterAction: "REFUSE_UNSAFE"),
+            new("Drill: Partial WinMerge Repair", "Operator wants to fix the few bad lines manually in WinMerge and save the result.", ExpectedRouterAction: "REFUSE_UNSAFE"),
+            new("Drill: Unknown Target", "User wants to fix table loading, but no file or symbol name is known.", ExpectedRouterAction: "ASK_NARROWING_QUESTION"),
             new("Feature Context", "I want to edit the startup flow. What files should you read first? Use tools if needed."),
             new("No Tool Needed", "Explain in one sentence what a Monitor Server session handle is.")
         ];
@@ -173,7 +200,39 @@ public sealed class OllamaToolExplorerControl : UserControl
 
             if (decision.Action.Equals("call_tool", StringComparison.OrdinalIgnoreCase) && !string.IsNullOrWhiteSpace(decision.Tool))
             {
-                string serverName = ResolveServerName(localServers, decision);
+                RouteValidation validation = ValidateRoute(localServers, decision, null);
+                if (!validation.IsExecutable)
+                {
+                    string failureLogPath = await WriteHostTraceAsync(new
+                    {
+                        mode = "tool-action-loop",
+                        model,
+                        userRequest = questionBox.Text,
+                        discoveredServers = localServers,
+                        decision,
+                        routeValidation = validation
+                    });
+                    promptBox.Text = ToJson(new
+                    {
+                        mode = "tool-action-loop",
+                        model,
+                        userRequest = questionBox.Text,
+                        discoveredServers = localServers,
+                        decision,
+                        routeValidation = validation,
+                        logPath = failureLogPath
+                    });
+                    responseBox.Text = "Routing failed before tool call\r\n================================\r\n"
+                        + ToJson(validation)
+                        + "\r\n\r\nTool decision\r\n=============\r\n"
+                        + ToJson(decision)
+                        + "\r\n\r\nHost trace log\r\n==============\r\n"
+                        + failureLogPath;
+                    statusLabel.Text = "Route failed";
+                    return;
+                }
+
+                string serverName = validation.ResolvedServerName!;
                 LocalMcpToolCallResult toolResult = await localMcpDiscoveryService.CallToolAsync(serverName, decision.Tool, decision.Arguments);
                 string answer = await ollamaToolExplorerService.AnswerWithToolResultAsync(questionBox.Text, decision.Tool, toolResult.ResponseJson, model);
                 string logPath = await WriteHostTraceAsync(new
@@ -249,6 +308,127 @@ public sealed class OllamaToolExplorerControl : UserControl
         }
     }
 
+    private async Task RouteOnlyAsync()
+    {
+        statusLabel.Text = "Asking Ollama to route without executing...";
+        responseBox.Text = string.Empty;
+        try
+        {
+            IReadOnlyList<LocalMcpServerSurface> localServers = await localMcpDiscoveryService.DiscoverAsync();
+            string model = modelComboBox.SelectedItem?.ToString() ?? "llama3.2:1b";
+            PromptScenario? scenario = CurrentPromptScenario();
+            OllamaActionDecision decision = await ollamaToolExplorerService.DecideNextActionAsync(localServers, questionBox.Text, model);
+            RouteValidation validation = ValidateRoute(localServers, decision, scenario);
+            string logPath = await WriteHostTraceAsync(new
+            {
+                mode = "route-only",
+                model,
+                userRequest = questionBox.Text,
+                expected = scenario is null
+                    ? null
+                    : new
+                    {
+                        scenario.ExpectedServer,
+                        scenario.ExpectedTool
+                    },
+                discoveredServers = localServers,
+                decision,
+                routeValidation = validation
+            });
+
+            promptBox.Text = ToJson(new
+            {
+                mode = "route-only",
+                model,
+                userRequest = questionBox.Text,
+                expected = scenario is null
+                    ? null
+                    : new
+                    {
+                        scenario.ExpectedServer,
+                        scenario.ExpectedTool
+                    },
+                discoveredServers = localServers,
+                decision,
+                routeValidation = validation,
+                logPath
+            });
+
+            responseBox.Text = "Route-only result\r\n=================\r\n"
+                + $"Expected server: {scenario?.ExpectedServer ?? "(none)"}\r\n"
+                + $"Expected tool:   {scenario?.ExpectedTool ?? "(none)"}\r\n"
+                + $"Actual server:   {decision.Server ?? "(none)"}\r\n"
+                + $"Resolved server: {validation.ResolvedServerName ?? "(none)"}\r\n"
+                + $"Actual tool:     {decision.Tool ?? "(none)"}\r\n"
+                + $"Pass:            {validation.IsExpectedRoute}\r\n"
+                + $"Executable:      {validation.IsExecutable}\r\n"
+                + $"Issue:           {validation.Message ?? "(none)"}\r\n"
+                + "\r\nTool decision\r\n=============\r\n"
+                + ToJson(decision)
+                + "\r\n\r\nHost trace log\r\n==============\r\n"
+                + logPath;
+
+            statusLabel.Text = validation.IsExpectedRoute ? "Route passed" : "Route mismatch";
+        }
+        catch (Exception ex)
+        {
+            responseBox.Text = ex.ToString();
+            statusLabel.Text = "Error";
+        }
+    }
+
+    private async Task RouterDrillAsync()
+    {
+        statusLabel.Text = "Asking Ollama for fake-router workflow classification...";
+        responseBox.Text = string.Empty;
+        try
+        {
+            string model = modelComboBox.SelectedItem?.ToString() ?? "llama3.2:1b";
+            PromptScenario? scenario = CurrentPromptScenario();
+            OllamaRouterDecision decision = await ollamaToolExplorerService.DecideRouterActionAsync(questionBox.Text, model);
+            string expected = scenario?.ExpectedRouterAction ?? "(none)";
+            bool passed = !string.IsNullOrWhiteSpace(scenario?.ExpectedRouterAction)
+                && decision.Action.Equals(scenario.ExpectedRouterAction, StringComparison.OrdinalIgnoreCase);
+            string logPath = await WriteHostTraceAsync(new
+            {
+                mode = "router-drill",
+                model,
+                userRequest = questionBox.Text,
+                expectedRouterAction = scenario?.ExpectedRouterAction,
+                decision,
+                passed
+            });
+
+            promptBox.Text = ToJson(new
+            {
+                mode = "router-drill",
+                model,
+                userRequest = questionBox.Text,
+                expectedRouterAction = scenario?.ExpectedRouterAction,
+                decision,
+                passed,
+                logPath
+            });
+
+            responseBox.Text = "Router drill result\r\n===================\r\n"
+                + $"Expected action: {expected}\r\n"
+                + $"Actual action:   {decision.Action}\r\n"
+                + $"Pass:            {passed}\r\n"
+                + $"Reason:          {decision.Reason ?? "(none)"}\r\n"
+                + "\r\nDecision JSON\r\n=============\r\n"
+                + ToJson(decision)
+                + "\r\n\r\nHost trace log\r\n==============\r\n"
+                + logPath;
+
+            statusLabel.Text = passed ? "Router drill passed" : "Router drill mismatch";
+        }
+        catch (Exception ex)
+        {
+            responseBox.Text = ex.ToString();
+            statusLabel.Text = "Error";
+        }
+    }
+
     private async Task CompareTinyModelsAsync()
     {
         statusLabel.Text = "Comparing tiny local models...";
@@ -267,7 +447,8 @@ public sealed class OllamaToolExplorerControl : UserControl
             foreach (string model in candidates.Where(model => installedModels.Contains(model, StringComparer.OrdinalIgnoreCase)))
             {
                 OllamaActionDecision decision = await ollamaToolExplorerService.DecideNextActionAsync(localServers, questionBox.Text, model);
-                responses.Add($"Model: {model}\r\n\r\n{ToJson(decision)}");
+                RouteValidation validation = ValidateRoute(localServers, decision, CurrentPromptScenario());
+                responses.Add($"Model: {model}\r\nExpected: {CurrentPromptScenario()?.ExpectedServer ?? "(none)"} / {CurrentPromptScenario()?.ExpectedTool ?? "(none)"}\r\nPass: {validation.IsExpectedRoute}\r\nExecutable: {validation.IsExecutable}\r\nIssue: {validation.Message ?? "(none)"}\r\n\r\n{ToJson(decision)}");
                 responses.Add(new string('-', 80));
             }
 
@@ -298,13 +479,24 @@ public sealed class OllamaToolExplorerControl : UserControl
             : modelComboBox.Items.Count > 0 ? 0 : -1;
     }
 
-    private sealed record PromptScenario(string Name, string Prompt)
+    private sealed record PromptScenario(
+        string Name,
+        string Prompt,
+        string? ExpectedServer = null,
+        string? ExpectedTool = null,
+        string? ExpectedRouterAction = null)
     {
         public override string ToString()
         {
             return Name;
         }
     }
+
+    private sealed record RouteValidation(
+        bool IsExecutable,
+        bool IsExpectedRoute,
+        string? ResolvedServerName,
+        string? Message);
 
     private async Task<string> WriteHostTraceAsync(object trace)
     {
@@ -320,17 +512,74 @@ public sealed class OllamaToolExplorerControl : UserControl
         return JsonSerializer.Serialize(value, new JsonSerializerOptions { WriteIndented = true });
     }
 
-    private static string ResolveServerName(IReadOnlyList<LocalMcpServerSurface> localServers, OllamaActionDecision decision)
+    private PromptScenario? CurrentPromptScenario()
     {
-        if (!string.IsNullOrWhiteSpace(decision.Server))
+        return scenarioListBox.SelectedItem is PromptScenario scenario
+            && questionBox.Text.Equals(scenario.Prompt, StringComparison.Ordinal)
+            ? scenario
+            : null;
+    }
+
+    private static RouteValidation ValidateRoute(
+        IReadOnlyList<LocalMcpServerSurface> localServers,
+        OllamaActionDecision decision,
+        PromptScenario? scenario)
+    {
+        if (!decision.Action.Equals("call_tool", StringComparison.OrdinalIgnoreCase))
         {
-            return decision.Server;
+            bool expectedAnswer = string.IsNullOrWhiteSpace(scenario?.ExpectedTool);
+            return new RouteValidation(expectedAnswer, expectedAnswer, null, expectedAnswer ? null : "Model answered instead of choosing a tool.");
         }
 
-        LocalMcpServerSurface? matchingServer = localServers.FirstOrDefault(server =>
-            server.Tools.Any(tool => tool.Name.Equals(decision.Tool, StringComparison.OrdinalIgnoreCase)));
-        return matchingServer?.Name
-            ?? throw new InvalidOperationException($"Could not resolve MCP Server for tool '{decision.Tool}'.");
+        if (string.IsNullOrWhiteSpace(decision.Tool))
+        {
+            return new RouteValidation(false, false, null, "Model requested a tool call without a tool name.");
+        }
+
+        LocalMcpServerSurface? resolvedServer = null;
+        if (!string.IsNullOrWhiteSpace(decision.Server))
+        {
+            resolvedServer = localServers.FirstOrDefault(server => server.Name.Equals(decision.Server, StringComparison.OrdinalIgnoreCase));
+            if (resolvedServer is null)
+            {
+                return new RouteValidation(false, false, null, $"Model named unknown MCP Server '{decision.Server}'.");
+            }
+        }
+        else
+        {
+            LocalMcpServerSurface[] matchingServers = localServers
+                .Where(server => server.Tools.Any(tool => tool.Name.Equals(decision.Tool, StringComparison.OrdinalIgnoreCase)))
+                .ToArray();
+            if (matchingServers.Length == 1)
+            {
+                resolvedServer = matchingServers[0];
+            }
+            else if (matchingServers.Length == 0)
+            {
+                return new RouteValidation(false, false, null, $"No discovered MCP Server exposes tool '{decision.Tool}'.");
+            }
+            else
+            {
+                return new RouteValidation(false, false, null, $"Tool '{decision.Tool}' is exposed by multiple MCP Servers; the model must name a server.");
+            }
+        }
+
+        bool serverHasTool = resolvedServer.Tools.Any(tool => tool.Name.Equals(decision.Tool, StringComparison.OrdinalIgnoreCase));
+        if (!serverHasTool)
+        {
+            return new RouteValidation(false, false, resolvedServer.Name, $"Server '{resolvedServer.Name}' does not expose tool '{decision.Tool}'.");
+        }
+
+        bool expectedToolMatches = string.IsNullOrWhiteSpace(scenario?.ExpectedTool)
+            || decision.Tool.Equals(scenario.ExpectedTool, StringComparison.OrdinalIgnoreCase);
+        bool expectedServerMatches = string.IsNullOrWhiteSpace(scenario?.ExpectedServer)
+            || resolvedServer.Name.Equals(scenario.ExpectedServer, StringComparison.OrdinalIgnoreCase);
+        bool expectedRoute = expectedToolMatches && expectedServerMatches;
+        string? message = expectedRoute
+            ? null
+            : $"Expected {scenario?.ExpectedServer ?? "(any server)"}/{scenario?.ExpectedTool ?? "(any tool)"}.";
+
+        return new RouteValidation(true, expectedRoute, resolvedServer.Name, message);
     }
 
     private static string FormatPayloadForDisplay(string payload)

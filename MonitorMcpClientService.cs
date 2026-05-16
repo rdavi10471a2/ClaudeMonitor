@@ -16,12 +16,14 @@ public sealed class MonitorMcpClientService : IDisposable
     };
 
     private readonly MonitorClientSettings settings;
+    private readonly string? serverSettingsPath;
     private readonly SemaphoreSlim clientGate = new(1, 1);
     private McpClient? client;
 
-    public MonitorMcpClientService(MonitorClientSettings settings)
+    public MonitorMcpClientService(MonitorClientSettings settings, string? serverSettingsPath = null)
     {
         this.settings = settings;
+        this.serverSettingsPath = serverSettingsPath;
     }
 
     public async Task<MonitorMcpDashboardSnapshot> LoadDashboardSnapshotAsync(CancellationToken cancellationToken = default)
@@ -103,6 +105,10 @@ public sealed class MonitorMcpClientService : IDisposable
             Command = command,
             WorkingDirectory = settings.MonitorMcpServerRoot
         };
+        if (!string.IsNullOrWhiteSpace(serverSettingsPath))
+        {
+            transportOptions.Arguments = ["--settings", serverSettingsPath];
+        }
 
         client = await McpClient.CreateAsync(new StdioClientTransport(transportOptions), cancellationToken: cancellationToken);
         return client;

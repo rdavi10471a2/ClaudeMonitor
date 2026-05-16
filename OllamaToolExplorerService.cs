@@ -6,7 +6,7 @@ using MonitorBaseClaude.AI;
 namespace MonitorBaseClaude;
 
 [AIFileContext("OllamaToolExplorerService.cs", "Uses the local Ollama LLM API to choose Host actions against the Monitor MCP Server.")]
-[FileVersion("2.1")]
+[FileVersion("2.2")]
 public sealed class OllamaToolExplorerService : IDisposable
 {
     private static readonly JsonSerializerOptions JsonOptions = new()
@@ -58,7 +58,7 @@ public sealed class OllamaToolExplorerService : IDisposable
         }
 
         OllamaChatResponse? chatResponse = JsonSerializer.Deserialize<OllamaChatResponse>(responseText, JsonOptions);
-        return $"Model: {model}\r\n\r\n{chatResponse?.Message?.Content ?? responseText}";
+        return $"Model: {model}\r\n{FormatUsage(chatResponse)}\r\n\r\n{chatResponse?.Message?.Content ?? responseText}";
     }
 
     public async Task<IReadOnlyList<string>> GetInstalledModelsAsync(CancellationToken cancellationToken = default)
@@ -107,6 +107,45 @@ public sealed class OllamaToolExplorerService : IDisposable
         }
     }
 
+    public async Task<OllamaRouterDecision> DecideRouterActionAsync(
+        string scenario,
+        string model,
+        CancellationToken cancellationToken = default)
+    {
+        string prompt = BuildRouterPrompt(scenario);
+        Uri endpoint = new(new Uri(settings.OllamaEndpoint.TrimEnd('/') + "/"), "api/chat");
+        OllamaChatRequest request = new(
+            model,
+            [
+                new OllamaMessage("system", "You classify the next safe MonitorBaseClaude workflow action. Return only JSON. No Markdown. No explanation."),
+                new OllamaMessage("user", prompt)
+            ],
+            Stream: false);
+
+        using HttpResponseMessage response = await httpClient.PostAsJsonAsync(endpoint, request, JsonOptions, cancellationToken);
+        string responseText = await response.Content.ReadAsStringAsync(cancellationToken);
+        if (!response.IsSuccessStatusCode)
+        {
+            return new OllamaRouterDecision("ERROR", $"Ollama request failed: {(int)response.StatusCode} {response.ReasonPhrase}\r\n{responseText}");
+        }
+
+        OllamaChatResponse? chatResponse = JsonSerializer.Deserialize<OllamaChatResponse>(responseText, JsonOptions);
+        string content = chatResponse?.Message?.Content ?? responseText;
+        try
+        {
+            OllamaRouterDecision? decision = JsonSerializer.Deserialize<OllamaRouterDecision>(ExtractJsonObject(content), JsonOptions);
+            return decision ?? new OllamaRouterDecision("ERROR", content);
+        }
+        catch (JsonException)
+        {
+            string normalized = content.Trim().Trim('`').Trim();
+            string action = normalized
+                .Split([' ', '\r', '\n', '\t', '.', ','], StringSplitOptions.RemoveEmptyEntries)
+                .FirstOrDefault() ?? "ERROR";
+            return new OllamaRouterDecision(action, content);
+        }
+    }
+
     public async Task<string> AnswerWithToolResultAsync(
         string question,
         string toolName,
@@ -143,7 +182,9 @@ public sealed class OllamaToolExplorerService : IDisposable
         }
 
         OllamaChatResponse? chatResponse = JsonSerializer.Deserialize<OllamaChatResponse>(responseText, JsonOptions);
-        return chatResponse?.Message?.Content ?? responseText;
+        string usage = FormatUsage(chatResponse);
+        string answer = chatResponse?.Message?.Content ?? responseText;
+        return string.IsNullOrWhiteSpace(usage) ? answer : $"{usage}\r\n\r\n{answer}";
     }
 
     public string BuildPreviewPrompt(MonitorMcpDashboardSnapshot snapshot, IReadOnlyList<LocalMcpServerSurface> localServers, string question)
@@ -216,6 +257,35 @@ public sealed class OllamaToolExplorerService : IDisposable
         ]);
     }
 
+    private static string BuildRouterPrompt(string scenario)
+    {
+        return string.Join(Environment.NewLine, [
+            "Choose the next MonitorBaseClaude workflow action from this exact allowed set:",
+            "SOURCE_MAP",
+            "GET_SYMBOL",
+            "STAGE_FILE",
+            "RECORD_DECISION",
+            "REFUSE_UNSAFE",
+            "ASK_NARROWING_QUESTION",
+            "",
+            "Rules:",
+            "- Use SOURCE_MAP when the model needs source structure before reading bodies.",
+            "- Use GET_SYMBOL when the exact symbol has been identified and the body is needed.",
+            "- Use STAGE_FILE only after a complete staged candidate is ready.",
+            "- Use RECORD_DECISION only after the Operator reports accepted/rejected and the watched hash state is known.",
+            "- Use REFUSE_UNSAFE for direct watched-source writes, partial hunk merge, manual WinMerge repair, or hash-only classification.",
+            "- Use ASK_NARROWING_QUESTION when the target file/symbol is not identifiable.",
+            "- get_source_map is discovery only, not the accept/reject gate.",
+            "- Monitor never directly overwrites watched source; WinMerge is the review/save surface.",
+            "",
+            "Return exactly this JSON shape:",
+            "{\"action\":\"SOURCE_MAP\",\"reason\":\"short reason\"}",
+            "",
+            "Scenario:",
+            scenario
+        ]);
+    }
+
     private static string ExtractJsonObject(string text)
     {
         int start = text.IndexOf('{');
@@ -249,15 +319,15 @@ public sealed class OllamaToolExplorerService : IDisposable
                 continue;
             }
 
-            foreach (LocalMcpToolSurface tool in server.Tools.Take(20))
+            foreach (LocalMcpToolSurface tool in server.Tools.Take(40))
             {
                 string description = string.IsNullOrWhiteSpace(tool.Description) ? string.Empty : $" - {tool.Description}";
                 lines.Add($"  tool: {tool.Name}{description}");
             }
 
-            if (server.Tools.Count > 20)
+            if (server.Tools.Count > 40)
             {
-                lines.Add($"  ... {server.Tools.Count - 20} more tools");
+                lines.Add($"  ... {server.Tools.Count - 40} more tools");
             }
         }
 
@@ -345,7 +415,20 @@ public sealed class OllamaToolExplorerService : IDisposable
         string Content);
 
     private sealed record OllamaChatResponse(
-        OllamaMessage? Message);
+        OllamaMessage? Message,
+        [property: JsonPropertyName("prompt_eval_count")] int? PromptEvalCount = null,
+        [property: JsonPropertyName("eval_count")] int? EvalCount = null,
+        [property: JsonPropertyName("total_duration")] long? TotalDuration = null);
+
+    private static string FormatUsage(OllamaChatResponse? response)
+    {
+        if (response?.PromptEvalCount is null && response?.EvalCount is null)
+        {
+            return string.Empty;
+        }
+
+        return $"Ollama tokens: prompt={response.PromptEvalCount?.ToString() ?? "unknown"}, response={response.EvalCount?.ToString() ?? "unknown"}";
+    }
 
     private sealed record OllamaTagsResponse(
         IReadOnlyList<OllamaModelInfo> Models);
@@ -361,3 +444,7 @@ public sealed record OllamaActionDecision(
     string? Tool,
     Dictionary<string, object?>? Arguments,
     string? Answer);
+
+public sealed record OllamaRouterDecision(
+    string Action,
+    string? Reason);

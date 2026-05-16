@@ -13,7 +13,7 @@ internal static class Program
     {
         HostApplicationBuilder builder = Host.CreateApplicationBuilder(args);
         builder.Logging.ClearProviders();
-        builder.Services.AddSingleton(MonitorServerSettings.Load());
+        builder.Services.AddSingleton(MonitorServerSettings.Load(args));
         builder.Services.AddSingleton<MonitorWorkflowService>();
         builder.Services.AddSingleton<MonitorSessionService>();
         builder.Services
@@ -135,7 +135,7 @@ public sealed class MonitorTools
     }
 
     [McpServerTool]
-    [Description("Find files under the watched project folder by filename or wildcard pattern.")]
+    [Description("Find source or related files under the watched project folder by filename or wildcard pattern. Use this before edits to locate neighboring context.")]
     public IReadOnlyList<MonitorFileMatch> FindFile(
         [Description("Filename or wildcard pattern, such as Program.cs or *.razor.")] string fileNameOrPattern,
         [Description("Maximum number of matches to return.")] int maxResults = 25)
@@ -152,28 +152,123 @@ public sealed class MonitorTools
     }
 
     [McpServerTool]
-    [Description("Return one C# symbol body from a watched source file.")]
-    public MonitorSymbolReadResult GetSymbol(
-        [Description("Source file path, absolute or relative to the watched solution folder.")] string path,
-        [Description("Class, method, property, field, event, delegate, or constructor name.")] string symbolName)
+    [Description("Return a Roslyn-derived source map for a C# file, folder, or watched project. Use before C# edits. Modes: navigation for broad orientation, selector for stable get_symbol/submit_symbol selectors, full for audit/debug.")]
+    public MonitorSourceMapResult GetSourceMap(
+        [Description("Optional source file or folder path, absolute or relative to the watched solution folder. Omit for the watched project.")] string? path = null,
+        [Description("Source map scope: auto, file, folder, or project.")] string scope = "auto",
+        [Description("Source map density: auto, navigation, selector, or full. auto means selector for file scope and navigation for folder/project scope.")] string mode = "auto")
     {
-        return workflowService.GetSymbol(path, symbolName);
+        return workflowService.GetSourceMap(path, scope, mode);
     }
 
     [McpServerTool]
-    [Description("Stage a full-file replacement under monitor-owned Working\\Staged and optionally launch WinMerge. Does not overwrite the watched source file.")]
+    [Description("Return one C# symbol body from a watched source file. Prefer symbolSelectorJson from get_source_map stableSymbolKey; symbolName is a compatibility shortcut for unambiguous files.")]
+    public MonitorSymbolReadResult GetSymbol(
+        [Description("Source file path, absolute or relative to the watched solution folder.")] string path,
+        [Description("Compatibility shortcut: class, method, property, field, event, delegate, or constructor name. Must be unambiguous.")] string? symbolName = null,
+        [Description("Structured selector JSON from get_source_map, including stableSymbolKey, memberKind, containingNamespace, containingType, parameterTypes, and arity.")] string? symbolSelectorJson = null)
+    {
+        return workflowService.GetSymbol(path, symbolName, symbolSelectorJson);
+    }
+
+    [McpServerTool]
+    [Description("Stage a full-file replacement under monitor-owned Working\\Staged. Does not overwrite the watched source file. Host-like clients should launch GUI diff tools using the returned paths.")]
     public MonitorFileSubmitResult SubmitFile(
         [Description("Source file path, absolute or relative to the watched solution folder.")] string path,
         [Description("Complete replacement file content.")] string content,
         [Description("Optional durable session handle to link this staged edit to a monitor workflow session.")] string? sessionId = null,
         [Description("Optional JSON manifest expressing Model intent. The Tool Server records it but verifies using Roslyn-derived metadata.")] string? manifestJson = null,
-        [Description("Launch WinMerge against the staged file and watched source file.")] bool launchDiff = false)
+        [Description("Deprecated compatibility flag. GUI diff launch from the stdio Tool Server is unreliable; prefer false and let the Host or sidecar launch WinMerge using returned paths.")] bool launchDiff = false)
     {
         return workflowService.SubmitFile(path, content, sessionId, manifestJson, launchDiff);
     }
 
     [McpServerTool]
-    [Description("Compare a monitor Working file against the watched source file using WinMerge. The path may be absolute or relative to the watched solution folder.")]
+    [Description("Stage replacement of one C# symbol selected by structured JSON. Produces a full staged candidate; does not overwrite watched source.")]
+    public MonitorFileSubmitResult SubmitSymbol(
+        [Description("Source file path, absolute or relative to the watched solution folder.")] string path,
+        [Description("Structured symbol selector JSON with name/memberKind/containingType/parameterTypes/stableSymbolKey.")] string symbolSelectorJson,
+        [Description("Complete replacement C# member declaration.")] string code,
+        [Description("Optional durable session handle to link this staged edit to a monitor workflow session.")] string? sessionId = null,
+        [Description("Optional JSON manifest expressing Model intent.")] string? manifestJson = null)
+    {
+        return workflowService.SubmitSymbol(path, symbolSelectorJson, code, sessionId, manifestJson);
+    }
+
+    [McpServerTool]
+    [Description("Stage adding a using directive to a C# source file. Produces a full staged candidate; does not overwrite watched source.")]
+    public MonitorFileSubmitResult AddUsing(
+        [Description("Source file path, absolute or relative to the watched solution folder.")] string path,
+        [Description("Namespace to add as a using directive.")] string @namespace,
+        [Description("Optional durable session handle to link this staged edit to a monitor workflow session.")] string? sessionId = null,
+        [Description("Optional JSON manifest expressing Model intent.")] string? manifestJson = null)
+    {
+        return workflowService.AddUsing(path, @namespace, sessionId, manifestJson);
+    }
+
+    [McpServerTool]
+    [Description("Stage removing a using directive from a C# source file. Produces a full staged candidate; does not overwrite watched source.")]
+    public MonitorFileSubmitResult RemoveUsing(
+        [Description("Source file path, absolute or relative to the watched solution folder.")] string path,
+        [Description("Namespace to remove from using directives.")] string @namespace,
+        [Description("Optional durable session handle to link this staged edit to a monitor workflow session.")] string? sessionId = null,
+        [Description("Optional JSON manifest expressing Model intent.")] string? manifestJson = null)
+    {
+        return workflowService.RemoveUsing(path, @namespace, sessionId, manifestJson);
+    }
+
+    [McpServerTool]
+    [Description("Stage adding one C# member to a containing type. Produces a full staged candidate; does not overwrite watched source.")]
+    public MonitorFileSubmitResult AddSymbol(
+        [Description("Source file path, absolute or relative to the watched solution folder.")] string path,
+        [Description("Containing type name.")] string containingType,
+        [Description("Expected symbol kind, such as method, property, field, event, constructor, or class.")] string symbolType,
+        [Description("Complete C# member declaration to add.")] string code,
+        [Description("Optional existing member name after which to insert the new member.")] string? afterSymbol = null,
+        [Description("Optional durable session handle to link this staged edit to a monitor workflow session.")] string? sessionId = null,
+        [Description("Optional JSON manifest expressing Model intent.")] string? manifestJson = null)
+    {
+        return workflowService.AddSymbol(path, containingType, symbolType, code, afterSymbol, sessionId, manifestJson);
+    }
+
+    [McpServerTool]
+    [Description("Stage removing one C# symbol selected by structured JSON. Produces a full staged candidate; does not overwrite watched source.")]
+    public MonitorFileSubmitResult RemoveSymbol(
+        [Description("Source file path, absolute or relative to the watched solution folder.")] string path,
+        [Description("Structured symbol selector JSON with name/memberKind/containingType/parameterTypes/stableSymbolKey.")] string symbolSelectorJson,
+        [Description("Optional durable session handle to link this staged edit to a monitor workflow session.")] string? sessionId = null,
+        [Description("Optional JSON manifest expressing Model intent.")] string? manifestJson = null)
+    {
+        return workflowService.RemoveSymbol(path, symbolSelectorJson, sessionId, manifestJson);
+    }
+
+    [McpServerTool]
+    [Description("Classify a completed WinMerge review for a staged edit. The decision argument is the Operator-reported outcome; accepted requires reported accepted plus watched==staged, rejected requires reported rejected plus watched==original, and any mismatch is dirty-unexpected.")]
+    public MonitorDiffDecisionResult RecordDiffDecision(
+        [Description("Staged edit record id returned by submit_file.")] string stagedRecordId,
+        [Description("Operator-reported outcome: accepted if WinMerge saved the full candidate, or rejected if it was not saved. Hash comparison is authoritative.")] string decision,
+        [Description("Optional Operator note.")] string? note = null,
+        [Description("Optional session handle. Defaults to the staged record session when present.")] string? sessionId = null)
+    {
+        MonitorDiffDecisionResult result = workflowService.RecordDiffDecision(stagedRecordId, decision, note, sessionId);
+        if (!string.IsNullOrWhiteSpace(result.SessionId))
+        {
+            sessionService.RecordEvent(
+                result.SessionId,
+                "diff-decision",
+                $"{result.RelativeSourcePath} classified as {result.Classification}.",
+                JsonSerializer.Serialize(result, new JsonSerializerOptions { WriteIndented = true }));
+            sessionService.RecordFileFetch(
+                result.SessionId,
+                workflowService.GetFileHashInfo(result.SourceFilePath),
+                "record_diff_decision");
+        }
+
+        return result;
+    }
+
+    [McpServerTool]
+    [Description("Create a proposed compare snapshot for a monitor Working file and return paths for Host-launched review. The path may be absolute or relative to the watched solution folder.")]
     public MonitorFileCompareResult CompareFile(
         [Description("Source file path, absolute or relative to the watched solution folder.")] string sourceFilePath,
         [Description("Optional compact ledger summary to append to the monitor-owned ledger.")] string? ledgerSummary = null,
@@ -284,31 +379,88 @@ public sealed record MonitorServerSettings(
     string WatchedProjectsRoot,
     string WatchedSolutionPath)
 {
-    public static MonitorServerSettings Load()
+    public static MonitorServerSettings Load(string[]? args = null)
     {
         string baseDirectory = AppContext.BaseDirectory;
         string uiRoot = FindAncestorWithFile(baseDirectory, "MonitorBaseClaude.csproj")
-            ?? @"C:\VSCodeProjects\MonitorBaseClaude";
+            ?? FindAncestorWithFile(Directory.GetCurrentDirectory(), "MonitorBaseClaude.csproj")
+            ?? Directory.GetCurrentDirectory();
+        string siblingRoot = Directory.GetParent(uiRoot)?.FullName ?? uiRoot;
         string mcpRoot = Path.Combine(uiRoot, "MonitorBaseClaude.McpServer");
-        string legacyRoot = @"C:\VSCodeProjects\ClaudeMonitor\Monitor";
-        string watchedRoot = @"C:\VSCodeProjects";
-        string watchedSolutionPath = @"C:\Schema Studio - DBV2\Schema Studio.sln";
+        string legacyRoot = Path.Combine(siblingRoot, "ClaudeMonitor", "Monitor");
+        string watchedRoot = siblingRoot;
+        string watchedSolutionPath = FindFirstSolution(Path.Combine(Path.GetPathRoot(uiRoot) ?? "C:\\", "Schema Studio - DBV2")) ?? string.Empty;
 
-        string settingsPath = Path.Combine(uiRoot, "appsettings.json");
+        string settingsPath = ResolvePath(ReadOption(args ?? [], "--settings"), Directory.GetCurrentDirectory())
+            ?? Path.Combine(uiRoot, "appsettings.json");
+        string settingsDirectory = Path.GetDirectoryName(Path.GetFullPath(settingsPath)) ?? uiRoot;
         if (File.Exists(settingsPath))
         {
             using FileStream stream = File.OpenRead(settingsPath);
             JsonDocument document = JsonDocument.Parse(stream);
             if (document.RootElement.TryGetProperty("MonitorClient", out JsonElement client))
             {
-                mcpRoot = GetString(client, "MonitorMcpServerRoot") ?? mcpRoot;
-                legacyRoot = GetString(client, "LegacyMonitorRoot") ?? legacyRoot;
-                watchedRoot = GetString(client, "WatchedProjectsRoot") ?? watchedRoot;
-                watchedSolutionPath = GetString(client, "WatchedSolutionPath") ?? watchedSolutionPath;
+                mcpRoot = ResolvePath(GetString(client, "MonitorMcpServerRoot"), settingsDirectory) ?? mcpRoot;
+                legacyRoot = ResolvePath(GetString(client, "LegacyMonitorRoot"), settingsDirectory) ?? legacyRoot;
+                watchedRoot = ResolvePath(GetString(client, "WatchedProjectsRoot"), settingsDirectory) ?? watchedRoot;
+                watchedSolutionPath = ResolvePath(GetString(client, "WatchedSolutionPath"), settingsDirectory) ?? watchedSolutionPath;
+            }
+
+            if (document.RootElement.TryGetProperty("WorkflowSettings", out JsonElement workflow))
+            {
+                string? observedRoot = ResolvePath(GetString(workflow, "ObservedRoot"), settingsDirectory);
+                if (!string.IsNullOrWhiteSpace(observedRoot) && Directory.Exists(observedRoot))
+                {
+                    watchedSolutionPath = Directory.GetFiles(observedRoot, "*.sln", SearchOption.TopDirectoryOnly)
+                        .OrderBy(path => path, StringComparer.OrdinalIgnoreCase)
+                        .FirstOrDefault() ?? watchedSolutionPath;
+                }
             }
         }
 
         return new MonitorServerSettings(uiRoot, mcpRoot, legacyRoot, watchedRoot, watchedSolutionPath);
+    }
+
+    private static string? ReadOption(string[] args, string name)
+    {
+        for (int i = 0; i < args.Length - 1; i++)
+        {
+            if (args[i].Equals(name, StringComparison.OrdinalIgnoreCase))
+            {
+                return args[i + 1];
+            }
+        }
+
+        return null;
+    }
+
+    private static string? ResolvePath(string? path, string baseDirectory)
+    {
+        if (string.IsNullOrWhiteSpace(path))
+        {
+            return null;
+        }
+
+        try
+        {
+            string trimmed = path.Trim();
+            return Path.IsPathRooted(trimmed)
+                ? Path.GetFullPath(trimmed)
+                : Path.GetFullPath(Path.Combine(baseDirectory, trimmed));
+        }
+        catch
+        {
+            return path;
+        }
+    }
+
+    private static string? FindFirstSolution(string folder)
+    {
+        return Directory.Exists(folder)
+            ? Directory.GetFiles(folder, "*.sln", SearchOption.TopDirectoryOnly)
+                .OrderBy(path => path, StringComparer.OrdinalIgnoreCase)
+                .FirstOrDefault()
+            : null;
     }
 
     private static string? FindAncestorWithFile(string startPath, string fileName)

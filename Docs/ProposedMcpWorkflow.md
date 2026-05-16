@@ -27,7 +27,7 @@ Use for workflow and file operations:
 - refresh / compare / WinMerge review
 - monitor-owned Working and History folders
 
-This Tool Server owns the safe edit workflow. It should never overwrite watched source files directly during AI edits. It stages output under monitor-owned folders and launches diff/review.
+This Tool Server owns the safe edit workflow. It should never overwrite watched source files directly during AI edits. It stages output under monitor-owned folders and returns paths for Host-owned diff/review.
 
 ### Roslyn CodeLens MCP Tool Server
 
@@ -80,11 +80,55 @@ Expected behavior:
 2. Tool Server stages the submitted content under `Working\\Staged`.
 3. Tool Server validates syntax for C# files.
 4. Tool Server returns staged path, validation result, and optional diff information.
-5. A separate MCP call opens the diff tool for review.
+5. The Host opens the GUI diff tool for review using Tool Server returned paths.
 6. Test compares the staged output to expected output.
 7. No watched source file is overwritten.
 
 This lane proves the Tool Server is safe and deterministic.
+
+### 1b. Sidecar Operator Workflow Tests
+
+Purpose: prove operator workflow mechanics without cluttering the WinForms UI.
+
+Project:
+
+```text
+C:\VSCodeProjects\MonitorBaseClaude\MonitorBaseClaude.ToolSmokeTests
+```
+
+Current staged-edit smoke command:
+
+```powershell
+dotnet run --project C:\VSCodeProjects\MonitorBaseClaude\MonitorBaseClaude.ToolSmokeTests\MonitorBaseClaude.ToolSmokeTests.csproj -- --stage-comment-diff
+```
+
+Flow:
+
+1. Sidecar runner calls the real Monitor MCP Tool Server `submit_file` tool.
+2. Tool Server stages, records, and validates the edit.
+3. Tool Server returns staged/source paths.
+4. Sidecar runner launches WinMerge directly.
+5. Operator reviews the sanity diff and either saves the full candidate in WinMerge or leaves source unchanged.
+
+The sidecar runner acts like a Host for test purposes. It may own GUI diff lifetime. The stdio Tool Server must not own GUI diff lifetime.
+
+The sidecar `record_diff_decision` trigger is explicit, not automatic. After WinMerge review, the sidecar should ask the Operator to report whether the full candidate was saved (`accepted`) or source was left unchanged (`rejected`). WinMerge close detection is telemetry only and is not sufficient to trigger verification.
+
+The expected v1 Operator pattern is accept all or reject all. The Operator should not hand-edit in the middle of WinMerge review. If the staged proposal is close but not right, reject it and ask the Model/Host for a new staged proposal.
+
+The diff is a final sanity check, not the primary editing surface. The source file is a voting member in generation: a valid staged proposal should preserve the current file shape and make a focused change. If the diff shows drastic rewrites, moved code, or boundary damage, reject and regenerate.
+
+Sidecar implementation sequence:
+
+1. Keep staged edit plus overlay compile validation stable. Done.
+2. Add sidecar outcome command and call `record_diff_decision`. Done.
+3. Build strict post-decision verification after the prompt contract is stable. Done for v1 vote-plus-hash gate.
+4. Add `get_source_map` as the next read-only discovery tool before symbol surgery. Done.
+5. Add disposable DBV2-shaped fixture accept smoke using a generated config file. Done.
+6. Add disposable Roslyn surgery smoke for `add_using`, `submit_symbol`, `add_symbol`, `remove_symbol`, and `remove_using`. Done.
+7. Add separate disposable Razor smoke for current read/full-file-stage/accept behavior with `razor-validation-pending`. Done.
+
+Current implementation note: `submit_file.launchDiff` still exists as a compatibility parameter, but GUI launch from the Tool Server is deprecated. Sidecar and Host callers should pass `launchDiff:false`, then launch WinMerge themselves using the returned staged/source paths.
 
 ### 2. Ollama Host Simulation
 
@@ -183,30 +227,30 @@ Rules:
 Read/token-saving tools:
 
 - `get_file_outline(path)`
-- `get_symbol(path, symbolName)`
+- `get_symbol(path, symbolSelector)` for the future structured selector surface.
 - `check_file_hash(path, sessionId)`
 
 Staged replacement tools:
 
 - `submit_file(path, content, manifest)`
-- `submit_symbol(path, symbolName, code, manifest)`
+- `submit_symbol(path, symbolSelector, code, manifest)`
 
 Roslyn symbol operations:
 
 - `add_symbol(path, symbolType, code, afterSymbol?, manifest)`
-- `remove_symbol(path, symbolName, manifest)`
+- `remove_symbol(path, symbolSelector, manifest)`
 - `add_using(path, namespace, manifest)`
 - `remove_using(path, namespace, manifest)`
 - `add_class(path, code, manifest)`
 - `remove_class(path, className, manifest)`
 
-All editing tools stage output and launch review/diff. They do not directly overwrite watched source.
+All editing tools stage output for review/diff. They do not directly overwrite watched source.
 
 The Model-submitted manifest is intent, not authority. The Tool Server should derive verification metadata from the staged file using Roslyn and use Server-derived metadata as the verification authority.
 
 ## Diff Pause Rule
 
-Opening a diff is an explicit MCP tool call.
+Opening an interactive GUI diff is a Host action using paths returned by the Tool Server. A non-interactive CLI diff may later be exposed as an MCP tool, but GUI lifetime belongs to the Host.
 
 The Tool Server should expose a workflow state similar to:
 
@@ -226,15 +270,27 @@ Rules:
 - Only one diff may be active at a time.
 - The Host and Model must not advance to the next file while a diff is open.
 - Multi-file work must become an ordered compare queue.
-- The Tool Server opens the first diff and records the active file/session state.
-- The Operator reviews, merges, rejects, or asks for changes.
-- The Model or Host then calls an MCP tool such as `record_diff_decision(sessionId, filePath, decision)`.
+- The Tool Server returns staged/source paths and records the active file/session state.
+- The Host opens the first GUI diff and logs the launch in telemetry.
+- The Operator reviews the sanity diff and either saves the full candidate in WinMerge or leaves source unchanged.
+- The Operator explicitly records the outcome in the Host.
+- The Host then calls an MCP tool such as `record_diff_decision(stagedRecordId, decision, note?, sessionId?)`.
 - Only after that decision may the Tool Server release the next queued diff.
-- Closing the diff window is not enough to prove the merge happened.
+- Closing the diff window is not enough to prove a decision happened.
 - The Tool Server must verify the watched file after review by comparing the current watched file hash/content against the staged proposal and staged edit metadata.
 - The Tool Server updates the session file hash after the confirmed state is known.
 
-This pause is required because GUI diff tools are outside the MCP protocol. The Tool Server can launch the review, but the Operator decision is the synchronization point.
+This pause is required because GUI diff tools are outside the MCP protocol. Testing showed WinMerge should be launched by the Host, not the stdio Tool Server. The Operator's reported outcome plus watched hash is the synchronization point.
+
+`record_diff_decision` is not triggered by automatic WinMerge close detection. The Host may show process/window status as telemetry, but classification is authoritative only after the Operator reports what happened and the Tool Server re-hashes the watched file.
+
+Current v1 signature:
+
+```text
+record_diff_decision(stagedRecordId, decision, note?, sessionId?)
+```
+
+The decision argument is the Operator-reported outcome: `accepted` means the Operator believes WinMerge saved the full candidate; `rejected` means the Operator believes source was left unchanged. The Tool Server computes the actual classification from vote-plus-hash agreement.
 
 ## Post-Decision Verification
 
@@ -276,8 +332,22 @@ Every staged edit should create a `StagedEditRecord` with:
 sessionId
 filePath
 operation
-originalHash
-stagedHash
+batchId
+priorConvergedHash
+originalBaselineHash
+stagedCandidateHash
+rawOriginalHash
+rawStagedHash
+normalizedOriginalTextHash
+normalizedStagedTextHash
+originalEncoding
+stagedEncoding
+originalNewLineKind
+stagedNewLineKind
+originalHadBom
+stagedHadBom
+originalHadFinalNewLine
+stagedHadFinalNewLine
 manifest
 serverDerivedMetadata:
   symbolsAdded (name, kind, span, textHash)
@@ -290,17 +360,28 @@ queueStatus
 
 Store staged edit records under monitor-owned `Working\\Staged` with session linkage.
 
-Full-file staging is easy to verify:
+Full-file staging is the v1 verification model:
 
 ```text
-current watched file hash == staged proposal hash -> accepted
-current watched file hash == original baseline hash -> rejected
-otherwise -> partially-merged or unknown
+Reported Accept:
+  Operator saves the full staged candidate through WinMerge
+  Tool Server verifies watched hash equals staged hash -> accepted
+  any other watched hash -> dirty-unexpected
+
+Reported Reject:
+  Tool Server verifies watched hash equals original baseline -> rejected
+  any other watched hash -> dirty-unexpected
+
+No-op candidate:
+  staged hash equals original baseline hash -> no-change/no-op-staged
+  do not enqueue a normal diff by default
 ```
 
-Roslyn symbol operations are harder.
+The Operator's expected v1 behavior is all-or-nothing accept/reject. The Tool Server does not accept hand-edited middle states in v1. Accept means the Operator reported Accept, WinMerge/Operator saved the entire staged candidate, and the Tool Server verifies the watched hash equals the staged hash. Reject means the Operator reported Reject, the candidate was not saved, and the Tool Server verifies the watched hash still equals the original baseline. If the Operator report and watched hash disagree, or if the watched file hash matches neither staged nor original, the file is blocked for further AI edits until the Host refreshes state.
 
-For `submit_symbol`, `add_symbol`, `remove_symbol`, `add_using`, and similar tools, the Tool Server may generate a full staged file from a small symbol-level operation. After Operator review, the watched file might not match the full staged proposal exactly because the Operator may accept only part of the change or adjust it during merge.
+Roslyn symbol operations are harder and are postponed until the strict vote-plus-hash path is stable.
+
+For `submit_symbol`, `add_symbol`, `remove_symbol`, `add_using`, and similar tools, the Tool Server may generate a full staged file from a small symbol-level operation. The Operator still reviews the whole staged candidate and either saves it all or leaves source unchanged. Partial hunk acceptance and hand repair inside the diff tool are not part of the workflow.
 
 Symbol-level staged edits should record metadata:
 
@@ -318,17 +399,15 @@ replacement/generated symbol text hash
 using directive changes, if any
 ```
 
-Verification strategy:
+Strict v1 verification strategy:
 
-1. Check full-file hash first.
-2. If full file matches staged proposal, classify `accepted`.
-3. If full file matches original baseline, classify `rejected`.
-4. If target symbols and usings are confirmed by Roslyn but full file hash differs, classify `symbol-accepted-with-other-edits`.
-5. If some manifest items are confirmed by Roslyn, classify `partially-merged`.
-6. If no manifest items are confirmed, classify `rejected`.
-7. If Roslyn cannot parse the watched file, classify `unknown`.
+1. For reported Accept, verify the watched file now matches the staged candidate.
+2. For reported Reject, verify the watched file still matches the original baseline.
+3. Any mismatch between reported outcome and watched hash is `dirty-unexpected`.
+4. Any watched hash outside the original/staged hashes is `dirty-unexpected`.
+5. The Tool Server never copies the staged candidate into watched source; WinMerge/Operator save is the mutation path.
 
-`symbol-accepted-with-other-edits` is a successful outcome. The Operator is allowed to adjust whitespace, formatting, small fixes, or nearby code during merge. What matters is whether the intended change landed.
+Tolerant symbol-level verification is intentionally out of scope. The Operator either saves the whole staged candidate or leaves source unchanged.
 
 The Tool Server should return a small envelope after `record_diff_decision`:
 
@@ -336,7 +415,7 @@ The Tool Server should return a small envelope after `record_diff_decision`:
 {
   "sessionId": "abc123",
   "filePath": "CteFieldParser.cs",
-  "classification": "symbol-accepted-with-other-edits",
+  "classification": "accepted",
   "newHash": "a3f9...",
   "manifestResults": {
     "added": {
@@ -352,7 +431,7 @@ The Tool Server should return a small envelope after `record_diff_decision`:
 }
 ```
 
-No file content should be returned in this envelope. The Model should use `get_file_outline` first for partial/unknown outcomes. Full `get_file` is the last resort.
+No file content should be returned in this envelope. For `dirty-unexpected`, the Host should refresh/re-read state before allowing more AI edits on that file.
 
 ### Implementation Order
 
@@ -366,21 +445,23 @@ Add `StagedEditRecord` with the required fields above. The Tool Server populates
 
 3. `record_diff_decision`
 
-Records Operator decision, re-hashes watched file, runs Roslyn verification against `serverDerivedMetadata`, classifies outcome, updates session file hash to actual watched file state, records decision/classification/timestamp, releases next queued diff if available, and returns a small envelope only.
+Records the reported outcome, re-hashes watched file, classifies by strict v1 vote-plus-hash gate, updates session file hash to actual watched file state when a session is present, records outcome/classification/timestamp, releases next queued diff if available, and returns a small envelope only.
+
+For Accept, WinMerge/Operator save is the mutation path and the Tool Server verifies the watched file hash equals the staged candidate hash. For Reject, it verifies the watched file still matches the original baseline hash.
 
 4. Symbol operations
 
 Only after steps 1-3 are stable, add:
 
-- `submit_symbol(path, symbolName, code, manifest)`
+- `submit_symbol(path, symbolSelector, code, manifest)`
 - `add_symbol(path, symbolType, code, afterSymbol?, manifest)`
-- `remove_symbol(path, symbolName, manifest)`
+- `remove_symbol(path, symbolSelector, manifest)`
 - `add_using(path, namespace, manifest)`
 - `remove_using(path, namespace, manifest)`
 - `add_class(path, code, manifest)`
 - `remove_class(path, className, manifest)`
 
-All symbol operations populate `serverDerivedMetadata` via Roslyn before staging. All enter the diff queue. None overwrite watched source files directly.
+All symbol operations populate `serverDerivedMetadata` via Roslyn before staging. All enter the diff queue. Symbol edit tools do not overwrite watched source files directly. In the WinMerge workflow, the Operator-saved diff result mutates the watched source, and `record_diff_decision` verifies that the watched hash exactly matches the staged candidate for Accept.
 
 ### Core Design
 
@@ -388,12 +469,22 @@ All symbol operations populate `serverDerivedMetadata` via Roslyn before staging
 Model proposes
 Tool Server stages and derives metadata via Roslyn
 Operator reviews via diff
-Tool Server verifies against Roslyn-derived metadata
+Operator saves the full candidate or leaves source unchanged
+Tool Server verifies Operator-saved accepted candidates all-or-none
+Tool Server verifies by strict vote-plus-hash gate
 Session state advances
 Model receives small envelope only
 ```
 
-Full file content should stay in Model context memory where possible. No file reload unless the classification is `partially-merged` or `unknown`. For `partially-merged` or `unknown`, use `get_file_outline` first and `get_file` only as a last resort.
+Full file content should stay in Model context memory where possible. No file reload is needed after exact `accepted` or `rejected`. For `dirty-unexpected`, refresh/re-read state before allowing more AI edits on that file.
+
+## Structural Evolution
+
+Conformance does not mean freezing the source structure. The system may evolve structure by splitting files, extracting classes, moving symbols, adding partial classes, creating new files, or introducing new boundaries.
+
+Those changes must be explicit structural candidates, not accidental side effects of unrelated edits. Each structural candidate should be small enough for the Operator to review as one intentional move. Accept applies the whole candidate and makes it the next converged pattern. Reject applies nothing.
+
+`get_source_map` supports this by showing the real current structure before the Model proposes a refactor. It helps distinguish intentional movement from accidental movement, bounded extraction from broad derangement, and expected symbol relocation from unexpected symbol disappearance. The source map is not the accept/reject gate; the gate remains `record_diff_decision` vote-plus-hash agreement.
 
 ## Edit Format References
 
