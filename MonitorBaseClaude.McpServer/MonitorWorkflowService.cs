@@ -952,8 +952,102 @@ public sealed partial class MonitorWorkflowService
         string baseName = Path.GetFileNameWithoutExtension(context.SourceFilePath);
         string extension = Path.GetExtension(context.SourceFilePath);
         string stagedPath = Path.Combine(stagedTargetDir, $"{SanitizeForFileName(recordId)}{extension}");
-        File.WriteAllText(stagedPath, content);
+        TextFileShape sourceShape = DetectTextFileShape(context.SourceFilePath);
+        File.WriteAllText(stagedPath, NormalizeLineEndings(content, sourceShape.NewLine), sourceShape.Encoding);
         return stagedPath;
+    }
+
+    private static TextFileShape DetectTextFileShape(string sourceFilePath)
+    {
+        byte[] bytes = File.ReadAllBytes(sourceFilePath);
+        Encoding encoding = DetectEncoding(bytes);
+        string text = encoding.GetString(StripPreamble(bytes, encoding));
+        return new TextFileShape(encoding, DetectDominantNewLine(text));
+    }
+
+    private static Encoding DetectEncoding(byte[] bytes)
+    {
+        if (bytes.Length >= 3 && bytes[0] == 0xEF && bytes[1] == 0xBB && bytes[2] == 0xBF)
+        {
+            return new UTF8Encoding(encoderShouldEmitUTF8Identifier: true);
+        }
+
+        if (bytes.Length >= 2 && bytes[0] == 0xFF && bytes[1] == 0xFE)
+        {
+            return new UnicodeEncoding(bigEndian: false, byteOrderMark: true);
+        }
+
+        if (bytes.Length >= 2 && bytes[0] == 0xFE && bytes[1] == 0xFF)
+        {
+            return new UnicodeEncoding(bigEndian: true, byteOrderMark: true);
+        }
+
+        return new UTF8Encoding(encoderShouldEmitUTF8Identifier: false);
+    }
+
+    private static byte[] StripPreamble(byte[] bytes, Encoding encoding)
+    {
+        byte[] preamble = encoding.GetPreamble();
+        if (preamble.Length == 0 || bytes.Length < preamble.Length)
+        {
+            return bytes;
+        }
+
+        for (int i = 0; i < preamble.Length; i++)
+        {
+            if (bytes[i] != preamble[i])
+            {
+                return bytes;
+            }
+        }
+
+        return bytes[preamble.Length..];
+    }
+
+    private static string DetectDominantNewLine(string text)
+    {
+        int crlf = 0;
+        int lf = 0;
+        int cr = 0;
+        for (int i = 0; i < text.Length; i++)
+        {
+            if (text[i] == '\r')
+            {
+                if (i + 1 < text.Length && text[i + 1] == '\n')
+                {
+                    crlf++;
+                    i++;
+                }
+                else
+                {
+                    cr++;
+                }
+            }
+            else if (text[i] == '\n')
+            {
+                lf++;
+            }
+        }
+
+        if (crlf >= lf && crlf >= cr && crlf > 0)
+        {
+            return "\r\n";
+        }
+
+        if (lf >= cr && lf > 0)
+        {
+            return "\n";
+        }
+
+        return cr > 0 ? "\r" : Environment.NewLine;
+    }
+
+    private static string NormalizeLineEndings(string content, string newLine)
+    {
+        string normalized = content.Replace("\r\n", "\n", StringComparison.Ordinal).Replace("\r", "\n", StringComparison.Ordinal);
+        return newLine.Equals("\n", StringComparison.Ordinal)
+            ? normalized
+            : normalized.Replace("\n", newLine, StringComparison.Ordinal);
     }
 
     private StagedEditRecord CreateStagedEditRecord(
@@ -977,7 +1071,7 @@ public sealed partial class MonitorWorkflowService
             operation,
             DateTimeOffset.UtcNow,
             ComputeSha256(context.SourceFilePath),
-            ComputeSha256Text(stagedContent),
+            ComputeSha256(stagedFilePath),
             manifestJson,
             metadata,
             validation,
@@ -2591,6 +2685,10 @@ public sealed record StagedEditMetadata(
 public sealed record DiffLaunchResult(
     int? ProcessId,
     string Arguments);
+
+internal sealed record TextFileShape(
+    Encoding Encoding,
+    string NewLine);
 
 public sealed record StagedSymbolMetadata(
     string Name,
