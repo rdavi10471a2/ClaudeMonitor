@@ -62,7 +62,7 @@ Current implementation:
 - responses include modePurpose, estimatedTokenProxy, budgetLimit, wasTruncated, suggestedNarrowing when over budget, and ranked suggestedNextCalls.
 - navigation suggestedNextCalls point to get_source_map(..., mode: selector).
 - selector suggestedNextCalls point to get_symbol(..., symbolSelectorJson).
-- budgetLimit and suggestedNarrowing are advisory in the current implementation; hard truncation is not enabled yet.
+- budgetLimit is enforced in the current implementation; over-budget responses set wasTruncated, omit source-map file payload details, and return narrowing guidance for a smaller retry.
 - corpus indexes are aggregate smoke artifacts, not exact live get_source_map envelopes.
 - property signatures now preserve accessor shape, such as `public string Warning { get; }`, instead of rendering properties as field-like semicolon declarations.
 - agent/operator docs now include the anti-DRY guardrail: duplication is not automatically debt, unnecessary abstraction is also debt, and helper extraction/DRY cleanup must not happen as a side effect of narrow edits.

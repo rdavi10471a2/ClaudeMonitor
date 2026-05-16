@@ -211,32 +211,50 @@ public sealed partial class MonitorWorkflowService
             .Select(file => ShapeSourceMapFile(file, normalizedMode))
             .OrderBy(file => file.RelativeSourcePath, StringComparer.OrdinalIgnoreCase)
             .ToArray();
+        string modePurpose = GetSourceMapModePurpose(normalizedMode);
+        string watchedProjectAlias = new DirectoryInfo(observedRoot).Name;
+        string? sourceRoot = normalizedMode.Equals("full", StringComparison.OrdinalIgnoreCase) ? observedRoot : null;
+        int budgetLimit = GetSourceMapBudgetLimit(normalizedMode);
+        MonitorSourceMapNextCall[] nextCalls = BuildSourceMapNextCalls(files, normalizedMode)?.ToArray() ?? [];
 
-        MonitorSourceMapResult result = new(
+        MonitorSourceMapResult fullResult = new(
             normalizedScope,
             normalizedMode,
-            GetSourceMapModePurpose(normalizedMode),
+            modePurpose,
             requestedPath,
-            new DirectoryInfo(observedRoot).Name,
-            normalizedMode.Equals("full", StringComparison.OrdinalIgnoreCase) ? observedRoot : null,
+            watchedProjectAlias,
+            sourceRoot,
             files.Length,
             files.Sum(file => file.Symbols.Count),
             0,
-            GetSourceMapBudgetLimit(normalizedMode),
+            budgetLimit,
             false,
             null,
-            BuildSourceMapNextCalls(files, normalizedMode),
+            nextCalls,
             files);
 
-        long estimatedTokenProxy = EstimateSourceMapTokenProxy(result);
-        IReadOnlyList<MonitorSourceMapNarrowingSuggestion>? suggestions = estimatedTokenProxy > result.BudgetLimit
-            ? BuildSourceMapNarrowingSuggestions(files)
-            : null;
-        return result with
+        long estimatedTokenProxy = EstimateSourceMapTokenProxy(fullResult);
+        if (estimatedTokenProxy <= budgetLimit)
         {
-            EstimatedTokenProxy = estimatedTokenProxy,
-            SuggestedNarrowing = suggestions
-        };
+            return fullResult with { EstimatedTokenProxy = estimatedTokenProxy };
+        }
+
+        IReadOnlyList<MonitorSourceMapNarrowingSuggestion> suggestions = BuildSourceMapNarrowingSuggestions(files);
+        return new MonitorSourceMapResult(
+            normalizedScope,
+            normalizedMode,
+            modePurpose,
+            requestedPath,
+            watchedProjectAlias,
+            sourceRoot,
+            0,
+            0,
+            estimatedTokenProxy,
+            budgetLimit,
+            true,
+            suggestions,
+            nextCalls,
+            []);
     }
 
     public MonitorSymbolReadResult GetSymbol(string sourceFilePath, string? symbolName = null, string? symbolSelectorJson = null)
