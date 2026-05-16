@@ -25,6 +25,7 @@ internal static class Program
         bool fixtureRoslynSurgerySmokeMode = args.Contains("--fixture-roslyn-surgery-smoke", StringComparer.OrdinalIgnoreCase);
         bool fixtureRazorSmokeMode = args.Contains("--fixture-razor-smoke", StringComparer.OrdinalIgnoreCase);
         bool sourceMapSmokeMode = args.Contains("--source-map-smoke", StringComparer.OrdinalIgnoreCase);
+        bool sourceMapBudgetSmokeMode = args.Contains("--source-map-budget-smoke", StringComparer.OrdinalIgnoreCase);
         bool sourceMapCorpusSmokeMode = args.Contains("--source-map-corpus-smoke", StringComparer.OrdinalIgnoreCase);
         bool ollamaRouteSmokeMode = args.Contains("--ollama-route-smoke", StringComparer.OrdinalIgnoreCase);
         bool ollamaRouterDrillSmokeMode = args.Contains("--ollama-router-drill-smoke", StringComparer.OrdinalIgnoreCase);
@@ -77,6 +78,14 @@ internal static class Program
             string scope = ReadOption(args, "--scope") ?? "auto";
             string mode = ReadOption(args, "--mode") ?? "auto";
             return await RunSourceMapSmokeAsync(monitorClient, runRoot, path, scope, mode);
+        }
+
+        if (sourceMapBudgetSmokeMode)
+        {
+            string path = ReadOptionalValueAfter(args, "--source-map-budget-smoke") ?? string.Empty;
+            string scope = ReadOption(args, "--scope") ?? "project";
+            string mode = ReadOption(args, "--mode") ?? "full";
+            return await RunSourceMapSmokeAsync(monitorClient, runRoot, path, scope, mode, expectTruncated: true);
         }
 
         if (sourceMapCorpusSmokeMode)
@@ -248,10 +257,11 @@ internal static class Program
         string runRoot,
         string path,
         string scope,
-        string mode)
+        string mode,
+        bool expectTruncated = false)
     {
         Console.WriteLine("MonitorBaseClaude source-map smoke");
-        Console.WriteLine($"Target: {path}");
+        Console.WriteLine($"Target: {(string.IsNullOrWhiteSpace(path) ? "(watched project)" : path)}");
         Console.WriteLine($"Scope: {scope}");
         Console.WriteLine($"Mode: {mode}");
         Console.WriteLine($"Log root: {runRoot}");
@@ -259,10 +269,14 @@ internal static class Program
 
         Dictionary<string, object?> arguments = new()
         {
-            ["path"] = path,
             ["scope"] = scope,
             ["mode"] = mode
         };
+        if (!string.IsNullOrWhiteSpace(path))
+        {
+            arguments["path"] = path;
+        }
+
         DateTimeOffset startedAt = DateTimeOffset.Now;
         MonitorMcpToolCallResult toolResult = await monitorClient.CallToolAsync("get_source_map", arguments);
         ScriptedSmokeResult result = new(
@@ -283,7 +297,28 @@ internal static class Program
         WriteScriptedSummary(result);
         Console.WriteLine($"Raw source map: {rawPath}");
         Console.WriteLine($"Summary:        {summaryPath}");
-        return toolResult.IsError ? 1 : 0;
+        if (toolResult.IsError)
+        {
+            return 1;
+        }
+
+        if (!expectTruncated)
+        {
+            return 0;
+        }
+
+        JsonNode? root = JsonNode.Parse(toolResult.ResponseJson);
+        bool wasTruncated = root?["wasTruncated"]?.GetValue<bool?>()
+            ?? root?["WasTruncated"]?.GetValue<bool?>()
+            ?? false;
+        if (!wasTruncated)
+        {
+            Console.WriteLine("Expected get_source_map to truncate an over-budget response, but wasTruncated was false.");
+            return 1;
+        }
+
+        Console.WriteLine("Verified over-budget source-map response was truncated.");
+        return 0;
     }
 
     private static async Task<int> RunSourceMapCorpusSmokeAsync(
@@ -1660,6 +1695,7 @@ internal static class Program
             lines.Add($"Symbol count: `{FindPropertyValue(root, "symbolCount") ?? "0"}`");
             lines.Add($"Estimated token proxy: `{FindPropertyValue(root, "estimatedTokenProxy") ?? "0"}`");
             lines.Add($"Budget limit: `{FindPropertyValue(root, "budgetLimit") ?? "0"}`");
+            lines.Add($"Was truncated: `{FindPropertyValue(root, "wasTruncated") ?? "false"}`");
             lines.Add("");
             JsonArray? files = root?["files"] as JsonArray ?? root?["Files"] as JsonArray;
             if (files is not null)

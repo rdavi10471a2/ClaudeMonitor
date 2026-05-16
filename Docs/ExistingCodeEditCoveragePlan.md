@@ -661,7 +661,7 @@ Current hardening notes:
 - Source-map signatures strip leading trivia so comments and glyphs do not become accidental anchors.
 - Type symbols include syntax-level base/interface text in `baseTypes`.
 - Event declarations and event fields are surfaced as `event` symbols.
-- Responses include `modePurpose`, `estimatedTokenProxy`, `budgetLimit`, `wasTruncated`, optional `suggestedNarrowing`, and ranked `suggestedNextCalls`. Budget metadata is advisory until hard truncation is implemented.
+- Responses include `modePurpose`, `estimatedTokenProxy`, `budgetLimit`, `wasTruncated`, optional `suggestedNarrowing`, and ranked `suggestedNextCalls`. Over-budget responses now truncate source-map file payload details and tell the client to retry with less detail.
 - Source maps are discovery artifacts only. They do not replace the strict vote-plus-hash accept/reject gate.
 
 ## Edit Strategy Tiers
