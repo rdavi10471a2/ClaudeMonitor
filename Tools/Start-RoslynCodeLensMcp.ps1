@@ -1,5 +1,7 @@
 $ErrorActionPreference = 'Stop'
 
+$roslynCodelensExe = Join-Path $env:USERPROFILE '.dotnet\tools\roslyn-codelens-mcp.exe'
+
 $repoRoot = Resolve-Path (Join-Path $PSScriptRoot '..')
 $settingsPath = Join-Path $repoRoot 'appsettings.json'
 
@@ -29,5 +31,5 @@ if (-not (Test-Path -LiteralPath $solutionPath)) {
     throw "CodeLens solution path not found: $solutionPath"
 }
 
-roslyn-codelens-mcp $solutionPath
+& $roslynCodelensExe $solutionPath
 exit $LASTEXITCODE
