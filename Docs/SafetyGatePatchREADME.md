@@ -8,6 +8,8 @@ This update closes the two safety gaps found in the post-checkpoint review.
 
 - `dirty-unexpected` now blocks later staging for the same source file.
 - `refresh_file` is the v1 explicit recovery path. It refreshes the monitor Working copy and marks blocked staged records as `recovered-by-refresh`.
+- Re-voting a `blocked-dirty-unexpected` staged record is refused so the dirty block cannot be downgraded to accepted/rejected.
+- `compare_file` may refresh a missing Working copy for normal compare flow, but that implicit refresh does not recover a dirty block.
 - C# parse/syntax errors now fail before a staged record is written.
 - Overlay compile diagnostics remain advisory validation metadata on staged candidates because project references and generated state can produce false positives.
 
@@ -33,6 +35,8 @@ New decision-gate coverage:
 - `accepted` vote without saved candidate classifies `dirty-unexpected`
 - `dirty-unexpected` blocks the next staged edit
 - `refresh_file` recovers the block
+- re-voting the blocked staged record is refused
+- implicit compare refresh does not recover the block
 - rejected-after-save dirty state can be recovered by `refresh_file`
 - unrelated external dirty edit blocks later staging
 

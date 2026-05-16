@@ -69,6 +69,8 @@ Status after safety-gate update:
 
 - Implemented as a pre-stage block for source files with a latest `blocked-dirty-unexpected` staged record.
 - `refresh_file` is the explicit recovery operation for v1; it refreshes the monitor Working copy and marks blocked records as `recovered-by-refresh`.
+- Re-voting a `blocked-dirty-unexpected` staged record is refused so a later decision cannot downgrade it to accepted/rejected.
+- `compare_file` may refresh a missing Working copy for ordinary compare behavior, but that implicit refresh does not recover the dirty block.
 - Covered by `MonitorBaseClaude.ToolSmokeTests --fixture-decision-gate-smoke`.
 
 Priority 3: Submit-symbol changed-metadata smoke

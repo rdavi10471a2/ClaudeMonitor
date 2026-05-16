@@ -1,6 +1,6 @@
 # Scripted Tool Smoke Test Summary
 
-Generated: 2026-05-16T07:50:36.6579240-05:00
+Generated: 2026-05-16T08:43:56.6358625-05:00
 
 ## Fixture Status
 
@@ -13,8 +13,8 @@ Error: `False`
   "uiRoot": "C:\\VSCodeProjects\\MonitorBaseClaude",
   "mcpServerRoot": "C:\\VSCodeProjects\\MonitorBaseClaude\\MonitorBaseClaude.McpServer",
   "legacyMonitorRoot": "C:\\VSCodeProjects\\ClaudeMonitor\\Monitor",
-  "watchedSolutionPath": "C:\\VSCodeProjects\\MonitorBaseClaude\\Working\\Fixtures\\Dbv2ShapeAcceptSmoke\\20260516_075034667\\Schema Studio.sln",
-  "watchedProjectFolder": "C:\\VSCodeProjects\\MonitorBaseClaude\\Working\\Fixtures\\Dbv2ShapeAcceptSmoke\\20260516_075034667",
+  "watchedSolutionPath": "C:\\VSCodeProjects\\MonitorBaseClaude\\Working\\Fixtures\\Dbv2ShapeAcceptSmoke\\20260516_084354311\\Schema Studio.sln",
+  "watchedProjectFolder": "C:\\VSCodeProjects\\MonitorBaseClaude\\Working\\Fixtures\\Dbv2ShapeAcceptSmoke\\20260516_084354311",
   "mcpServerRootExists": true,
   "legacyMonitorRootExists": true,
   "watchedSolutionExists": true
@@ -33,7 +33,7 @@ Error: `False`
   "mode": "selector",
   "modePurpose": "stable-symbol-selection",
   "requestedPath": "Data\\BaseTableRepository.cs",
-  "watchedProjectAlias": "20260516_075034667",
+  "watchedProjectAlias": "20260516_084354311",
   "fileCount": 1,
   "symbolCount": 2,
   "estimatedTokenProxy": 665,
@@ -137,11 +137,11 @@ Error: `False`
 ```text
 {
   "status": "no-op-staged",
-  "sourceFilePath": "C:\\VSCodeProjects\\MonitorBaseClaude\\Working\\Fixtures\\Dbv2ShapeAcceptSmoke\\20260516_075034667\\Data\\BaseTableRepository.cs",
+  "sourceFilePath": "C:\\VSCodeProjects\\MonitorBaseClaude\\Working\\Fixtures\\Dbv2ShapeAcceptSmoke\\20260516_084354311\\Data\\BaseTableRepository.cs",
   "relativeSourcePath": "Data\\BaseTableRepository.cs",
-  "stagedFilePath": "C:\\VSCodeProjects\\MonitorBaseClaude\\Working\\Staged\\20260516_075034667_4db38c5cd269\\Data\\20260516_075035205_submit_file_BaseTableRepository_b8047619.cs",
-  "stagedRecordId": "20260516_075035205_submit_file_BaseTableRepository_b8047619",
-  "stagedRecordPath": "C:\\VSCodeProjects\\MonitorBaseClaude\\Working\\Staged\\Records\\20260516\\20260516_075035205_submit_file_BaseTableRepository_b8047619.json",
+  "stagedFilePath": "C:\\VSCodeProjects\\MonitorBaseClaude\\Working\\Staged\\20260516_084354311_96d470d5d9b2\\Data\\20260516_084355151_submit_file_BaseTableRepository_f1bfd1d0.cs",
+  "stagedRecordId": "20260516_084355151_submit_file_BaseTableRepository_f1bfd1d0",
+  "stagedRecordPath": "C:\\VSCodeProjects\\MonitorBaseClaude\\Working\\Staged\\Records\\20260516\\20260516_084355151_submit_file_BaseTableRepository_f1bfd1d0.json",
   "originalHash": "6686295d65f760d371d3a6b556f4aa6131cebe94c6aa600cea5e820e2fb4f496",
   "stagedHash": "6686295d65f760d371d3a6b556f4aa6131cebe94c6aa600cea5e820e2fb4f496",
   "serverDerivedMetadata": {
@@ -149,7 +149,7 @@ Error: `False`
     "symbolsRemoved": [],
     "usingsAdded": [],
     "usingsRemoved": [],
-    "stagedFilePath": "C:\\VSCodeProjects\\MonitorBaseClaude\\Working\\Staged\\20260516_075034667_4db38c5cd269\\Data\\20260516_075035205_submit_file_BaseTableRepository_b8047619.cs"
+    "stagedFilePath": "C:\\VSCodeProjects\\MonitorBaseClaude\\Working\\Staged\\20260516_084354311_96d470d5d9b2\\Data\\20260516_084355151_submit_file_BaseTableRepository_f1bfd1d0.cs"
   },
   "syntaxValidation": {
     "hasErrors": false,
@@ -185,11 +185,11 @@ Error: `False`
 ```text
 {
   "status": "staged",
-  "sourceFilePath": "C:\\VSCodeProjects\\MonitorBaseClaude\\Working\\Fixtures\\Dbv2ShapeAcceptSmoke\\20260516_075034667\\Data\\BaseTableRepository.cs",
+  "sourceFilePath": "C:\\VSCodeProjects\\MonitorBaseClaude\\Working\\Fixtures\\Dbv2ShapeAcceptSmoke\\20260516_084354311\\Data\\BaseTableRepository.cs",
   "relativeSourcePath": "Data\\BaseTableRepository.cs",
-  "stagedFilePath": "C:\\VSCodeProjects\\MonitorBaseClaude\\Working\\Staged\\20260516_075034667_4db38c5cd269\\Data\\20260516_075035800_submit_file_BaseTableRepository_23124876.cs",
-  "stagedRecordId": "20260516_075035800_submit_file_BaseTableRepository_23124876",
-  "stagedRecordPath": "C:\\VSCodeProjects\\MonitorBaseClaude\\Working\\Staged\\Records\\20260516\\20260516_075035800_submit_file_BaseTableRepository_23124876.json",
+  "stagedFilePath": "C:\\VSCodeProjects\\MonitorBaseClaude\\Working\\Staged\\20260516_084354311_96d470d5d9b2\\Data\\20260516_084355727_submit_file_BaseTableRepository_ec9d62a6.cs",
+  "stagedRecordId": "20260516_084355727_submit_file_BaseTableRepository_ec9d62a6",
+  "stagedRecordPath": "C:\\VSCodeProjects\\MonitorBaseClaude\\Working\\Staged\\Records\\20260516\\20260516_084355727_submit_file_BaseTableRepository_ec9d62a6.json",
   "originalHash": "6686295d65f760d371d3a6b556f4aa6131cebe94c6aa600cea5e820e2fb4f496",
   "stagedHash": "b6630747222891e135e61f85b33142df3dcaddaae7f549c767dd58ae52847b77",
   "serverDerivedMetadata": {
@@ -197,7 +197,7 @@ Error: `False`
     "symbolsRemoved": [],
     "usingsAdded": [],
     "usingsRemoved": [],
-    "stagedFilePath": "C:\\VSCodeProjects\\MonitorBaseClaude\\Working\\Staged\\20260516_075034667_4db38c5cd269\\Data\\20260516_075035800_submit_file_BaseTableRepository_23124876.cs"
+    "stagedFilePath": "C:\\VSCodeProjects\\MonitorBaseClaude\\Working\\Staged\\20260516_084354311_96d470d5d9b2\\Data\\20260516_084355727_submit_file_BaseTableRepository_ec9d62a6.cs"
   },
   "syntaxValidation": {
     "hasErrors": false,
@@ -217,16 +217,16 @@ Error: `False`
 ## Decision Clean Accept
 
 Tool: `record_diff_decision`
-Question: Record accepted for 20260516_075035800_submit_file_BaseTableRepository_23124876 and classify by vote-plus-hash agreement.
+Question: Record accepted for 20260516_084355727_submit_file_BaseTableRepository_ec9d62a6 and classify by vote-plus-hash agreement.
 Error: `False`
 
 ```text
 {
-  "stagedRecordId": "20260516_075035800_submit_file_BaseTableRepository_23124876",
-  "sourceFilePath": "C:\\VSCodeProjects\\MonitorBaseClaude\\Working\\Fixtures\\Dbv2ShapeAcceptSmoke\\20260516_075034667\\Data\\BaseTableRepository.cs",
+  "stagedRecordId": "20260516_084355727_submit_file_BaseTableRepository_ec9d62a6",
+  "sourceFilePath": "C:\\VSCodeProjects\\MonitorBaseClaude\\Working\\Fixtures\\Dbv2ShapeAcceptSmoke\\20260516_084354311\\Data\\BaseTableRepository.cs",
   "relativeSourcePath": "Data\\BaseTableRepository.cs",
-  "stagedRecordPath": "C:\\VSCodeProjects\\MonitorBaseClaude\\Working\\Staged\\Records\\20260516\\20260516_075035800_submit_file_BaseTableRepository_23124876.json",
-  "stagedFilePath": "C:\\VSCodeProjects\\MonitorBaseClaude\\Working\\Staged\\20260516_075034667_4db38c5cd269\\Data\\20260516_075035800_submit_file_BaseTableRepository_23124876.cs",
+  "stagedRecordPath": "C:\\VSCodeProjects\\MonitorBaseClaude\\Working\\Staged\\Records\\20260516\\20260516_084355727_submit_file_BaseTableRepository_ec9d62a6.json",
+  "stagedFilePath": "C:\\VSCodeProjects\\MonitorBaseClaude\\Working\\Staged\\20260516_084354311_96d470d5d9b2\\Data\\20260516_084355727_submit_file_BaseTableRepository_ec9d62a6.cs",
   "operatorDecision": "accepted",
   "classification": "accepted",
   "decisionMatchesClassification": true,
@@ -236,8 +236,8 @@ Error: `False`
   "currentHash": "b6630747222891e135e61f85b33142df3dcaddaae7f549c767dd58ae52847b77",
   "queueStatus": "accepted",
   "note": "Decision gate fixture smoke.",
-  "decidedAt": "2026-05-16T12:50:35.9760758\u002B00:00",
-  "decisionRecordPath": "C:\\VSCodeProjects\\MonitorBaseClaude\\Working\\Staged\\Decisions\\20260516\\20260516_075035800_submit_file_BaseTableRepository_23124876_075035976_accepted.json"
+  "decidedAt": "2026-05-16T13:43:55.9027039\u002B00:00",
+  "decisionRecordPath": "C:\\VSCodeProjects\\MonitorBaseClaude\\Working\\Staged\\Decisions\\20260516\\20260516_084355727_submit_file_BaseTableRepository_ec9d62a6_084355903_accepted.json"
 }
 ```
 
@@ -250,11 +250,11 @@ Error: `False`
 ```text
 {
   "status": "staged",
-  "sourceFilePath": "C:\\VSCodeProjects\\MonitorBaseClaude\\Working\\Fixtures\\Dbv2ShapeAcceptSmoke\\20260516_075034667\\Data\\BaseTableRepository.cs",
+  "sourceFilePath": "C:\\VSCodeProjects\\MonitorBaseClaude\\Working\\Fixtures\\Dbv2ShapeAcceptSmoke\\20260516_084354311\\Data\\BaseTableRepository.cs",
   "relativeSourcePath": "Data\\BaseTableRepository.cs",
-  "stagedFilePath": "C:\\VSCodeProjects\\MonitorBaseClaude\\Working\\Staged\\20260516_075034667_4db38c5cd269\\Data\\20260516_075036000_submit_file_BaseTableRepository_b4dfb423.cs",
-  "stagedRecordId": "20260516_075036000_submit_file_BaseTableRepository_b4dfb423",
-  "stagedRecordPath": "C:\\VSCodeProjects\\MonitorBaseClaude\\Working\\Staged\\Records\\20260516\\20260516_075036000_submit_file_BaseTableRepository_b4dfb423.json",
+  "stagedFilePath": "C:\\VSCodeProjects\\MonitorBaseClaude\\Working\\Staged\\20260516_084354311_96d470d5d9b2\\Data\\20260516_084355916_submit_file_BaseTableRepository_9416c513.cs",
+  "stagedRecordId": "20260516_084355916_submit_file_BaseTableRepository_9416c513",
+  "stagedRecordPath": "C:\\VSCodeProjects\\MonitorBaseClaude\\Working\\Staged\\Records\\20260516\\20260516_084355916_submit_file_BaseTableRepository_9416c513.json",
   "originalHash": "6686295d65f760d371d3a6b556f4aa6131cebe94c6aa600cea5e820e2fb4f496",
   "stagedHash": "4b9664d00b7c86c093f84b4a22d40f2e1905ccc9fa2f641eeb10bf0bf0052a87",
   "serverDerivedMetadata": {
@@ -262,7 +262,7 @@ Error: `False`
     "symbolsRemoved": [],
     "usingsAdded": [],
     "usingsRemoved": [],
-    "stagedFilePath": "C:\\VSCodeProjects\\MonitorBaseClaude\\Working\\Staged\\20260516_075034667_4db38c5cd269\\Data\\20260516_075036000_submit_file_BaseTableRepository_b4dfb423.cs"
+    "stagedFilePath": "C:\\VSCodeProjects\\MonitorBaseClaude\\Working\\Staged\\20260516_084354311_96d470d5d9b2\\Data\\20260516_084355916_submit_file_BaseTableRepository_9416c513.cs"
   },
   "syntaxValidation": {
     "hasErrors": false,
@@ -282,16 +282,16 @@ Error: `False`
 ## Decision Clean Reject
 
 Tool: `record_diff_decision`
-Question: Record rejected for 20260516_075036000_submit_file_BaseTableRepository_b4dfb423 and classify by vote-plus-hash agreement.
+Question: Record rejected for 20260516_084355916_submit_file_BaseTableRepository_9416c513 and classify by vote-plus-hash agreement.
 Error: `False`
 
 ```text
 {
-  "stagedRecordId": "20260516_075036000_submit_file_BaseTableRepository_b4dfb423",
-  "sourceFilePath": "C:\\VSCodeProjects\\MonitorBaseClaude\\Working\\Fixtures\\Dbv2ShapeAcceptSmoke\\20260516_075034667\\Data\\BaseTableRepository.cs",
+  "stagedRecordId": "20260516_084355916_submit_file_BaseTableRepository_9416c513",
+  "sourceFilePath": "C:\\VSCodeProjects\\MonitorBaseClaude\\Working\\Fixtures\\Dbv2ShapeAcceptSmoke\\20260516_084354311\\Data\\BaseTableRepository.cs",
   "relativeSourcePath": "Data\\BaseTableRepository.cs",
-  "stagedRecordPath": "C:\\VSCodeProjects\\MonitorBaseClaude\\Working\\Staged\\Records\\20260516\\20260516_075036000_submit_file_BaseTableRepository_b4dfb423.json",
-  "stagedFilePath": "C:\\VSCodeProjects\\MonitorBaseClaude\\Working\\Staged\\20260516_075034667_4db38c5cd269\\Data\\20260516_075036000_submit_file_BaseTableRepository_b4dfb423.cs",
+  "stagedRecordPath": "C:\\VSCodeProjects\\MonitorBaseClaude\\Working\\Staged\\Records\\20260516\\20260516_084355916_submit_file_BaseTableRepository_9416c513.json",
+  "stagedFilePath": "C:\\VSCodeProjects\\MonitorBaseClaude\\Working\\Staged\\20260516_084354311_96d470d5d9b2\\Data\\20260516_084355916_submit_file_BaseTableRepository_9416c513.cs",
   "operatorDecision": "rejected",
   "classification": "rejected",
   "decisionMatchesClassification": true,
@@ -301,8 +301,8 @@ Error: `False`
   "currentHash": "6686295d65f760d371d3a6b556f4aa6131cebe94c6aa600cea5e820e2fb4f496",
   "queueStatus": "rejected",
   "note": "Decision gate fixture smoke.",
-  "decidedAt": "2026-05-16T12:50:36.1258514\u002B00:00",
-  "decisionRecordPath": "C:\\VSCodeProjects\\MonitorBaseClaude\\Working\\Staged\\Decisions\\20260516\\20260516_075036000_submit_file_BaseTableRepository_b4dfb423_075036125_rejected.json"
+  "decidedAt": "2026-05-16T13:43:56.0553049\u002B00:00",
+  "decisionRecordPath": "C:\\VSCodeProjects\\MonitorBaseClaude\\Working\\Staged\\Decisions\\20260516\\20260516_084355916_submit_file_BaseTableRepository_9416c513_084356055_rejected.json"
 }
 ```
 
@@ -315,11 +315,11 @@ Error: `False`
 ```text
 {
   "status": "staged",
-  "sourceFilePath": "C:\\VSCodeProjects\\MonitorBaseClaude\\Working\\Fixtures\\Dbv2ShapeAcceptSmoke\\20260516_075034667\\Data\\BaseTableRepository.cs",
+  "sourceFilePath": "C:\\VSCodeProjects\\MonitorBaseClaude\\Working\\Fixtures\\Dbv2ShapeAcceptSmoke\\20260516_084354311\\Data\\BaseTableRepository.cs",
   "relativeSourcePath": "Data\\BaseTableRepository.cs",
-  "stagedFilePath": "C:\\VSCodeProjects\\MonitorBaseClaude\\Working\\Staged\\20260516_075034667_4db38c5cd269\\Data\\20260516_075036134_submit_file_BaseTableRepository_7b2962af.cs",
-  "stagedRecordId": "20260516_075036134_submit_file_BaseTableRepository_7b2962af",
-  "stagedRecordPath": "C:\\VSCodeProjects\\MonitorBaseClaude\\Working\\Staged\\Records\\20260516\\20260516_075036134_submit_file_BaseTableRepository_7b2962af.json",
+  "stagedFilePath": "C:\\VSCodeProjects\\MonitorBaseClaude\\Working\\Staged\\20260516_084354311_96d470d5d9b2\\Data\\20260516_084356067_submit_file_BaseTableRepository_851c89e3.cs",
+  "stagedRecordId": "20260516_084356067_submit_file_BaseTableRepository_851c89e3",
+  "stagedRecordPath": "C:\\VSCodeProjects\\MonitorBaseClaude\\Working\\Staged\\Records\\20260516\\20260516_084356067_submit_file_BaseTableRepository_851c89e3.json",
   "originalHash": "6686295d65f760d371d3a6b556f4aa6131cebe94c6aa600cea5e820e2fb4f496",
   "stagedHash": "b2224c8952175d902c521d81ebbeceeaaeb16d5c57075ab3d83b1312e3330012",
   "serverDerivedMetadata": {
@@ -327,7 +327,7 @@ Error: `False`
     "symbolsRemoved": [],
     "usingsAdded": [],
     "usingsRemoved": [],
-    "stagedFilePath": "C:\\VSCodeProjects\\MonitorBaseClaude\\Working\\Staged\\20260516_075034667_4db38c5cd269\\Data\\20260516_075036134_submit_file_BaseTableRepository_7b2962af.cs"
+    "stagedFilePath": "C:\\VSCodeProjects\\MonitorBaseClaude\\Working\\Staged\\20260516_084354311_96d470d5d9b2\\Data\\20260516_084356067_submit_file_BaseTableRepository_851c89e3.cs"
   },
   "syntaxValidation": {
     "hasErrors": false,
@@ -347,16 +347,16 @@ Error: `False`
 ## Decision Accept Not Applied
 
 Tool: `record_diff_decision`
-Question: Record accepted for 20260516_075036134_submit_file_BaseTableRepository_7b2962af and classify by vote-plus-hash agreement.
+Question: Record accepted for 20260516_084356067_submit_file_BaseTableRepository_851c89e3 and classify by vote-plus-hash agreement.
 Error: `False`
 
 ```text
 {
-  "stagedRecordId": "20260516_075036134_submit_file_BaseTableRepository_7b2962af",
-  "sourceFilePath": "C:\\VSCodeProjects\\MonitorBaseClaude\\Working\\Fixtures\\Dbv2ShapeAcceptSmoke\\20260516_075034667\\Data\\BaseTableRepository.cs",
+  "stagedRecordId": "20260516_084356067_submit_file_BaseTableRepository_851c89e3",
+  "sourceFilePath": "C:\\VSCodeProjects\\MonitorBaseClaude\\Working\\Fixtures\\Dbv2ShapeAcceptSmoke\\20260516_084354311\\Data\\BaseTableRepository.cs",
   "relativeSourcePath": "Data\\BaseTableRepository.cs",
-  "stagedRecordPath": "C:\\VSCodeProjects\\MonitorBaseClaude\\Working\\Staged\\Records\\20260516\\20260516_075036134_submit_file_BaseTableRepository_7b2962af.json",
-  "stagedFilePath": "C:\\VSCodeProjects\\MonitorBaseClaude\\Working\\Staged\\20260516_075034667_4db38c5cd269\\Data\\20260516_075036134_submit_file_BaseTableRepository_7b2962af.cs",
+  "stagedRecordPath": "C:\\VSCodeProjects\\MonitorBaseClaude\\Working\\Staged\\Records\\20260516\\20260516_084356067_submit_file_BaseTableRepository_851c89e3.json",
+  "stagedFilePath": "C:\\VSCodeProjects\\MonitorBaseClaude\\Working\\Staged\\20260516_084354311_96d470d5d9b2\\Data\\20260516_084356067_submit_file_BaseTableRepository_851c89e3.cs",
   "operatorDecision": "accepted",
   "classification": "dirty-unexpected",
   "decisionMatchesClassification": false,
@@ -366,9 +366,19 @@ Error: `False`
   "currentHash": "6686295d65f760d371d3a6b556f4aa6131cebe94c6aa600cea5e820e2fb4f496",
   "queueStatus": "blocked-dirty-unexpected",
   "note": "Decision gate fixture smoke.",
-  "decidedAt": "2026-05-16T12:50:36.2757689\u002B00:00",
-  "decisionRecordPath": "C:\\VSCodeProjects\\MonitorBaseClaude\\Working\\Staged\\Decisions\\20260516\\20260516_075036134_submit_file_BaseTableRepository_7b2962af_075036275_dirty-unexpected.json"
+  "decidedAt": "2026-05-16T13:43:56.2262129\u002B00:00",
+  "decisionRecordPath": "C:\\VSCodeProjects\\MonitorBaseClaude\\Working\\Staged\\Decisions\\20260516\\20260516_084356067_submit_file_BaseTableRepository_851c89e3_084356226_dirty-unexpected.json"
 }
+```
+
+## Re-Vote Blocked After Accept Not Applied
+
+Tool: `record_diff_decision`
+Question: Verify re-voting a blocked dirty-unexpected staged record is refused.
+Error: `True`
+
+```text
+An error occurred invoking 'record_diff_decision'.
 ```
 
 ## Stage Blocked After Accept Not Applied
@@ -390,12 +400,12 @@ Error: `False`
 ```text
 {
   "status": "refreshed",
-  "sourceFilePath": "C:\\VSCodeProjects\\MonitorBaseClaude\\Working\\Fixtures\\Dbv2ShapeAcceptSmoke\\20260516_075034667\\Data\\BaseTableRepository.cs",
-  "watchedProjectFolder": "C:\\VSCodeProjects\\MonitorBaseClaude\\Working\\Fixtures\\Dbv2ShapeAcceptSmoke\\20260516_075034667",
-  "observedRootKey": "20260516_075034667_4db38c5cd269",
+  "sourceFilePath": "C:\\VSCodeProjects\\MonitorBaseClaude\\Working\\Fixtures\\Dbv2ShapeAcceptSmoke\\20260516_084354311\\Data\\BaseTableRepository.cs",
+  "watchedProjectFolder": "C:\\VSCodeProjects\\MonitorBaseClaude\\Working\\Fixtures\\Dbv2ShapeAcceptSmoke\\20260516_084354311",
+  "observedRootKey": "20260516_084354311_96d470d5d9b2",
   "relativeSourcePath": "Data\\BaseTableRepository.cs",
-  "workingFilePath": "C:\\VSCodeProjects\\MonitorBaseClaude\\Working\\20260516_075034667_4db38c5cd269\\Data\\BaseTableRepository.cs",
-  "refreshStatePath": "C:\\VSCodeProjects\\MonitorBaseClaude\\Working\\.state\\20260516_075034667_4db38c5cd269\\Data\\BaseTableRepository.cs.refresh.state"
+  "workingFilePath": "C:\\VSCodeProjects\\MonitorBaseClaude\\Working\\20260516_084354311_96d470d5d9b2\\Data\\BaseTableRepository.cs",
+  "refreshStatePath": "C:\\VSCodeProjects\\MonitorBaseClaude\\Working\\.state\\20260516_084354311_96d470d5d9b2\\Data\\BaseTableRepository.cs.refresh.state"
 }
 ```
 
@@ -408,11 +418,11 @@ Error: `False`
 ```text
 {
   "status": "staged",
-  "sourceFilePath": "C:\\VSCodeProjects\\MonitorBaseClaude\\Working\\Fixtures\\Dbv2ShapeAcceptSmoke\\20260516_075034667\\Data\\BaseTableRepository.cs",
+  "sourceFilePath": "C:\\VSCodeProjects\\MonitorBaseClaude\\Working\\Fixtures\\Dbv2ShapeAcceptSmoke\\20260516_084354311\\Data\\BaseTableRepository.cs",
   "relativeSourcePath": "Data\\BaseTableRepository.cs",
-  "stagedFilePath": "C:\\VSCodeProjects\\MonitorBaseClaude\\Working\\Staged\\20260516_075034667_4db38c5cd269\\Data\\20260516_075036318_submit_file_BaseTableRepository_9b300d8c.cs",
-  "stagedRecordId": "20260516_075036318_submit_file_BaseTableRepository_9b300d8c",
-  "stagedRecordPath": "C:\\VSCodeProjects\\MonitorBaseClaude\\Working\\Staged\\Records\\20260516\\20260516_075036318_submit_file_BaseTableRepository_9b300d8c.json",
+  "stagedFilePath": "C:\\VSCodeProjects\\MonitorBaseClaude\\Working\\Staged\\20260516_084354311_96d470d5d9b2\\Data\\20260516_084356270_submit_file_BaseTableRepository_afb15ced.cs",
+  "stagedRecordId": "20260516_084356270_submit_file_BaseTableRepository_afb15ced",
+  "stagedRecordPath": "C:\\VSCodeProjects\\MonitorBaseClaude\\Working\\Staged\\Records\\20260516\\20260516_084356270_submit_file_BaseTableRepository_afb15ced.json",
   "originalHash": "6686295d65f760d371d3a6b556f4aa6131cebe94c6aa600cea5e820e2fb4f496",
   "stagedHash": "620bd8eb75b86e3f19f4a3ddd24cba69418e7327b93cb29b4b5e669b39b474aa",
   "serverDerivedMetadata": {
@@ -420,7 +430,7 @@ Error: `False`
     "symbolsRemoved": [],
     "usingsAdded": [],
     "usingsRemoved": [],
-    "stagedFilePath": "C:\\VSCodeProjects\\MonitorBaseClaude\\Working\\Staged\\20260516_075034667_4db38c5cd269\\Data\\20260516_075036318_submit_file_BaseTableRepository_9b300d8c.cs"
+    "stagedFilePath": "C:\\VSCodeProjects\\MonitorBaseClaude\\Working\\Staged\\20260516_084354311_96d470d5d9b2\\Data\\20260516_084356270_submit_file_BaseTableRepository_afb15ced.cs"
   },
   "syntaxValidation": {
     "hasErrors": false,
@@ -440,16 +450,16 @@ Error: `False`
 ## Decision Reject After Save
 
 Tool: `record_diff_decision`
-Question: Record rejected for 20260516_075036318_submit_file_BaseTableRepository_9b300d8c and classify by vote-plus-hash agreement.
+Question: Record rejected for 20260516_084356270_submit_file_BaseTableRepository_afb15ced and classify by vote-plus-hash agreement.
 Error: `False`
 
 ```text
 {
-  "stagedRecordId": "20260516_075036318_submit_file_BaseTableRepository_9b300d8c",
-  "sourceFilePath": "C:\\VSCodeProjects\\MonitorBaseClaude\\Working\\Fixtures\\Dbv2ShapeAcceptSmoke\\20260516_075034667\\Data\\BaseTableRepository.cs",
+  "stagedRecordId": "20260516_084356270_submit_file_BaseTableRepository_afb15ced",
+  "sourceFilePath": "C:\\VSCodeProjects\\MonitorBaseClaude\\Working\\Fixtures\\Dbv2ShapeAcceptSmoke\\20260516_084354311\\Data\\BaseTableRepository.cs",
   "relativeSourcePath": "Data\\BaseTableRepository.cs",
-  "stagedRecordPath": "C:\\VSCodeProjects\\MonitorBaseClaude\\Working\\Staged\\Records\\20260516\\20260516_075036318_submit_file_BaseTableRepository_9b300d8c.json",
-  "stagedFilePath": "C:\\VSCodeProjects\\MonitorBaseClaude\\Working\\Staged\\20260516_075034667_4db38c5cd269\\Data\\20260516_075036318_submit_file_BaseTableRepository_9b300d8c.cs",
+  "stagedRecordPath": "C:\\VSCodeProjects\\MonitorBaseClaude\\Working\\Staged\\Records\\20260516\\20260516_084356270_submit_file_BaseTableRepository_afb15ced.json",
+  "stagedFilePath": "C:\\VSCodeProjects\\MonitorBaseClaude\\Working\\Staged\\20260516_084354311_96d470d5d9b2\\Data\\20260516_084356270_submit_file_BaseTableRepository_afb15ced.cs",
   "operatorDecision": "rejected",
   "classification": "dirty-unexpected",
   "decisionMatchesClassification": false,
@@ -459,8 +469,8 @@ Error: `False`
   "currentHash": "620bd8eb75b86e3f19f4a3ddd24cba69418e7327b93cb29b4b5e669b39b474aa",
   "queueStatus": "blocked-dirty-unexpected",
   "note": "Decision gate fixture smoke.",
-  "decidedAt": "2026-05-16T12:50:36.4545062\u002B00:00",
-  "decisionRecordPath": "C:\\VSCodeProjects\\MonitorBaseClaude\\Working\\Staged\\Decisions\\20260516\\20260516_075036318_submit_file_BaseTableRepository_9b300d8c_075036454_dirty-unexpected.json"
+  "decidedAt": "2026-05-16T13:43:56.408466\u002B00:00",
+  "decisionRecordPath": "C:\\VSCodeProjects\\MonitorBaseClaude\\Working\\Staged\\Decisions\\20260516\\20260516_084356270_submit_file_BaseTableRepository_afb15ced_084356408_dirty-unexpected.json"
 }
 ```
 
@@ -473,12 +483,12 @@ Error: `False`
 ```text
 {
   "status": "refreshed",
-  "sourceFilePath": "C:\\VSCodeProjects\\MonitorBaseClaude\\Working\\Fixtures\\Dbv2ShapeAcceptSmoke\\20260516_075034667\\Data\\BaseTableRepository.cs",
-  "watchedProjectFolder": "C:\\VSCodeProjects\\MonitorBaseClaude\\Working\\Fixtures\\Dbv2ShapeAcceptSmoke\\20260516_075034667",
-  "observedRootKey": "20260516_075034667_4db38c5cd269",
+  "sourceFilePath": "C:\\VSCodeProjects\\MonitorBaseClaude\\Working\\Fixtures\\Dbv2ShapeAcceptSmoke\\20260516_084354311\\Data\\BaseTableRepository.cs",
+  "watchedProjectFolder": "C:\\VSCodeProjects\\MonitorBaseClaude\\Working\\Fixtures\\Dbv2ShapeAcceptSmoke\\20260516_084354311",
+  "observedRootKey": "20260516_084354311_96d470d5d9b2",
   "relativeSourcePath": "Data\\BaseTableRepository.cs",
-  "workingFilePath": "C:\\VSCodeProjects\\MonitorBaseClaude\\Working\\20260516_075034667_4db38c5cd269\\Data\\BaseTableRepository.cs",
-  "refreshStatePath": "C:\\VSCodeProjects\\MonitorBaseClaude\\Working\\.state\\20260516_075034667_4db38c5cd269\\Data\\BaseTableRepository.cs.refresh.state"
+  "workingFilePath": "C:\\VSCodeProjects\\MonitorBaseClaude\\Working\\20260516_084354311_96d470d5d9b2\\Data\\BaseTableRepository.cs",
+  "refreshStatePath": "C:\\VSCodeProjects\\MonitorBaseClaude\\Working\\.state\\20260516_084354311_96d470d5d9b2\\Data\\BaseTableRepository.cs.refresh.state"
 }
 ```
 
@@ -491,11 +501,11 @@ Error: `False`
 ```text
 {
   "status": "staged",
-  "sourceFilePath": "C:\\VSCodeProjects\\MonitorBaseClaude\\Working\\Fixtures\\Dbv2ShapeAcceptSmoke\\20260516_075034667\\Data\\BaseTableRepository.cs",
+  "sourceFilePath": "C:\\VSCodeProjects\\MonitorBaseClaude\\Working\\Fixtures\\Dbv2ShapeAcceptSmoke\\20260516_084354311\\Data\\BaseTableRepository.cs",
   "relativeSourcePath": "Data\\BaseTableRepository.cs",
-  "stagedFilePath": "C:\\VSCodeProjects\\MonitorBaseClaude\\Working\\Staged\\20260516_075034667_4db38c5cd269\\Data\\20260516_075036472_submit_file_BaseTableRepository_8a854c95.cs",
-  "stagedRecordId": "20260516_075036472_submit_file_BaseTableRepository_8a854c95",
-  "stagedRecordPath": "C:\\VSCodeProjects\\MonitorBaseClaude\\Working\\Staged\\Records\\20260516\\20260516_075036472_submit_file_BaseTableRepository_8a854c95.json",
+  "stagedFilePath": "C:\\VSCodeProjects\\MonitorBaseClaude\\Working\\Staged\\20260516_084354311_96d470d5d9b2\\Data\\20260516_084356431_submit_file_BaseTableRepository_3d5a230a.cs",
+  "stagedRecordId": "20260516_084356431_submit_file_BaseTableRepository_3d5a230a",
+  "stagedRecordPath": "C:\\VSCodeProjects\\MonitorBaseClaude\\Working\\Staged\\Records\\20260516\\20260516_084356431_submit_file_BaseTableRepository_3d5a230a.json",
   "originalHash": "6686295d65f760d371d3a6b556f4aa6131cebe94c6aa600cea5e820e2fb4f496",
   "stagedHash": "b031f1602d1cf3e32cc7623fe6911a82af7c8feb2621ac6233cc0db3489188df",
   "serverDerivedMetadata": {
@@ -503,7 +513,7 @@ Error: `False`
     "symbolsRemoved": [],
     "usingsAdded": [],
     "usingsRemoved": [],
-    "stagedFilePath": "C:\\VSCodeProjects\\MonitorBaseClaude\\Working\\Staged\\20260516_075034667_4db38c5cd269\\Data\\20260516_075036472_submit_file_BaseTableRepository_8a854c95.cs"
+    "stagedFilePath": "C:\\VSCodeProjects\\MonitorBaseClaude\\Working\\Staged\\20260516_084354311_96d470d5d9b2\\Data\\20260516_084356431_submit_file_BaseTableRepository_3d5a230a.cs"
   },
   "syntaxValidation": {
     "hasErrors": false,
@@ -523,16 +533,16 @@ Error: `False`
 ## Decision Dirty External Edit
 
 Tool: `record_diff_decision`
-Question: Record rejected for 20260516_075036472_submit_file_BaseTableRepository_8a854c95 and classify by vote-plus-hash agreement.
+Question: Record rejected for 20260516_084356431_submit_file_BaseTableRepository_3d5a230a and classify by vote-plus-hash agreement.
 Error: `False`
 
 ```text
 {
-  "stagedRecordId": "20260516_075036472_submit_file_BaseTableRepository_8a854c95",
-  "sourceFilePath": "C:\\VSCodeProjects\\MonitorBaseClaude\\Working\\Fixtures\\Dbv2ShapeAcceptSmoke\\20260516_075034667\\Data\\BaseTableRepository.cs",
+  "stagedRecordId": "20260516_084356431_submit_file_BaseTableRepository_3d5a230a",
+  "sourceFilePath": "C:\\VSCodeProjects\\MonitorBaseClaude\\Working\\Fixtures\\Dbv2ShapeAcceptSmoke\\20260516_084354311\\Data\\BaseTableRepository.cs",
   "relativeSourcePath": "Data\\BaseTableRepository.cs",
-  "stagedRecordPath": "C:\\VSCodeProjects\\MonitorBaseClaude\\Working\\Staged\\Records\\20260516\\20260516_075036472_submit_file_BaseTableRepository_8a854c95.json",
-  "stagedFilePath": "C:\\VSCodeProjects\\MonitorBaseClaude\\Working\\Staged\\20260516_075034667_4db38c5cd269\\Data\\20260516_075036472_submit_file_BaseTableRepository_8a854c95.cs",
+  "stagedRecordPath": "C:\\VSCodeProjects\\MonitorBaseClaude\\Working\\Staged\\Records\\20260516\\20260516_084356431_submit_file_BaseTableRepository_3d5a230a.json",
+  "stagedFilePath": "C:\\VSCodeProjects\\MonitorBaseClaude\\Working\\Staged\\20260516_084354311_96d470d5d9b2\\Data\\20260516_084356431_submit_file_BaseTableRepository_3d5a230a.cs",
   "operatorDecision": "rejected",
   "classification": "dirty-unexpected",
   "decisionMatchesClassification": false,
@@ -542,9 +552,36 @@ Error: `False`
   "currentHash": "73fc56d0027aa773abf8fad71a22b636e09e947b01370ff09692e4f52ec6719a",
   "queueStatus": "blocked-dirty-unexpected",
   "note": "Decision gate fixture smoke.",
-  "decidedAt": "2026-05-16T12:50:36.6402755\u002B00:00",
-  "decisionRecordPath": "C:\\VSCodeProjects\\MonitorBaseClaude\\Working\\Staged\\Decisions\\20260516\\20260516_075036472_submit_file_BaseTableRepository_8a854c95_075036640_dirty-unexpected.json"
+  "decidedAt": "2026-05-16T13:43:56.6001608\u002B00:00",
+  "decisionRecordPath": "C:\\VSCodeProjects\\MonitorBaseClaude\\Working\\Staged\\Decisions\\20260516\\20260516_084356431_submit_file_BaseTableRepository_3d5a230a_084356600_dirty-unexpected.json"
 }
+```
+
+## Compare Missing Working While Blocked
+
+Tool: `compare_file`
+Question: Verify compare_file can refresh a missing Working copy without recovering dirty-unexpected.
+Error: `False`
+
+```text
+{
+  "status": "refreshed-identical",
+  "sourceFilePath": "C:\\VSCodeProjects\\MonitorBaseClaude\\Working\\Fixtures\\Dbv2ShapeAcceptSmoke\\20260516_084354311\\Data\\BaseTableRepository.cs",
+  "workingFilePath": "C:\\VSCodeProjects\\MonitorBaseClaude\\Working\\20260516_084354311_96d470d5d9b2\\Data\\BaseTableRepository.cs",
+  "proposedFilePath": "",
+  "diffToolArguments": "No differences found between source and Working copy.",
+  "refreshedBeforeCompare": true
+}
+```
+
+## Compare Missing Working While Blocked Still Blocked
+
+Tool: `submit_file`
+Question: Verify dirty-unexpected blocks additional staging until explicit recovery.
+Error: `True`
+
+```text
+An error occurred invoking 'submit_file'.
 ```
 
 ## Stage Blocked After Dirty External Edit

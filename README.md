@@ -52,6 +52,8 @@ The source-map hierarchy is intentional:
 - The Operator accepts all or rejects all. Partial hunk merging is outside the v1 workflow.
 - `dirty-unexpected` blocks further staged edits on that file.
 - `refresh_file` is the current v1 recovery path after Host/Operator inspection.
+- Re-voting a blocked dirty record is refused; recovery is explicit.
+- `compare_file` may refresh a missing Working copy, but that implicit refresh does not recover dirty blocks.
 - C# parse/syntax errors are rejected before a staged record is written.
 - Overlay compile diagnostics are reported as validation metadata, not a hard staging blocker, because project/reference/generated-code state can create false positives.
 - Razor is handled conservatively: full-file staging plus `razor-validation-pending`; no pretend C# symbol surgery for raw `.razor` files.

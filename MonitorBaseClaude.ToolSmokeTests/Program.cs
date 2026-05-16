@@ -901,6 +901,7 @@ internal static class Program
 
         List<ScriptedSmokeResult> results = [];
         int index = 0;
+        string? latestWorkingFilePath = null;
 
         async Task<ScriptedSmokeResult> StepAsync(string name, string toolName, Dictionary<string, object?>? arguments, string question)
         {
@@ -988,9 +989,47 @@ internal static class Program
                 "refresh_file",
                 new Dictionary<string, object?> { ["sourceFilePath"] = fixture.TargetRelativePath },
                 "Refresh fixture source to recover from dirty-unexpected after Host/Operator inspection.");
-            string status = FindPropertyValue(JsonNode.Parse(refreshResult.ToolResult.ResponseJson), "status") ?? string.Empty;
+            JsonNode? response = JsonNode.Parse(refreshResult.ToolResult.ResponseJson);
+            string status = FindPropertyValue(response, "status") ?? string.Empty;
+            latestWorkingFilePath = FindPropertyValue(response, "workingFilePath");
             return !refreshResult.ToolResult.IsError
                 && status.Equals("refreshed", StringComparison.OrdinalIgnoreCase);
+        }
+
+        async Task<bool> VerifyRevoteBlockedAsync(string name, string stagedRecordId, string decision)
+        {
+            ScriptedSmokeResult revoteResult = await StepAsync(
+                name,
+                "record_diff_decision",
+                new Dictionary<string, object?>
+                {
+                    ["stagedRecordId"] = stagedRecordId,
+                    ["decision"] = decision,
+                    ["note"] = "Decision gate fixture smoke re-vote must not clear a dirty block."
+                },
+                "Verify re-voting a blocked dirty-unexpected staged record is refused.");
+            return revoteResult.ToolResult.IsError;
+        }
+
+        async Task<bool> VerifyImplicitCompareRefreshDoesNotRecoverAsync(string name)
+        {
+            if (!string.IsNullOrWhiteSpace(latestWorkingFilePath) && File.Exists(latestWorkingFilePath))
+            {
+                File.Delete(latestWorkingFilePath);
+            }
+
+            ScriptedSmokeResult compareResult = await StepAsync(
+                name,
+                "compare_file",
+                new Dictionary<string, object?>
+                {
+                    ["sourceFilePath"] = fixture.TargetRelativePath,
+                    ["refreshIfMissing"] = true
+                },
+                "Verify compare_file can refresh a missing Working copy without recovering dirty-unexpected.");
+            bool compareReturned = !compareResult.ToolResult.IsError;
+            bool stillBlocked = await VerifyBlockedStageAsync(name + " Still Blocked");
+            return compareReturned && stillBlocked;
         }
 
         async Task<string> RecordDecisionAsync(string name, string stagedRecordId, string decision)
@@ -1085,6 +1124,10 @@ internal static class Program
         bool acceptNotAppliedPassed = acceptNotAppliedStage.ToolResult.IsError == false
             && acceptNotApplied.Equals("dirty-unexpected", StringComparison.OrdinalIgnoreCase)
             && string.Equals(await File.ReadAllTextAsync(fixture.TargetSourcePath), original, StringComparison.Ordinal);
+        bool acceptNotAppliedRevoteBlocked = await VerifyRevoteBlockedAsync(
+            "Re-Vote Blocked After Accept Not Applied",
+            acceptNotAppliedRecordId,
+            "rejected");
         bool acceptNotAppliedBlocked = await VerifyBlockedStageAsync("Stage Blocked After Accept Not Applied");
         bool acceptNotAppliedRecovered = await RefreshFixtureAsync("Recover After Accept Not Applied");
 
@@ -1104,6 +1147,7 @@ internal static class Program
         await File.AppendAllTextAsync(fixture.TargetSourcePath, Environment.NewLine + "// Decision gate smoke: external dirty edit." + Environment.NewLine);
         string dirtyExternal = await RecordDecisionAsync("Decision Dirty External Edit", dirtyRecordId, "rejected");
         bool dirtyExternalPassed = dirtyExternal.Equals("dirty-unexpected", StringComparison.OrdinalIgnoreCase);
+        bool compareRefreshDidNotRecover = await VerifyImplicitCompareRefreshDoesNotRecoverAsync("Compare Missing Working While Blocked");
         bool dirtyExternalBlocked = await VerifyBlockedStageAsync("Stage Blocked After Dirty External Edit");
 
         bool passed = noOpPassed
@@ -1111,11 +1155,13 @@ internal static class Program
             && cleanAcceptPassed
             && cleanRejectPassed
             && acceptNotAppliedPassed
+            && acceptNotAppliedRevoteBlocked
             && acceptNotAppliedBlocked
             && acceptNotAppliedRecovered
             && rejectAfterSavePassed
             && rejectAfterSaveRecovered
             && dirtyExternalPassed
+            && compareRefreshDidNotRecover
             && dirtyExternalBlocked;
 
         string reportPath = Path.Combine(runRoot, "fixture-decision-gate-summary.md");
@@ -1127,11 +1173,13 @@ internal static class Program
         Console.WriteLine($"clean accept: {cleanAccept} ({cleanAcceptPassed})");
         Console.WriteLine($"clean reject: {cleanReject} ({cleanRejectPassed})");
         Console.WriteLine($"accept not applied: {acceptNotApplied} ({acceptNotAppliedPassed})");
+        Console.WriteLine($"accept not applied re-vote blocked: {acceptNotAppliedRevoteBlocked}");
         Console.WriteLine($"accept not applied blocks next stage: {acceptNotAppliedBlocked}");
         Console.WriteLine($"accept not applied recovery: {acceptNotAppliedRecovered}");
         Console.WriteLine($"reject after save: {rejectAfterSave} ({rejectAfterSavePassed})");
         Console.WriteLine($"reject after save recovery: {rejectAfterSaveRecovered}");
         Console.WriteLine($"dirty external edit: {dirtyExternal} ({dirtyExternalPassed})");
+        Console.WriteLine($"compare refresh does not recover dirty block: {compareRefreshDidNotRecover}");
         Console.WriteLine($"dirty external edit blocks next stage: {dirtyExternalBlocked}");
         Console.WriteLine($"Summary report: {reportPath}");
 

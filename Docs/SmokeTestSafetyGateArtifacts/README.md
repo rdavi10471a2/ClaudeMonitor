@@ -13,6 +13,8 @@ These artifacts are an addendum to the smoke coverage review. They document the 
   - proves syntax-error rejection
   - proves `dirty-unexpected` blocks later staging
   - proves `refresh_file` recovers the block
+  - proves re-voting a `blocked-dirty-unexpected` staged record is refused
+  - proves `compare_file` can refresh a missing Working copy without clearing a dirty block
   - re-runs the vote-plus-hash decision scenarios
 
 - `fixture-roslyn-surgery-safety-update-20260516.md`
