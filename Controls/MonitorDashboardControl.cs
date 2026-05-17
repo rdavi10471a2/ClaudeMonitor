@@ -23,6 +23,7 @@ public sealed class MonitorDashboardControl : UserControl
     private readonly ToolNavigatorControl toolNavigatorControl;
     private readonly McpTestBenchControl testBenchControl;
     private readonly TelemetryLogControl telemetryLogControl;
+    private readonly TelemetryLogControl monitorMcpTelemetryLogControl;
     private SessionInspectorControl? sessionInspectorControl;
     private Form? sessionInspectorWindow;
     private bool splitterLayoutSized;
@@ -60,18 +61,26 @@ public sealed class MonitorDashboardControl : UserControl
         toolNavigatorControl = new ToolNavigatorControl { Dock = DockStyle.Fill, MinimumSize = new Size(220, 200) };
         testBenchControl = new McpTestBenchControl(mcpClientService, settings) { Dock = DockStyle.Fill, MinimumSize = new Size(850, 360) };
         telemetryLogControl = new TelemetryLogControl { Dock = DockStyle.Fill, MinimumSize = new Size(900, 260) };
+        monitorMcpTelemetryLogControl = new TelemetryLogControl(TelemetryLogControl.ResolveMonitorMcpLogRoot(settings))
+        {
+            Dock = DockStyle.Fill,
+            MinimumSize = new Size(850, 360)
+        };
 
         workspaceSplit.Panel1.Controls.Add(toolNavigatorControl);
         workspaceSplit.Panel2.Controls.Add(testBenchControl);
         TabPage monitorPage = new("Monitor");
         TabPage localAiPage = new("Local AI Tool Explorer");
         TabPage codeLensPage = new("CodeLens Test Bench");
+        TabPage monitorMcpTelemetryPage = new("Monitor MCP Calls");
         monitorPage.Controls.Add(monitorHomeControl);
         localAiPage.Controls.Add(ollamaToolExplorerControl);
         codeLensPage.Controls.Add(workspaceSplit);
+        monitorMcpTelemetryPage.Controls.Add(monitorMcpTelemetryLogControl);
         mainTabs.TabPages.Add(monitorPage);
         mainTabs.TabPages.Add(localAiPage);
         mainTabs.TabPages.Add(codeLensPage);
+        mainTabs.TabPages.Add(monitorMcpTelemetryPage);
         mainTabs.SelectedIndex = 0;
         verticalSplit.Panel1.Controls.Add(mainTabs);
         verticalSplit.Panel2.Controls.Add(telemetryLogControl);
@@ -110,6 +119,7 @@ public sealed class MonitorDashboardControl : UserControl
             toolNavigatorControl.LoadTools(session.Tools);
             sessionInspectorControl?.LoadSession(session);
             telemetryLogControl.RefreshLogs();
+            monitorMcpTelemetryLogControl.RefreshLogs();
         };
         testBenchControl.ProjectSelected += project => sessionInspectorControl?.ShowProject(project);
     }
@@ -117,14 +127,22 @@ public sealed class MonitorDashboardControl : UserControl
     private void RegisterMenu()
     {
         commandBar.AddMenuItem("File", "Exit", (_, _) => FindForm()?.Close());
-        commandBar.AddMenuItem("Proxy", "Refresh Telemetry", (_, _) => telemetryLogControl.RefreshLogs());
+        commandBar.AddMenuItem("Proxy", "Refresh Telemetry", (_, _) => RefreshAllTelemetry());
         commandBar.AddMenuItem("View", "Monitor", (_, _) => mainTabs.SelectedIndex = 0);
         commandBar.AddMenuItem("View", "Local AI Tool Explorer", (_, _) => mainTabs.SelectedIndex = 1);
         commandBar.AddMenuItem("View", "CodeLens Test Bench", (_, _) => mainTabs.SelectedIndex = 2);
+        commandBar.AddMenuItem("View", "Monitor MCP Calls", (_, _) => mainTabs.SelectedIndex = 3);
         commandBar.AddMenuItem("View", "Tool Navigator", (_, _) => TogglePanel(workspaceSplit.Panel1));
         commandBar.AddMenuItem("View", "Telemetry", (_, _) => TogglePanel(verticalSplit.Panel2));
         commandBar.AddMenuItem("View", "Current Session", (_, _) => ShowSessionInspectorWindow());
-        commandBar.AddMenuItem("Tools", "Open Telemetry Folder", (_, _) => telemetryLogControl.OpenLogFolder());
+        commandBar.AddMenuItem("Tools", "Open CodeLens Telemetry Folder", (_, _) => telemetryLogControl.OpenLogFolder());
+        commandBar.AddMenuItem("Tools", "Open Monitor MCP Telemetry Folder", (_, _) => monitorMcpTelemetryLogControl.OpenLogFolder());
+    }
+
+    private void RefreshAllTelemetry()
+    {
+        telemetryLogControl.RefreshLogs();
+        monitorMcpTelemetryLogControl.RefreshLogs();
     }
 
     private void ApplyInitialSplitterLayout()

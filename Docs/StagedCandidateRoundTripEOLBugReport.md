@@ -6,7 +6,7 @@
 
 **Discovered against**: live workflow run on `SchemaStudio.Data\DatabaseDomainRepository.cs::Insert`, this session.
 
-**Status**: open; reproducible in this session; documented temporary workflow accommodation below.
+**Status**: fixed by PR #13 (`accepted-normalized` classification). This report is retained as the repro and design record. The normalized-hash path classifies byte-shape-only WinMerge saves as `accepted-normalized` while preserving `dirty-unexpected` for real content drift.
 
 ## Symptom
 
@@ -99,9 +99,9 @@ This is the "make the round-trip byte-exact" approach. More work, more fragile, 
 
 If a Razor-style review surface lands later, or if the project moves to a custom diff/save tool that emits with controlled byte-shape, the round-trip gap closes structurally. Out of scope here, listed for completeness.
 
-## Temporary workflow accommodation (until #1 or #2 lands)
+## Historical workflow accommodation (before normalized classification landed)
 
-For now, the documented workflow needs to acknowledge this gap or operators will reasonably conclude the gate is broken. Two operator-facing rules:
+Before the normalized classification path landed, the documented workflow needed to acknowledge this gap or operators could reasonably conclude the gate was broken. Those temporary operator-facing rules were:
 
 1. **A `dirty-unexpected` classification immediately after a `record_diff_decision(accepted)` call is expected** when the operator believes the WinMerge save was correct. Don't panic; don't re-vote; verify semantically:
    - Read the relevant symbol in the watched file (via `get_symbol` or the IDE) and confirm the intended change is present.

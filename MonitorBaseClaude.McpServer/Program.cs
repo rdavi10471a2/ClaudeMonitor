@@ -16,6 +16,7 @@ internal static class Program
         builder.Services.AddSingleton(MonitorServerSettings.Load(args));
         builder.Services.AddSingleton<MonitorWorkflowService>();
         builder.Services.AddSingleton<MonitorSessionService>();
+        builder.Services.AddSingleton<MonitorMcpTelemetryService>();
         builder.Services
             .AddMcpServer()
             .WithStdioServerTransport()
@@ -31,19 +32,25 @@ public sealed class MonitorTools
     private readonly MonitorServerSettings settings;
     private readonly MonitorWorkflowService workflowService;
     private readonly MonitorSessionService sessionService;
+    private readonly MonitorMcpTelemetryService telemetryService;
 
-    public MonitorTools(MonitorServerSettings settings, MonitorWorkflowService workflowService, MonitorSessionService sessionService)
+    public MonitorTools(
+        MonitorServerSettings settings,
+        MonitorWorkflowService workflowService,
+        MonitorSessionService sessionService,
+        MonitorMcpTelemetryService telemetryService)
     {
         this.settings = settings;
         this.workflowService = workflowService;
         this.sessionService = sessionService;
+        this.telemetryService = telemetryService;
     }
 
     [McpServerTool]
     [Description("Return paths and high-level status for the new Monitor MCP server.")]
     public MonitorStatus GetMonitorStatus()
     {
-        return new MonitorStatus(
+        return Track(nameof(GetMonitorStatus), null, () => new MonitorStatus(
             settings.UiRoot,
             settings.McpServerRoot,
             settings.LegacyMonitorRoot,
@@ -51,21 +58,21 @@ public sealed class MonitorTools
             Path.GetDirectoryName(settings.WatchedSolutionPath) ?? string.Empty,
             Directory.Exists(settings.McpServerRoot),
             Directory.Exists(settings.LegacyMonitorRoot),
-            File.Exists(settings.WatchedSolutionPath));
+            File.Exists(settings.WatchedSolutionPath)));
     }
 
     [McpServerTool]
     [Description("Return the monitor workflow status, including watched solution, Working folder, and WinMerge resolution.")]
     public MonitorWorkflowStatus GetWorkflowStatus()
     {
-        return workflowService.GetWorkflowStatus();
+        return Track(nameof(GetWorkflowStatus), null, workflowService.GetWorkflowStatus);
     }
 
     [McpServerTool]
     [Description("Return a self-check snapshot for configured roots, working folders, diff tool availability, and safety guardrails.")]
     public MonitorSelfCheckResult GetSelfCheck()
     {
-        return workflowService.GetSelfCheck();
+        return Track(nameof(GetSelfCheck), null, workflowService.GetSelfCheck);
     }
 
     [McpServerTool]
@@ -73,14 +80,14 @@ public sealed class MonitorTools
     public MonitorSessionState StartMonitorSession(
         [Description("Short purpose for this monitor session, such as 'local Ollama tool exploration' or 'Claude feature edit'.")] string purpose = "monitor workflow")
     {
-        return sessionService.StartSession(purpose);
+        return Track(nameof(StartMonitorSession), new { purpose }, () => sessionService.StartSession(purpose));
     }
 
     [McpServerTool]
     [Description("List durable monitor session handles known to this MCP server.")]
     public IReadOnlyList<MonitorSessionSummary> ListMonitorSessions()
     {
-        return sessionService.ListSessions();
+        return Track(nameof(ListMonitorSessions), null, sessionService.ListSessions);
     }
 
     [McpServerTool]
@@ -88,7 +95,7 @@ public sealed class MonitorTools
     public MonitorSessionState GetMonitorSession(
         [Description("Session handle returned by start_monitor_session.")] string sessionId)
     {
-        return sessionService.GetSession(sessionId);
+        return Track(nameof(GetMonitorSession), new { sessionId }, () => sessionService.GetSession(sessionId));
     }
 
     [McpServerTool]
@@ -99,7 +106,7 @@ public sealed class MonitorTools
         [Description("Human-readable event summary.")] string summary,
         [Description("Optional JSON payload for the event.")] string? payloadJson = null)
     {
-        return sessionService.RecordEvent(sessionId, eventType, summary, payloadJson);
+        return Track(nameof(RecordMonitorSessionEvent), new { sessionId, eventType, summary, payloadLength = payloadJson?.Length ?? 0 }, () => sessionService.RecordEvent(sessionId, eventType, summary, payloadJson));
     }
 
     [McpServerTool]
@@ -107,7 +114,7 @@ public sealed class MonitorTools
     public MonitorFileRefreshResult RefreshFile(
         [Description("Source file path, absolute or relative to the watched solution folder.")] string sourceFilePath)
     {
-        return workflowService.RefreshFile(sourceFilePath);
+        return Track(nameof(RefreshFile), new { sourceFilePath }, () => workflowService.RefreshFile(sourceFilePath));
     }
 
     [McpServerTool]
@@ -116,13 +123,16 @@ public sealed class MonitorTools
         [Description("Source file path, absolute or relative to the watched solution folder.")] string sourceFilePath,
         [Description("Optional session handle. When supplied, the server records the file hash as fetched in that durable session.")] string? sessionId = null)
     {
-        MonitorFileReadResult result = workflowService.GetFile(sourceFilePath);
-        if (!string.IsNullOrWhiteSpace(sessionId))
+        return Track(nameof(GetFile), new { sourceFilePath, sessionId }, () =>
         {
-            sessionService.RecordFileFetch(sessionId, workflowService.GetFileHashInfo(sourceFilePath), "get_file");
-        }
+            MonitorFileReadResult result = workflowService.GetFile(sourceFilePath);
+            if (!string.IsNullOrWhiteSpace(sessionId))
+            {
+                sessionService.RecordFileFetch(sessionId, workflowService.GetFileHashInfo(sourceFilePath), "get_file");
+            }
 
-        return result;
+            return result;
+        });
     }
 
     [McpServerTool]
@@ -131,7 +141,7 @@ public sealed class MonitorTools
         [Description("Session handle returned by start_monitor_session.")] string sessionId,
         [Description("Source file path, absolute or relative to the watched solution folder.")] string sourceFilePath)
     {
-        return sessionService.CheckFileHash(sessionId, workflowService.GetFileHashInfo(sourceFilePath));
+        return Track(nameof(CheckFileHash), new { sessionId, sourceFilePath }, () => sessionService.CheckFileHash(sessionId, workflowService.GetFileHashInfo(sourceFilePath)));
     }
 
     [McpServerTool]
@@ -140,7 +150,7 @@ public sealed class MonitorTools
         [Description("Filename or wildcard pattern, such as Program.cs or *.razor.")] string fileNameOrPattern,
         [Description("Maximum number of matches to return.")] int maxResults = 25)
     {
-        return workflowService.FindFile(fileNameOrPattern, maxResults);
+        return Track(nameof(FindFile), new { fileNameOrPattern, maxResults }, () => workflowService.FindFile(fileNameOrPattern, maxResults));
     }
 
     [McpServerTool]
@@ -148,7 +158,7 @@ public sealed class MonitorTools
     public MonitorFileOutlineResult GetFileOutline(
         [Description("Source file path, absolute or relative to the watched solution folder.")] string path)
     {
-        return workflowService.GetFileOutline(path);
+        return Track(nameof(GetFileOutline), new { path }, () => workflowService.GetFileOutline(path));
     }
 
     [McpServerTool]
@@ -158,7 +168,7 @@ public sealed class MonitorTools
         [Description("Source map scope: auto, file, folder, or project.")] string scope = "auto",
         [Description("Source map density: auto, navigation, selector, detail, or full. auto means selector for file scope and navigation for folder/project scope.")] string mode = "auto")
     {
-        return workflowService.GetSourceMap(path, scope, mode);
+        return Track(nameof(GetSourceMap), new { path, scope, mode }, () => workflowService.GetSourceMap(path, scope, mode));
     }
 
     [McpServerTool]
@@ -168,7 +178,7 @@ public sealed class MonitorTools
         [Description("Compatibility shortcut: class, method, property, field, event, delegate, or constructor name. Must be unambiguous.")] string? symbolName = null,
         [Description("Structured selector JSON from get_source_map, including stableSymbolKey, memberKind, containingNamespace, containingType, parameterTypes, and arity.")] string? symbolSelectorJson = null)
     {
-        return workflowService.GetSymbol(path, symbolName, symbolSelectorJson);
+        return Track(nameof(GetSymbol), new { path, symbolName, hasSelector = !string.IsNullOrWhiteSpace(symbolSelectorJson) }, () => workflowService.GetSymbol(path, symbolName, symbolSelectorJson));
     }
 
     [McpServerTool]
@@ -180,7 +190,7 @@ public sealed class MonitorTools
         [Description("Optional JSON manifest expressing Model intent. The Tool Server records it but verifies using Roslyn-derived metadata.")] string? manifestJson = null,
         [Description("Deprecated compatibility flag. GUI diff launch from the stdio Tool Server is unreliable; prefer false and let the Host or sidecar launch WinMerge using returned paths.")] bool launchDiff = false)
     {
-        return workflowService.SubmitFile(path, content, sessionId, manifestJson, launchDiff);
+        return Track(nameof(SubmitFile), new { path, contentLength = content.Length, sessionId, manifestLength = manifestJson?.Length ?? 0, launchDiff }, () => workflowService.SubmitFile(path, content, sessionId, manifestJson, launchDiff));
     }
 
     [McpServerTool]
@@ -192,7 +202,7 @@ public sealed class MonitorTools
         [Description("Optional durable session handle to link this staged edit to a monitor workflow session.")] string? sessionId = null,
         [Description("Optional JSON manifest expressing Model intent.")] string? manifestJson = null)
     {
-        return workflowService.SubmitSymbol(path, symbolSelectorJson, code, sessionId, manifestJson);
+        return Track(nameof(SubmitSymbol), new { path, selectorLength = symbolSelectorJson.Length, codeLength = code.Length, sessionId, manifestLength = manifestJson?.Length ?? 0 }, () => workflowService.SubmitSymbol(path, symbolSelectorJson, code, sessionId, manifestJson));
     }
 
     [McpServerTool]
@@ -203,7 +213,7 @@ public sealed class MonitorTools
         [Description("Optional durable session handle to link this staged edit to a monitor workflow session.")] string? sessionId = null,
         [Description("Optional JSON manifest expressing Model intent.")] string? manifestJson = null)
     {
-        return workflowService.AddUsing(path, @namespace, sessionId, manifestJson);
+        return Track(nameof(AddUsing), new { path, @namespace, sessionId, manifestLength = manifestJson?.Length ?? 0 }, () => workflowService.AddUsing(path, @namespace, sessionId, manifestJson));
     }
 
     [McpServerTool]
@@ -214,7 +224,7 @@ public sealed class MonitorTools
         [Description("Optional durable session handle to link this staged edit to a monitor workflow session.")] string? sessionId = null,
         [Description("Optional JSON manifest expressing Model intent.")] string? manifestJson = null)
     {
-        return workflowService.RemoveUsing(path, @namespace, sessionId, manifestJson);
+        return Track(nameof(RemoveUsing), new { path, @namespace, sessionId, manifestLength = manifestJson?.Length ?? 0 }, () => workflowService.RemoveUsing(path, @namespace, sessionId, manifestJson));
     }
 
     [McpServerTool]
@@ -228,7 +238,7 @@ public sealed class MonitorTools
         [Description("Optional durable session handle to link this staged edit to a monitor workflow session.")] string? sessionId = null,
         [Description("Optional JSON manifest expressing Model intent.")] string? manifestJson = null)
     {
-        return workflowService.AddSymbol(path, containingType, symbolType, code, afterSymbol, sessionId, manifestJson);
+        return Track(nameof(AddSymbol), new { path, containingType, symbolType, codeLength = code.Length, afterSymbol, sessionId, manifestLength = manifestJson?.Length ?? 0 }, () => workflowService.AddSymbol(path, containingType, symbolType, code, afterSymbol, sessionId, manifestJson));
     }
 
     [McpServerTool]
@@ -239,32 +249,35 @@ public sealed class MonitorTools
         [Description("Optional durable session handle to link this staged edit to a monitor workflow session.")] string? sessionId = null,
         [Description("Optional JSON manifest expressing Model intent.")] string? manifestJson = null)
     {
-        return workflowService.RemoveSymbol(path, symbolSelectorJson, sessionId, manifestJson);
+        return Track(nameof(RemoveSymbol), new { path, selectorLength = symbolSelectorJson.Length, sessionId, manifestLength = manifestJson?.Length ?? 0 }, () => workflowService.RemoveSymbol(path, symbolSelectorJson, sessionId, manifestJson));
     }
 
     [McpServerTool]
-    [Description("Classify a completed WinMerge review for a staged edit. The decision argument is the Operator-reported outcome; accepted requires reported accepted plus watched==staged, rejected requires reported rejected plus watched==original, and any mismatch is dirty-unexpected.")]
+    [Description("Classify a completed WinMerge review for a staged edit. The decision argument is the Operator-reported outcome; accepted requires reported accepted plus watched==staged, or accepted-normalized when only BOM/EOL shape differs; rejected requires reported rejected plus watched==original; other mismatches are dirty-unexpected.")]
     public MonitorDiffDecisionResult RecordDiffDecision(
         [Description("Staged edit record id returned by submit_file.")] string stagedRecordId,
         [Description("Operator-reported outcome: accepted if WinMerge saved the full candidate, or rejected if it was not saved. Hash comparison is authoritative.")] string decision,
         [Description("Optional Operator note.")] string? note = null,
         [Description("Optional session handle. Defaults to the staged record session when present.")] string? sessionId = null)
     {
-        MonitorDiffDecisionResult result = workflowService.RecordDiffDecision(stagedRecordId, decision, note, sessionId);
-        if (!string.IsNullOrWhiteSpace(result.SessionId))
+        return Track(nameof(RecordDiffDecision), new { stagedRecordId, decision, hasNote = !string.IsNullOrWhiteSpace(note), sessionId }, () =>
         {
-            sessionService.RecordEvent(
-                result.SessionId,
-                "diff-decision",
-                $"{result.RelativeSourcePath} classified as {result.Classification}.",
-                JsonSerializer.Serialize(result, new JsonSerializerOptions { WriteIndented = true }));
-            sessionService.RecordFileFetch(
-                result.SessionId,
-                workflowService.GetFileHashInfo(result.SourceFilePath),
-                "record_diff_decision");
-        }
+            MonitorDiffDecisionResult result = workflowService.RecordDiffDecision(stagedRecordId, decision, note, sessionId);
+            if (!string.IsNullOrWhiteSpace(result.SessionId))
+            {
+                sessionService.RecordEvent(
+                    result.SessionId,
+                    "diff-decision",
+                    $"{result.RelativeSourcePath} classified as {result.Classification}.",
+                    JsonSerializer.Serialize(result, new JsonSerializerOptions { WriteIndented = true }));
+                sessionService.RecordFileFetch(
+                    result.SessionId,
+                    workflowService.GetFileHashInfo(result.SourceFilePath),
+                    "record_diff_decision");
+            }
 
-        return result;
+            return result;
+        });
     }
 
     [McpServerTool]
@@ -272,7 +285,7 @@ public sealed class MonitorTools
     public MonitorStagedDiffLaunchResult LaunchStagedDiff(
         [Description("Staged edit record id returned by submit_file, submit_symbol, add_symbol, remove_symbol, add_using, or remove_using.")] string stagedRecordId)
     {
-        return workflowService.LaunchStagedDiff(stagedRecordId);
+        return Track(nameof(LaunchStagedDiff), new { stagedRecordId }, () => workflowService.LaunchStagedDiff(stagedRecordId));
     }
 
     [McpServerTool]
@@ -282,7 +295,7 @@ public sealed class MonitorTools
         [Description("Optional compact ledger summary to append to the monitor-owned ledger.")] string? ledgerSummary = null,
         [Description("Refresh from source first if the Working copy is missing.")] bool refreshIfMissing = true)
     {
-        return workflowService.CompareFile(sourceFilePath, ledgerSummary, refreshIfMissing);
+        return Track(nameof(CompareFile), new { sourceFilePath, hasLedgerSummary = !string.IsNullOrWhiteSpace(ledgerSummary), refreshIfMissing }, () => workflowService.CompareFile(sourceFilePath, ledgerSummary, refreshIfMissing));
     }
 
     [McpServerTool]
@@ -290,7 +303,7 @@ public sealed class MonitorTools
     public IReadOnlyList<MonitorRunEntry> ListMonitorRuns(
         [Description("Maximum entries to return.")] int maxEntries = 100)
     {
-        return workflowService.ListMonitorRuns(maxEntries);
+        return Track(nameof(ListMonitorRuns), new { maxEntries }, () => workflowService.ListMonitorRuns(maxEntries));
     }
 
     [McpServerTool]
@@ -298,7 +311,7 @@ public sealed class MonitorTools
     public MonitorRunDetail GetMonitorRun(
         [Description("Run id from list_monitor_runs.")] string runId)
     {
-        return workflowService.GetMonitorRun(runId);
+        return Track(nameof(GetMonitorRun), new { runId }, () => workflowService.GetMonitorRun(runId));
     }
 
     [McpServerTool]
@@ -306,7 +319,7 @@ public sealed class MonitorTools
     public IReadOnlyList<MonitorLedgerInfo> ListLedgers(
         [Description("Maximum ledgers to return.")] int maxEntries = 100)
     {
-        return workflowService.ListLedgers(maxEntries);
+        return Track(nameof(ListLedgers), new { maxEntries }, () => workflowService.ListLedgers(maxEntries));
     }
 
     [McpServerTool]
@@ -315,7 +328,7 @@ public sealed class MonitorTools
         [Description("Optional source file path, absolute or relative to the watched solution folder.")] string? sourceFilePath = null,
         [Description("Optional absolute ledger path under monitor Working\\History\\Ledgers.")] string? ledgerPath = null)
     {
-        return workflowService.GetLedger(sourceFilePath, ledgerPath);
+        return Track(nameof(GetLedger), new { sourceFilePath, ledgerPath }, () => workflowService.GetLedger(sourceFilePath, ledgerPath));
     }
 
     [McpServerTool]
@@ -323,37 +336,48 @@ public sealed class MonitorTools
     public MonitorPruneResult PruneMonitorHistory(
         [Description("Retention window in days.")] int retentionDays = 7)
     {
-        return workflowService.PruneMonitorHistory(retentionDays);
+        return Track(nameof(PruneMonitorHistory), new { retentionDays }, () => workflowService.PruneMonitorHistory(retentionDays));
     }
 
     [McpServerTool]
     [Description("Return the Markdown tool manifest for the Monitor MCP Server tool surface.")]
     public string GetToolManifest()
     {
-        string path = Path.Combine(settings.McpServerRoot, "MONITOR_MCP_TOOL_MANIFEST.md");
-        return File.Exists(path)
-            ? File.ReadAllText(path)
-            : "Monitor MCP tool manifest is missing.";
+        return Track(nameof(GetToolManifest), null, () =>
+        {
+            string path = Path.Combine(settings.McpServerRoot, "MONITOR_MCP_TOOL_MANIFEST.md");
+            return File.Exists(path)
+                ? File.ReadAllText(path)
+                : "Monitor MCP tool manifest is missing.";
+        });
     }
 
     [McpServerTool]
     [Description("List watched project folders under the configured watched-projects root.")]
     public IReadOnlyList<WatchedProjectInfo> ListWatchedProjects()
     {
-        if (!Directory.Exists(settings.WatchedProjectsRoot))
+        return Track(nameof(ListWatchedProjects), null, () =>
         {
-            return [];
-        }
+            if (!Directory.Exists(settings.WatchedProjectsRoot))
+            {
+                return [];
+            }
 
-        return Directory
-            .GetDirectories(settings.WatchedProjectsRoot)
-            .Where(path => !IsHiddenOrBuildFolder(path))
-            .OrderBy(path => path, StringComparer.OrdinalIgnoreCase)
-            .Select(path => new WatchedProjectInfo(
-                Path.GetFileName(path),
-                path,
-                Directory.GetFiles(path, "*.sln", SearchOption.TopDirectoryOnly)))
-            .ToArray();
+            return Directory
+                .GetDirectories(settings.WatchedProjectsRoot)
+                .Where(path => !IsHiddenOrBuildFolder(path))
+                .OrderBy(path => path, StringComparer.OrdinalIgnoreCase)
+                .Select(path => new WatchedProjectInfo(
+                    Path.GetFileName(path),
+                    path,
+                    Directory.GetFiles(path, "*.sln", SearchOption.TopDirectoryOnly)))
+                .ToArray();
+        });
+    }
+
+    private T Track<T>(string toolName, object? arguments, Func<T> action)
+    {
+        return telemetryService.Track(toolName, arguments, action);
     }
 
     private static bool IsHiddenOrBuildFolder(string path)
