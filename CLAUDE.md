@@ -100,7 +100,7 @@ Use Roslyn CodeLens MCP for external code intelligence: diagnostics, references,
 
 Do not use Roslyn CodeLens `apply_code_action` against watched source in this workflow. Treat CodeLens as read/analysis-only unless the Operator explicitly authorizes a separate non-monitor mutation path. Refactorings and fixes for watched source should be converted into a complete candidate and staged through Monitor MCP so WinMerge review and vote-plus-hash classification remain authoritative.
 
-`get_source_map` is a Monitor-owned read/discovery tool. It is expected before C# edits because it gives compact current structure and stable lexical symbol keys without loading full bodies. Use `navigation` mode to choose a file/member, `selector` mode to get stable keys and hashes for a chosen file, and `full` mode only for audit/debug.
+`get_source_map` is a Monitor-owned read/discovery tool. It is expected before C# edits because it gives compact current structure and stable lexical symbol keys without loading full bodies. Treat it like a code manifest: signatures identify the contract surface (return type, name, arguments, modifiers), while bodies come from `get_symbol`. Use `navigation` mode to choose a file/member, `selector` mode to get stable keys and hashes for a chosen file, `detail` mode when contract detail is needed without full audit payloads, and `full` mode only for audit/debug. Source maps intentionally omit legacy `AI*` and `FileVersion` attributes; do not remove those attributes from source merely for token cleanup.
 
 ## Marker And Glyph Rules
 
