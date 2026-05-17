@@ -11,6 +11,7 @@ namespace MonitorBaseClaude.Controls;
 public sealed class TelemetryLogControl : UserControl
 {
     private readonly string logRoot;
+    private readonly DataGridView requestsGrid = new();
     private readonly DataGridView callsGrid = new();
     private readonly DataGridView errorsGrid = new();
     private readonly RichTextBox stderrBox = new();
@@ -20,9 +21,14 @@ public sealed class TelemetryLogControl : UserControl
     private readonly System.Windows.Forms.Timer refreshTimer = new();
 
     public TelemetryLogControl()
+        : this(ResolveRoslynLogRoot())
+    {
+    }
+
+    public TelemetryLogControl(string logRoot)
     {
         Dock = DockStyle.Fill;
-        logRoot = ResolveLogRoot();
+        this.logRoot = logRoot;
         BuildLayout();
         refreshTimer.Interval = 3000;
         refreshTimer.Tick += (_, _) => RefreshLogs();
@@ -52,6 +58,7 @@ public sealed class TelemetryLogControl : UserControl
 
     public void RefreshLogs()
     {
+        LoadRequests();
         LoadCalls();
         LoadErrors();
         LoadStderr();
@@ -108,10 +115,12 @@ public sealed class TelemetryLogControl : UserControl
         {
             Dock = DockStyle.Fill
         };
-        tabs.TabPages.Add(CreateTab("Calls", callsGrid));
+        tabs.TabPages.Add(CreateTab("Requests", requestsGrid));
+        tabs.TabPages.Add(CreateTab("Responses", callsGrid));
         tabs.TabPages.Add(CreateTab("Errors", errorsGrid));
         tabs.TabPages.Add(CreateTab("stderr", stderrBox));
 
+        ConfigureGrid(requestsGrid, "Time", "Method", "Tool", "Arguments");
         ConfigureGrid(callsGrid, "Time", "Direction", "Method", "Tool", "ms", "Bytes", "Error");
         ConfigureGrid(errorsGrid, "Time", "Event", "Message");
         stderrBox.Dock = DockStyle.Fill;
@@ -146,6 +155,21 @@ public sealed class TelemetryLogControl : UserControl
         {
             grid.Columns.Add(column, column);
         }
+    }
+
+    private void LoadRequests()
+    {
+        requestsGrid.Rows.Clear();
+        foreach (JsonObject entry in ReadJsonLines("requests.jsonl").TakeLast(200))
+        {
+            requestsGrid.Rows.Add(
+                ShortTime(entry["timestampUtc"]?.GetValue<string>()),
+                entry["method"]?.GetValue<string>() ?? string.Empty,
+                entry["tool"]?.GetValue<string>() ?? string.Empty,
+                CompactJson(entry["arguments"]));
+        }
+
+        ScrollToLastRow(requestsGrid);
     }
 
     private void LoadCalls()
@@ -244,7 +268,23 @@ public sealed class TelemetryLogControl : UserControl
             : string.Empty;
     }
 
-    private static string ResolveLogRoot()
+    private static string CompactJson(JsonNode? node)
+    {
+        if (node is null)
+        {
+            return string.Empty;
+        }
+
+        string text = node.ToJsonString();
+        return text.Length <= 700 ? text : string.Concat(text.AsSpan(0, 700), "...");
+    }
+
+    public static string ResolveMonitorMcpLogRoot(MonitorClientSettings settings)
+    {
+        return Path.Combine(settings.UiRoot, "Working", "History", "McpTelemetry", "MonitorBaseClaude");
+    }
+
+    private static string ResolveRoslynLogRoot()
     {
         DirectoryInfo? current = new(AppContext.BaseDirectory);
         for (int i = 0; i < 8 && current is not null; i++)
