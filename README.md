@@ -42,7 +42,8 @@ Expected agent edit path:
 The source-map hierarchy is intentional:
 
 - `navigation`: broad outline/orientation, no mutation-grade identity.
-- `selector`: stable symbol keys, hashes, and structured selector metadata.
+- `selector`: stable symbol keys, hashes, compact contract signatures, and structured selector metadata.
+- `detail`: selector identity plus extra contract detail without full audit payloads.
 - `full`: audit/debug source-map detail.
 - `get_symbol`: actual source body read after narrowing.
 
