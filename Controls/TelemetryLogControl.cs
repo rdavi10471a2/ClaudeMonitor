@@ -120,8 +120,8 @@ public sealed class TelemetryLogControl : UserControl
         tabs.TabPages.Add(CreateTab("Errors", errorsGrid));
         tabs.TabPages.Add(CreateTab("stderr", stderrBox));
 
-        ConfigureGrid(requestsGrid, "Time", "Method", "Tool", "Arguments");
-        ConfigureGrid(callsGrid, "Time", "Direction", "Method", "Tool", "ms", "Bytes", "Error");
+        ConfigureGrid(requestsGrid, "Time", "Method", "Tool", "PID", "Process", "Arguments");
+        ConfigureGrid(callsGrid, "Time", "Direction", "Method", "Tool", "PID", "ms", "Bytes", "Error");
         ConfigureGrid(errorsGrid, "Time", "Event", "Message");
         stderrBox.Dock = DockStyle.Fill;
         stderrBox.ReadOnly = true;
@@ -166,6 +166,8 @@ public sealed class TelemetryLogControl : UserControl
                 ShortTime(entry["timestampUtc"]?.GetValue<string>()),
                 entry["method"]?.GetValue<string>() ?? string.Empty,
                 entry["tool"]?.GetValue<string>() ?? string.Empty,
+                entry["processId"]?.ToString() ?? string.Empty,
+                ShortProcessPath(entry["processPath"]?.GetValue<string>()),
                 CompactJson(entry["arguments"]));
         }
 
@@ -182,6 +184,7 @@ public sealed class TelemetryLogControl : UserControl
                 entry["direction"]?.GetValue<string>() ?? string.Empty,
                 entry["method"]?.GetValue<string>() ?? string.Empty,
                 entry["tool"]?.GetValue<string>() ?? string.Empty,
+                entry["processId"]?.ToString() ?? string.Empty,
                 entry["elapsedMs"]?.ToString() ?? string.Empty,
                 entry["messageBytes"]?.ToString() ?? string.Empty,
                 entry["isError"]?.ToString() ?? string.Empty);
@@ -277,6 +280,13 @@ public sealed class TelemetryLogControl : UserControl
 
         string text = node.ToJsonString();
         return text.Length <= 700 ? text : string.Concat(text.AsSpan(0, 700), "...");
+    }
+
+    private static string ShortProcessPath(string? processPath)
+    {
+        return string.IsNullOrWhiteSpace(processPath)
+            ? string.Empty
+            : Path.GetFileName(processPath);
     }
 
     public static string ResolveMonitorMcpLogRoot(MonitorClientSettings settings)

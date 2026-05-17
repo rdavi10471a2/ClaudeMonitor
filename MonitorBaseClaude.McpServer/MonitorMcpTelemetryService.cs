@@ -12,11 +12,28 @@ public sealed class MonitorMcpTelemetryService
     };
 
     private readonly string logRoot;
+    private readonly int processId = Environment.ProcessId;
+    private readonly string processPath = Environment.ProcessPath ?? string.Empty;
 
     public MonitorMcpTelemetryService(MonitorServerSettings settings)
     {
         logRoot = Path.Combine(settings.UiRoot, "Working", "History", "McpTelemetry", "MonitorBaseClaude");
         Directory.CreateDirectory(logRoot);
+        WriteJsonLine("requests.jsonl", new
+        {
+            timestampUtc = DateTimeOffset.UtcNow,
+            direction = "request",
+            method = "server/start",
+            tool = "MonitorBaseClaude.McpServer",
+            processId,
+            processPath,
+            arguments = new
+            {
+                settings.UiRoot,
+                settings.McpServerRoot,
+                settings.WatchedSolutionPath
+            }
+        });
     }
 
     public T Track<T>(string toolName, object? arguments, Func<T> action)
@@ -28,6 +45,8 @@ public sealed class MonitorMcpTelemetryService
             direction = "request",
             method = "tools/call",
             tool = toolName,
+            processId,
+            processPath,
             arguments
         });
 
@@ -42,6 +61,8 @@ public sealed class MonitorMcpTelemetryService
                 direction = "response",
                 method = "tools/call",
                 tool = toolName,
+                processId,
+                processPath,
                 elapsedMs = stopwatch.ElapsedMilliseconds,
                 messageBytes = Encoding.UTF8.GetByteCount(responseJson),
                 isError = false
@@ -58,6 +79,8 @@ public sealed class MonitorMcpTelemetryService
                 direction = "response",
                 method = "tools/call",
                 tool = toolName,
+                processId,
+                processPath,
                 elapsedMs = stopwatch.ElapsedMilliseconds,
                 messageBytes = Encoding.UTF8.GetByteCount(ex.Message),
                 isError = true
@@ -69,6 +92,8 @@ public sealed class MonitorMcpTelemetryService
                 eventType = "tool-error",
                 @event = "tool-error",
                 tool = toolName,
+                processId,
+                processPath,
                 message = ex.Message,
                 exceptionType = ex.GetType().FullName
             });
