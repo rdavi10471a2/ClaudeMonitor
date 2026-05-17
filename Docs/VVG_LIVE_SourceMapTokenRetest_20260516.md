@@ -8,6 +8,8 @@
 
 **Purpose**: duplicate Codex's source-map token retest in [the lean-source-map-contracts work](#) against the live watched project, side-by-side with Codex's reported numbers. Capture deltas honestly; do not over-explain them.
 
+**Reproducibility snapshot**: the exact watched-source state used for these measurements is committed alongside this doc as [`SchemaStudioDBV2_Snapshot_20260516.zip`](SchemaStudioDBV2_Snapshot_20260516.zip) (28.5 MB / 2,757 files; excludes `bin`, `obj`, `.vs`, `packages`, `Working`, `SourceBakups`). To re-run on identical content: pull this branch, unzip the snapshot to a working directory, point a Monitor build with PR #11 at it, and replay the case list below. This addresses follow-up item **#I** (reference-environment snapshot for token retests) directly.
+
 ## Results
 
 | # | Path | Scope | Mode | fileCount | symbolCount | estimatedTokenProxy | budgetLimit | wasTruncated | Codex (for comparison) |
