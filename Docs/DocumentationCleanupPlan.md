@@ -24,7 +24,7 @@ These files are the forward path:
 - Archive implementation logs once they no longer describe current behavior.
 - Archive peer-review prompts and review packages after their findings have been accepted, rejected, or moved into the monitor-side working notes.
 - Archive fixed bug reports after the fix and regression note are captured in current status, backlog, or smoke catalog.
-- Keep debug-only smoke docs out of normal Claude review packs.
+- Keep debug-only smoke docs out of normal Claude workflow guidance.
 - Do not archive the manifest or active skill cards without replacing their role first.
 - Working-memory notes such as current status and todo belong under the monitor/tool doing the work, not in this product docs folder.
 
@@ -35,19 +35,19 @@ These files are the forward path:
 - Review long design/research docs and move historical-only files to `Docs/Archive/History`.
 - Keep `Docs/McpServerImplementationBacklog.md` until its remaining tasks are migrated into the monitor-side working notes.
 
-## Review Pack Rule
+## Generated Export Rule
 
-`Docs/ClaudeMinimalReviewPack.zip` should contain only:
+Generated review/export bundles are not canonical docs and should stay out of source control. The canonical project-facing guidance is:
 
 - the live manifest
 - active skill cards
 - the shortest staging/session-overlay references
 
-Regenerate the zip after any active guidance edit.
+If an external/free-Claude bundle is needed later, generate it locally from those canonical files and do not commit the generated folder or zip.
 
 ## Claude Review Loop
 
-- Claude should consume the minimal review pack and run workflow tests from GitHub.
+- Claude should consume the canonical Markdown files in the project path and run workflow tests from GitHub.
 - Claude should not rewrite active docs directly as part of review feedback.
 - Claude should file compact bug reports or doc suggestions with:
   - the task attempted

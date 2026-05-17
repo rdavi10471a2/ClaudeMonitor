@@ -16,6 +16,10 @@ appsettings.json
 # Monitor-owned generated state
 Working/
 
+# Generated review/export bundles
+Docs/ClaudeMinimalReviewPack/
+Docs/ClaudeMinimalReviewPack.zip
+
 # Repo-local MCP tool installs
 Tools/RoslynCodeLens/
 
