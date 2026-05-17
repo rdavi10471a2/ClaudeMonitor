@@ -15,6 +15,15 @@ Working notes from a Claude tester/config-helper pass on the MonitorBaseClaude M
 - `FINDINGS.md`: compact bug reports and doc suggestions, one section per pass. Codex merges accepted items into the active docs.
 - `SCRATCH.md`: short-lived working notes. Safe to clear between passes.
 
+## Per-Pass Capture
+
+Every pass records, alongside the findings:
+
+- Wall-clock for each notable tool call (anything over 1 s or that returns budget/truncation metadata).
+- `estimatedTokenProxy` for every `get_source_map` call.
+- Build wall-clock when a rebuild is performed.
+- Process IDs of started/killed services so the next pass can verify state.
+
 ## Compact Finding Format
 
 ```text

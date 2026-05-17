@@ -93,3 +93,24 @@
 2. Start the MonitorBaseClaude WinForms host.
 3. Confirm `tools/list` now exposes `get_staging_guide` and the typed insertion tools, and confirm new-path `submit_file` no longer errors opaquely.
 4. Decide whether to reject the existing pre-launch staged record or let it expire / supersede on the next attempt.
+
+### Pre-rerun ops (executed)
+
+- Killed stale `MonitorBaseClaude.McpServer.exe` (PID 149372).
+- Initial `dotnet build .\MonitorBaseClaude.slnx` failed in 5.1 s with six errors against `CLAUDE_Live_Tests/Pass2_Proposed/DatabaseDomainRepository.cs` (Finding 9). Renamed `Pass2_Proposed/*.cs` to `*.cs.txt` to dodge the compile glob locally.
+- Rebuild after rename: clean, 4.1 s wall-clock, all five projects (`CodeLensTelemetryProxy`, `MonitorBaseClaude.McpServer`, `McpHubBridge`, `MonitorBaseClaude`, `MonitorBaseClaude.ToolSmokeTests`).
+- Started WinForms host `MonitorBaseClaude.exe`, PID 41280, ready in 2.1 s.
+- MCP server will respawn through `Tools\Start-MonitorBaseClaudeMcp.ps1` when Claude Code reconnects (`/mcp`).
+
+### Timing And Token Tracking (added by Operator request, mid-pass)
+
+Going forward each test pass records:
+
+- Tool-call wall-clock per Monitor / Roslyn call where it's interesting (anything over 1 s, or any call returning truncation/budget metadata).
+- `estimatedTokenProxy` from `get_source_map` responses.
+- For discovery in this pass:
+  - `get_source_map` (file/selector) on `DatabaseDomainRepository.cs`: `estimatedTokenProxy` 2251, `budgetLimit` 25000, not truncated.
+  - `get_source_map` (file/selector) on `DatabaseDomainRepositoryAsync.cs`: `estimatedTokenProxy` 2505, `budgetLimit` 25000, not truncated.
+  - `get_file` on each of those two files returned the full body (2007 and 2776 text bytes).
+  - Two `find_references` calls returned empty in negligible time.
+- Wall-clock for the discovery phase (search_symbols + get_type_overview + 2x get_source_map + 2x get_file + 2x find_references): single-digit seconds total; below the threshold worth itemizing individually until the Monitor adds first-class call timing.

@@ -72,6 +72,22 @@ Format per finding: Title, Severity, File/tool, Observed, Expected, Minimal fix,
 
 **Evidence:** `Program.cs` lines 66 to 69 and manifest lines 168 to 170 confirm `GetWorkflowStatus` returns paths and diff tool resolution only.
 
+### Finding 9 — Pre-rebuild discovery
+
+**Title:** `CLAUDE_Live_Tests\*.cs` files are picked up by `MonitorBaseClaude.csproj` compile glob
+
+**Severity:** confusing (blocks build when notes folder contains C# samples)
+
+**File/tool:** `MonitorBaseClaude.csproj`, repo build configuration
+
+**Observed:** A clean `dotnet build .\MonitorBaseClaude.slnx` failed with six errors against `CLAUDE_Live_Tests/Pass2_Proposed/DatabaseDomainRepository.cs` (Dapper / Microsoft.Data / DatabaseDomainDefinition not found) because that file is a DBV2 candidate sample and is unrelated to the WinForms host project. The default `**/*.cs` glob in `MonitorBaseClaude.csproj` swept it in. Worked around locally by renaming the samples to `.cs.txt`. Build then succeeded in 4.1 s.
+
+**Expected:** The notes folder is explicitly carved out as Claude's own working-notes lane in `CLAUDE_Live_Tests/README.md`. The repo build should ignore everything under that path. A model dropping a C# sample into its own notes folder should not break the project build.
+
+**Minimal fix:** Add `<Compile Remove="CLAUDE_Live_Tests\**\*.cs" />` and matching `EmbeddedResource Remove` / `None Include` lines to `MonitorBaseClaude.csproj`, or a `Directory.Build.props` at the repo root that excludes the folder for all projects. Once that lands, `.cs.txt` rename in `Pass2_Proposed/` can revert to plain `.cs` so Codex sees the samples with proper syntax highlighting.
+
+**Evidence:** Build log timestamps in this pass; six CS0246/CS0234 errors against `CLAUDE_Live_Tests/Pass2_Proposed/DatabaseDomainRepository.cs` before rename. Build clean after rename.
+
 ### Finding 8 — Pass 2 test-validity gate I should have caught up-front
 
 **Title:** Pass 2 staging is not a valid test result without a rebuilt server and a running WinForms host
