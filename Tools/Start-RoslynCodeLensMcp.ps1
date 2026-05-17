@@ -48,5 +48,20 @@ if (-not (Test-Path -LiteralPath $solutionPath)) {
     throw "CodeLens solution path not found: $solutionPath"
 }
 
+$telemetryProxyCandidates = @(
+    (Join-Path $repoRoot 'Tools\CodeLensTelemetryProxy\bin\Debug\net10.0\CodeLensTelemetryProxy.exe'),
+    (Join-Path (Split-Path -Parent $repoRoot) 'ClaudeMonitor\Tools\CodeLensTelemetryProxy\bin\Debug\net10.0\CodeLensTelemetryProxy.exe')
+)
+
+$telemetryProxyCommand = $telemetryProxyCandidates |
+    Where-Object { Test-Path -LiteralPath $_ } |
+    Select-Object -First 1
+
+if ($telemetryProxyCommand) {
+    $logRoot = Join-Path $repoRoot 'Working\History\McpTelemetry\RoslynCodeLens'
+    & $telemetryProxyCommand $solutionPath --server-command $roslynCodelensCommand --log-root $logRoot
+    exit $LASTEXITCODE
+}
+
 & $roslynCodelensCommand $solutionPath
 exit $LASTEXITCODE

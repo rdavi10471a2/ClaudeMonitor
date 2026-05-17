@@ -60,7 +60,11 @@ public sealed class MonitorDashboardControl : UserControl
         ollamaToolExplorerControl = new OllamaToolExplorerControl(settings, monitorMcpClientService, ollamaToolExplorerService, localMcpDiscoveryService) { Dock = DockStyle.Fill };
         toolNavigatorControl = new ToolNavigatorControl { Dock = DockStyle.Fill, MinimumSize = new Size(220, 200) };
         testBenchControl = new McpTestBenchControl(mcpClientService, settings) { Dock = DockStyle.Fill, MinimumSize = new Size(850, 360) };
-        telemetryLogControl = new TelemetryLogControl { Dock = DockStyle.Fill, MinimumSize = new Size(900, 260) };
+        telemetryLogControl = new TelemetryLogControl(TelemetryLogControl.ResolveRoslynCodeLensLogRoot(settings))
+        {
+            Dock = DockStyle.Fill,
+            MinimumSize = new Size(900, 260)
+        };
         monitorMcpTelemetryLogControl = new TelemetryLogControl(TelemetryLogControl.ResolveMonitorMcpLogRoot(settings))
         {
             Dock = DockStyle.Fill,

@@ -294,6 +294,11 @@ public sealed class TelemetryLogControl : UserControl
         return Path.Combine(settings.UiRoot, "Working", "History", "McpTelemetry", "MonitorBaseClaude");
     }
 
+    public static string ResolveRoslynCodeLensLogRoot(MonitorClientSettings settings)
+    {
+        return Path.Combine(settings.UiRoot, "Working", "History", "McpTelemetry", "RoslynCodeLens");
+    }
+
     private static string ResolveRoslynLogRoot()
     {
         DirectoryInfo? current = new(AppContext.BaseDirectory);
