@@ -12,6 +12,7 @@ The current target runtime client is Claude using MCP tools. The current impleme
 - Uses WinMerge or a Host-owned review surface for all-or-none human review.
 - Classifies review outcomes with vote-plus-hash agreement:
   - Operator reports `accepted` and watched hash equals staged hash -> `accepted`
+  - Operator reports `accepted` and normalized watched/staged content matches after BOM/EOL normalization -> `accepted-normalized`
   - Operator reports `rejected` and watched hash equals original hash -> `rejected`
   - anything else -> `dirty-unexpected`
 - Blocks further staging on a file after `dirty-unexpected` until explicit refresh/recovery.

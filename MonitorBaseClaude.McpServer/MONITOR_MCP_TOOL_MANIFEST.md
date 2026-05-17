@@ -423,13 +423,14 @@ The `decision` argument is not the authority. It is the Operator's report of wha
 Decision behavior is vote-plus-hash agreement:
 
 - reported `accepted` and watched hash equals staged proposal hash -> `accepted`
+- reported `accepted` and watched normalized hash equals staged normalized hash -> `accepted-normalized`
 - reported `accepted` and watched hash equals original baseline hash -> `dirty-unexpected`
 - reported `accepted` and watched hash matches neither original nor staged -> `dirty-unexpected`
 - reported `rejected` and watched hash equals original baseline hash -> `rejected`
 - reported `rejected` and watched hash equals staged proposal hash -> `dirty-unexpected`
 - reported `rejected` and watched hash matches neither original nor staged -> `dirty-unexpected`
 
-The Operator report is not authority by itself. The hash is not enough by itself. Final classification is the agreement between the reported decision and the watched file hash.
+The Operator report is not authority by itself. The hash is not enough by itself. Final classification is the agreement between the reported decision and the watched file hash. `accepted-normalized` is reserved for byte-shape-only drift such as BOM or line-ending changes from the diff tool; the decision response includes normalized hashes when that path is evaluated.
 
 The response includes hashes, queue status, decision record path, and whether the reported outcome matched the computed classification. It returns no file content.
 

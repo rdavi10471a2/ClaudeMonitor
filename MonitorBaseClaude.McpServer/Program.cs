@@ -243,7 +243,7 @@ public sealed class MonitorTools
     }
 
     [McpServerTool]
-    [Description("Classify a completed WinMerge review for a staged edit. The decision argument is the Operator-reported outcome; accepted requires reported accepted plus watched==staged, rejected requires reported rejected plus watched==original, and any mismatch is dirty-unexpected.")]
+    [Description("Classify a completed WinMerge review for a staged edit. The decision argument is the Operator-reported outcome; accepted requires reported accepted plus watched==staged, or accepted-normalized when only BOM/EOL shape differs; rejected requires reported rejected plus watched==original; other mismatches are dirty-unexpected.")]
     public MonitorDiffDecisionResult RecordDiffDecision(
         [Description("Staged edit record id returned by submit_file.")] string stagedRecordId,
         [Description("Operator-reported outcome: accepted if WinMerge saved the full candidate, or rejected if it was not saved. Hash comparison is authoritative.")] string decision,

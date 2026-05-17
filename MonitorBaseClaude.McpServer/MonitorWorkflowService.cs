@@ -483,10 +483,13 @@ public sealed partial class MonitorWorkflowService
         }
 
         string effectiveSessionId = string.IsNullOrWhiteSpace(sessionId) ? record.SessionId ?? string.Empty : sessionId;
-        (string currentHash, string classification) = ClassifyStrictDiffDecision(record, normalizedDecision);
-        bool decisionMatchesClassification = normalizedDecision.Equals(classification, StringComparison.OrdinalIgnoreCase);
-        bool blocksFurtherEdits = classification.Equals("dirty-unexpected", StringComparison.OrdinalIgnoreCase);
-        string queueStatus = blocksFurtherEdits ? "blocked-dirty-unexpected" : classification;
+        DiffDecisionClassification classificationResult = ClassifyStrictDiffDecision(record, normalizedDecision);
+        bool decisionMatchesClassification =
+            normalizedDecision.Equals(classificationResult.Classification, StringComparison.OrdinalIgnoreCase)
+            || (normalizedDecision.Equals("accepted", StringComparison.OrdinalIgnoreCase)
+                && classificationResult.Classification.Equals("accepted-normalized", StringComparison.OrdinalIgnoreCase));
+        bool blocksFurtherEdits = classificationResult.Classification.Equals("dirty-unexpected", StringComparison.OrdinalIgnoreCase);
+        string queueStatus = blocksFurtherEdits ? "blocked-dirty-unexpected" : classificationResult.Classification;
         StagedEditRecord updatedRecord = record with { QueueStatus = queueStatus };
         File.WriteAllText(recordPath, JsonSerializer.Serialize(updatedRecord, JsonOptions));
 
@@ -498,15 +501,20 @@ public sealed partial class MonitorWorkflowService
             recordPath,
             record.ServerDerivedMetadata.StagedFilePath,
             normalizedDecision,
-            classification,
+            classificationResult.Classification,
             decisionMatchesClassification,
             blocksFurtherEdits,
             record.OriginalHash,
             record.StagedHash,
-            currentHash,
+            classificationResult.CurrentHash,
             queueStatus,
             note,
-            DateTimeOffset.UtcNow);
+            DateTimeOffset.UtcNow)
+        {
+            OriginalNormalizedHash = classificationResult.OriginalNormalizedHash,
+            StagedNormalizedHash = classificationResult.StagedNormalizedHash,
+            CurrentNormalizedHash = classificationResult.CurrentNormalizedHash
+        };
 
         string decisionRecordPath = WriteDiffDecisionRecord(result);
         return result with { DecisionRecordPath = decisionRecordPath };
@@ -1206,23 +1214,59 @@ public sealed partial class MonitorWorkflowService
         };
     }
 
-    private static (string CurrentHash, string Classification) ClassifyStrictDiffDecision(StagedEditRecord record, string normalizedDecision)
+    private static DiffDecisionClassification ClassifyStrictDiffDecision(StagedEditRecord record, string normalizedDecision)
     {
         string currentHash = ComputeSha256(record.SourceFilePath);
         if (normalizedDecision.Equals("rejected", StringComparison.OrdinalIgnoreCase))
         {
-            return (
+            return new DiffDecisionClassification(
                 currentHash,
                 currentHash.Equals(record.OriginalHash, StringComparison.OrdinalIgnoreCase)
                     ? "rejected"
-                    : "dirty-unexpected");
+                    : "dirty-unexpected",
+                OriginalNormalizedHash: null,
+                StagedNormalizedHash: null,
+                CurrentNormalizedHash: null);
         }
 
-        return (
+        if (currentHash.Equals(record.StagedHash, StringComparison.OrdinalIgnoreCase))
+        {
+            return new DiffDecisionClassification(
+                currentHash,
+                "accepted",
+                OriginalNormalizedHash: null,
+                StagedNormalizedHash: null,
+                CurrentNormalizedHash: null);
+        }
+
+        string currentNormalizedHash = ComputeNormalizedFileHash(record.SourceFilePath);
+        string stagedNormalizedHash = ComputeNormalizedFileHash(record.ServerDerivedMetadata.StagedFilePath);
+        if (currentNormalizedHash.Equals(stagedNormalizedHash, StringComparison.OrdinalIgnoreCase))
+        {
+            return new DiffDecisionClassification(
+                currentHash,
+                "accepted-normalized",
+                OriginalNormalizedHash: null,
+                StagedNormalizedHash: stagedNormalizedHash,
+                CurrentNormalizedHash: currentNormalizedHash);
+        }
+
+        return new DiffDecisionClassification(
             currentHash,
-            currentHash.Equals(record.StagedHash, StringComparison.OrdinalIgnoreCase)
-                ? "accepted"
-                : "dirty-unexpected");
+            "dirty-unexpected",
+            OriginalNormalizedHash: null,
+            StagedNormalizedHash: stagedNormalizedHash,
+            CurrentNormalizedHash: currentNormalizedHash);
+    }
+
+    private static string ComputeNormalizedFileHash(string path)
+    {
+        byte[] bytes = File.ReadAllBytes(path);
+        Encoding encoding = DetectEncoding(bytes);
+        string text = encoding.GetString(StripPreamble(bytes, encoding));
+        string normalized = text.Replace("\r\n", "\n", StringComparison.Ordinal).Replace("\r", "\n", StringComparison.Ordinal);
+        byte[] hashBytes = SHA256.HashData(Encoding.UTF8.GetBytes(normalized));
+        return Convert.ToHexString(hashBytes).ToLowerInvariant();
     }
 
     private static DiffLaunchResult LaunchWinMergeDetached(
@@ -2724,7 +2768,10 @@ public sealed record MonitorDiffDecisionResult(
     string QueueStatus,
     string? Note,
     DateTimeOffset DecidedAt,
-    string? DecisionRecordPath = null);
+    string? DecisionRecordPath = null,
+    string? OriginalNormalizedHash = null,
+    string? StagedNormalizedHash = null,
+    string? CurrentNormalizedHash = null);
 
 public sealed record MonitorStagedDiffLaunchResult(
     string Status,
@@ -2789,6 +2836,13 @@ public sealed record DiffLaunchResult(
 internal sealed record TextFileShape(
     Encoding Encoding,
     string NewLine);
+
+internal sealed record DiffDecisionClassification(
+    string CurrentHash,
+    string Classification,
+    string? OriginalNormalizedHash,
+    string? StagedNormalizedHash,
+    string? CurrentNormalizedHash);
 
 public sealed record StagedSymbolMetadata(
     string Name,
