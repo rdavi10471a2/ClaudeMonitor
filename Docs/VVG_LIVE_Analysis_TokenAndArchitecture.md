@@ -95,7 +95,7 @@ A representative end-to-end edit — "add a null guard to one method in `TargetS
 | Classify | `record_diff_decision(accepted)` | ~150 |
 | **Total** | | **~5,000** |
 
-The same edit via full-file workflows:
+The same edit via a full-file workflow (read whole file, emit whole file with the change, re-read to verify):
 
 | Step | Cost |
 | --- | ---:|
@@ -106,10 +106,10 @@ The same edit via full-file workflows:
 
 Already a meaningful saving on a *small* file. The advantage compounds for larger files and longer sessions:
 
-- 50 edits in a session on the Codex pattern: ~390,000 tokens read+emit.
+- 50 edits in a session on a pure full-file pattern: ~390,000 tokens read+emit.
 - 50 edits in the Monitor pattern: ~250,000 tokens, *with most of the cost being the one-time selector reads that get amortized across multiple edits in the same file*.
 
-In practice, with selector re-use, multi-hour Monitor sessions land **5× to 20× under** equivalent full-file sessions. The encoding-mismatch bug that initially dampened this path was fixed by PR #7 (`Preserve staged candidate text shape`), so accepted staged candidates now hash against the bytes actually written to disk.
+In practice, with selector re-use, multi-hour Monitor sessions land **5× to 20× under** an equivalent pure full-file session. Patch-based workflows (e.g. some Codex sessions) sit between the two; exact comparison would need telemetry from that side, which isn't in scope here. PR #7 (`Preserve staged candidate text shape`) fixed the stage-emitter half of the earlier encoding-mismatch bug by preserving watched-file BOM and dominant newline shape. A separate WinMerge-save round-trip issue remains open and is tracked in [StagedCandidateRoundTripEOLBugReport.md](StagedCandidateRoundTripEOLBugReport.md).
 
 ## 4. Architecture: Why This Is Right (Not Just Cheap)
 
@@ -136,6 +136,9 @@ The Monitor's all-or-none gate makes drift visible. Any structural drift shows u
 > Pattern conformance does not freeze structure. Structural changes are allowed when they are explicit, bounded, staged, reviewed, and accepted all-or-none. We are preventing accidental structural drift, not deliberate architectural evolution.
 
 The architecture is right because it operationalizes this distinction. Deliberate change is fine (stage a bounded structural candidate). Accidental drift is not (the gate catches it).
+
+**Historical note** — the watched project still contains `AI*` attributes (`AIFileContext`, `AIChange`, `AIInstructions`, `AIHistory`, `UserHistory`, `FileVersion`) on classes like `DatabaseDefinition` and `SchemaObjectColumnDefinition`. These were an *earlier* iteration of the same goal: keep the AI audit trail close to the code so it never gets lost. Reasonable instinct, wrong location. Every raw full-file read pays for the audit trail in tokens; the human reads it in their editor as noise; any edit risks drifting it. The Monitor's staged records, sessions, ledgers, and history files moved that data out-of-band where it belongs — it can grow without bloating normal reads, it can be queried structurally, and an edit can't accidentally modify it. The CLAUDE.md rule *"routine workflow notes belong in monitor-owned staged records, sessions, ledgers, or docs"* is the operationalization of the lesson. PR #11 moved the source-map response in the same direction by filtering legacy `AI*` and `FileVersion` attributes out of normal source-map signatures while leaving the watched source unchanged.
+
 
 ### 4.3 Vote-plus-hash classification replaces verbal trust
 
@@ -193,9 +196,17 @@ Claude Code's built-in `Edit` tool does string-replace edits with file-state tra
 
 `Edit` is fine for greenfield projects or scratch code. It is not fine for a codebase with a converged structure that the team has invested in.
 
-### 5.2 Full-file rewrite (Codex pattern)
+### 5.2 Full-file rewrite workflows
 
-Already analyzed above. Token-wasteful, review-fatiguing, drift-prone, low blast-radius bounding. Works for solo prototype work; collapses under sustained work on a real codebase.
+Common pattern in many AI-editor sessions, including ones the maintainer has used successfully on other codebases — not just trivial ones. The pattern is fine when one person owns the full loop, the codebase is familiar enough that reviewing whole-file diffs isn't fatiguing, and the token cost is acceptable for the convenience.
+
+It doesn't fit *this project's* specific constraints:
+
+- Watched-source pattern preservation: the existing file is a voting member, and whole-file rewrites override that vote whether intended or not. Drift refactoring slips through as a side effect of unrelated edits.
+- Long sustained sessions on the same files compound the drift sensitivity.
+- Operator review via WinMerge needs the diff to *be* the change, not the change plus reformatting noise.
+
+The Monitor's stage-bounded design closes those gaps. It's not "better than full-file workflows in general"; it's the right fit for a project where structural convention matters and drift accumulates.
 
 ### 5.3 Snippet copy/paste
 
@@ -254,14 +265,16 @@ Why Desktop is right here:
 
 These aren't blockers for the architecture's correctness, but they're worth tracking:
 
-1. **Token telemetry plumbing** — the manifest lists fields like `providerPromptTokens` and `contextBudgetWarning` as planned. Implementing them closes the observability loop between the proxy and actual usage.
-2. **Razor-aware validation** — currently out of scope. `submit_*` will refuse `.razor` mutation; whole-file staging only. Worth implementing once syntax-tree support is available.
-3. **Manifest hygiene** — the manifest still references `C:\VSCodeProjects\ClaudeMonitor\Monitor` as the source implementation root, which doesn't exist on this machine. Cosmetic but the manifest is the tool contract; should match reality.
+1. **Source-map metadata trim follow-through** — PR #11 already made the high-value trim: source maps now use compact contract signatures and omit legacy `AI*` / `FileVersion` attributes from normal output. Remaining optional trims are smaller: drop `parameterNames` where `parameterTypes` is sufficient for selectors, suppress always-false bool fields on members that cannot carry them, and consider making `textHash` opt-in for pure orientation reads.
+2. **Token telemetry plumbing** — the manifest lists fields like `providerPromptTokens` and `contextBudgetWarning` as planned. Implementing them closes the observability loop between the proxy and actual usage.
+3. **Razor-aware validation** — currently out of scope. `submit_*` will refuse `.razor` mutation; whole-file staging only. Worth implementing once syntax-tree support is available.
+4. **Manifest hygiene** — the manifest still references `C:\VSCodeProjects\ClaudeMonitor\Monitor` as the source implementation root, which doesn't exist on this machine. Cosmetic but the manifest is the tool contract; should match reality.
+5. **AI* attribute removal (future structural pass)** — the legacy `AI*` attributes in watched source could be scrubbed in a bounded staged candidate now that they carry no live behavior. Not urgent; listed so they don't outlive their usefulness.
 
 ## 8. Conclusions
 
 - The Monitor MCP server is doing exactly the job it was built to do. The numbers prove the token savings; the architecture explains why those savings come with safety properties full-file workflows cannot offer.
 - The watched file as a voting member, the all-or-none gate, vote-plus-hash classification, and the separation of Monitor (state) from CodeLens (intelligence) are correct architectural choices. Each one independently improves a property the project cares about; together they make the system better than the sum of its parts.
 - The right operational split is Claude Code in VS Code for the edit loop, Claude Desktop for design and writeups. This was confirmed in-session by Desktop's own latency self-diagnosis. Use both, route work to whichever surface matches the task's latency profile.
-- The encoding mismatch on save was the gate doing its job — it caught a real divergence between staged bytes and post-WinMerge bytes. PR #7 fixed the upstream byte-shape mismatch by preserving watched-file encoding/newline shape and hashing the staged bytes on disk, making the happy path actually happy without weakening any of the gate's guarantees.
+- The earlier encoding mismatch on save was the gate doing its job — it caught a real divergence between staged bytes and post-WinMerge bytes. PR #7 fixed the stage-emitter side by preserving watched-file encoding/newline shape and hashing the staged bytes on disk; the follow-up WinMerge-save round-trip bug remains correctly visible rather than silently accepted.
 - Building the Monitor was the right reaction to the failure modes of unmediated LLM editing. The user's original instinct — that default Claude behavior would push the workflow back into full-file or snippet patterns — was correct. The MCP design closes that gap.
