@@ -47,6 +47,12 @@ public sealed class RoslynCodeLensMcpClientService : IDisposable
 
     private static (string Name, string Command) ResolveMcpCommand()
     {
+        string? localRoslynCodeLensPath = FindLocalRoslynCodeLensPath();
+        if (!string.IsNullOrWhiteSpace(localRoslynCodeLensPath))
+        {
+            return ("roslyn-codelens-mcp-local", localRoslynCodeLensPath);
+        }
+
         string? proxyPath = FindCodeLensProxyPath();
         if (!string.IsNullOrWhiteSpace(proxyPath))
         {
@@ -54,6 +60,29 @@ public sealed class RoslynCodeLensMcpClientService : IDisposable
         }
 
         return ("roslyn-codelens-mcp", "roslyn-codelens-mcp");
+    }
+
+    private static string? FindLocalRoslynCodeLensPath()
+    {
+        const string toolExe = "roslyn-codelens-mcp.exe";
+        const string localToolPath = @"Tools\RoslynCodeLens\roslyn-codelens-mcp.exe";
+
+        List<string> candidates =
+        [
+            Path.Combine(AppContext.BaseDirectory, toolExe),
+            Path.Combine(AppContext.BaseDirectory, "RoslynCodeLens", toolExe),
+            Path.Combine(AppContext.BaseDirectory, localToolPath)
+        ];
+
+        DirectoryInfo? current = new(AppContext.BaseDirectory);
+        for (int i = 0; i < 8 && current is not null; i++)
+        {
+            candidates.Add(Path.Combine(current.FullName, localToolPath));
+            candidates.Add(Path.Combine(current.FullName, "MonitorBaseClaude", localToolPath));
+            current = current.Parent;
+        }
+
+        return candidates.FirstOrDefault(File.Exists);
     }
 
     private static string? FindCodeLensProxyPath()
@@ -241,7 +270,7 @@ public sealed class RoslynCodeLensMcpClientService : IDisposable
         {
             Name = transportName,
             Command = command,
-            Arguments = [solutionPath],
+            Arguments = BuildTransportArguments(transportName, solutionPath),
             WorkingDirectory = workingDirectory
         };
 
@@ -249,6 +278,34 @@ public sealed class RoslynCodeLensMcpClientService : IDisposable
         progress?.Report($"Starting {transportName}...");
         activeClient = await McpClient.CreateAsync(transport, cancellationToken: loadCancellation);
         activeSolutionPath = solutionPath;
+    }
+
+    private static string[] BuildTransportArguments(string transportName, string solutionPath)
+    {
+        if (!transportName.Equals("codelens-telemetry-proxy", StringComparison.OrdinalIgnoreCase))
+        {
+            return [solutionPath];
+        }
+
+        return
+        [
+            solutionPath,
+            "--log-root",
+            ResolveRoslynTelemetryLogRoot()
+        ];
+    }
+
+    private static string ResolveRoslynTelemetryLogRoot()
+    {
+        try
+        {
+            MonitorClientSettings settings = MonitorClientSettings.Load();
+            return Path.Combine(settings.UiRoot, "Working", "History", "McpTelemetry", "RoslynCodeLens");
+        }
+        catch
+        {
+            return Path.Combine(AppContext.BaseDirectory, "McpTelemetry", "RoslynCodeLens");
+        }
     }
 
     private static LoadedSolutionSession BuildSession(

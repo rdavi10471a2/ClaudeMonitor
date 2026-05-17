@@ -23,6 +23,17 @@ internal static class Program
         bool fixtureAcceptSmokeMode = args.Contains("--fixture-accept-smoke", StringComparer.OrdinalIgnoreCase);
         bool fixtureDecisionGateSmokeMode = args.Contains("--fixture-decision-gate-smoke", StringComparer.OrdinalIgnoreCase);
         bool fixtureRoslynSurgerySmokeMode = args.Contains("--fixture-roslyn-surgery-smoke", StringComparer.OrdinalIgnoreCase);
+        bool fixtureCodexSurgeryDrillMode = args.Contains("--fixture-codex-surgery-drill", StringComparer.OrdinalIgnoreCase);
+        bool fixturePropertyPlacementSmokeMode = args.Contains("--fixture-property-placement-smoke", StringComparer.OrdinalIgnoreCase);
+        bool fixtureMethodReplacementSmokeMode = args.Contains("--fixture-method-replacement-smoke", StringComparer.OrdinalIgnoreCase);
+        bool fixtureFieldInsertionSmokeMode = args.Contains("--fixture-field-insertion-smoke", StringComparer.OrdinalIgnoreCase);
+        bool fixtureFieldRemovalSmokeMode = args.Contains("--fixture-field-removal-smoke", StringComparer.OrdinalIgnoreCase);
+        bool fixtureFieldRemovalDependencySmokeMode = args.Contains("--fixture-field-removal-dependency-smoke", StringComparer.OrdinalIgnoreCase);
+        bool fixtureOverlayGateSmokeMode = args.Contains("--fixture-overlay-gate-smoke", StringComparer.OrdinalIgnoreCase);
+        bool fixtureOverlayQueueBlockSmokeMode = args.Contains("--fixture-overlay-queue-block-smoke", StringComparer.OrdinalIgnoreCase);
+        bool fixtureTemplateClassSmokeMode = args.Contains("--fixture-template-class-smoke", StringComparer.OrdinalIgnoreCase);
+        bool fixtureNewFileSmokeMode = args.Contains("--fixture-new-file-smoke", StringComparer.OrdinalIgnoreCase);
+        bool fixtureRoslynSemanticSmokeMode = args.Contains("--fixture-roslyn-semantic-smoke", StringComparer.OrdinalIgnoreCase);
         bool fixtureRazorSmokeMode = args.Contains("--fixture-razor-smoke", StringComparer.OrdinalIgnoreCase);
         bool sourceMapSmokeMode = args.Contains("--source-map-smoke", StringComparer.OrdinalIgnoreCase);
         bool sourceMapBudgetSmokeMode = args.Contains("--source-map-budget-smoke", StringComparer.OrdinalIgnoreCase);
@@ -33,11 +44,11 @@ internal static class Program
         string? modelOverride = ReadOption(args, "--model");
 
         MonitorClientSettings settings = MonitorClientSettings.Load();
-        string runRoot = Path.Combine(settings.UiRoot, "Working", "History", "ToolSmokeTests", DateTime.Now.ToString("yyyyMMdd_HHmmss"));
+        string runRoot = Path.Combine(settings.UiRoot, "Working", "History", "ToolSmokeTests", CreateUniqueRunName());
         Directory.CreateDirectory(runRoot);
 
         SmokeFixture? fixture = null;
-        if (fixtureAcceptSmokeMode || fixtureDecisionGateSmokeMode || fixtureRoslynSurgerySmokeMode)
+        if (fixtureAcceptSmokeMode || fixtureDecisionGateSmokeMode || fixtureRoslynSurgerySmokeMode || fixtureCodexSurgeryDrillMode || fixturePropertyPlacementSmokeMode || fixtureMethodReplacementSmokeMode || fixtureFieldInsertionSmokeMode || fixtureFieldRemovalSmokeMode || fixtureFieldRemovalDependencySmokeMode || fixtureOverlayGateSmokeMode || fixtureOverlayQueueBlockSmokeMode || fixtureTemplateClassSmokeMode || fixtureNewFileSmokeMode)
         {
             fixture = CreateDbv2ShapeFixture(settings, runRoot);
         }
@@ -65,6 +76,61 @@ internal static class Program
         if (fixtureRoslynSurgerySmokeMode)
         {
             return await RunFixtureRoslynSurgerySmokeAsync(fixture!, monitorClient, runRoot);
+        }
+
+        if (fixtureCodexSurgeryDrillMode)
+        {
+            return await RunFixtureCodexSurgeryDrillAsync(fixture!, monitorClient, runRoot);
+        }
+
+        if (fixturePropertyPlacementSmokeMode)
+        {
+            return await RunFixturePropertyPlacementSmokeAsync(fixture!, monitorClient, runRoot);
+        }
+
+        if (fixtureMethodReplacementSmokeMode)
+        {
+            return await RunFixtureMethodReplacementSmokeAsync(fixture!, monitorClient, runRoot);
+        }
+
+        if (fixtureFieldInsertionSmokeMode)
+        {
+            return await RunFixtureFieldInsertionSmokeAsync(fixture!, monitorClient, runRoot);
+        }
+
+        if (fixtureFieldRemovalSmokeMode)
+        {
+            return await RunFixtureFieldRemovalSmokeAsync(fixture!, monitorClient, runRoot);
+        }
+
+        if (fixtureFieldRemovalDependencySmokeMode)
+        {
+            return await RunFixtureFieldRemovalDependencySmokeAsync(fixture!, monitorClient, runRoot);
+        }
+
+        if (fixtureOverlayGateSmokeMode)
+        {
+            return await RunFixtureFieldRemovalDependencySmokeAsync(fixture!, monitorClient, runRoot, launchOverlayGate: true);
+        }
+
+        if (fixtureOverlayQueueBlockSmokeMode)
+        {
+            return await RunFixtureOverlayQueueBlockSmokeAsync(fixture!, monitorClient, runRoot);
+        }
+
+        if (fixtureTemplateClassSmokeMode)
+        {
+            return await RunFixtureTemplateClassSmokeAsync(fixture!, monitorClient, runRoot);
+        }
+
+        if (fixtureNewFileSmokeMode)
+        {
+            return await RunFixtureNewFileSmokeAsync(fixture!, monitorClient, runRoot);
+        }
+
+        if (fixtureRoslynSemanticSmokeMode)
+        {
+            return await RunFixtureRoslynSemanticSmokeAsync(settings, args, runRoot);
         }
 
         if (fixtureRazorSmokeMode)
@@ -1584,6 +1650,2051 @@ internal static class Program
         return passed ? 0 : 1;
     }
 
+    private static async Task<int> RunFixtureCodexSurgeryDrillAsync(
+        SmokeFixture fixture,
+        MonitorMcpClientService monitorClient,
+        string runRoot)
+    {
+        string mainRelativePath = Path.Combine("Data", "DatabaseRepository.cs");
+        string sqlRelativePath = Path.Combine("Data", "DatabaseRepository.Sql.cs");
+        string mainSourcePath = Path.Combine(fixture.Root, mainRelativePath);
+        string sqlSourcePath = Path.Combine(fixture.Root, sqlRelativePath);
+
+        WriteUtf8BomCrLf(mainSourcePath, """
+            using SchemaStudio.AIHelpers;
+
+            namespace SchemaStudio.Data
+            {
+                [AIFileContext("DatabaseRepository.cs", "Fixture repository used by the Codex surgery drill.")]
+                [FileVersion("1.0")]
+                internal sealed class DatabaseRepository
+                {
+                    public IReadOnlyList<string> GetDatabaseNames()
+                    {
+                        const string sql = "select name from sys.databases";
+                        return ExecuteNames(sql);
+                    }
+
+                    private static IReadOnlyList<string> ExecuteNames(string sql)
+                    {
+                        return [sql];
+                    }
+                }
+            }
+            """);
+
+        WriteUtf8BomCrLf(sqlSourcePath, """
+            namespace SchemaStudio.Data
+            {
+                internal sealed partial class DatabaseRepository
+                {
+                }
+            }
+            """);
+
+        Console.WriteLine("MonitorBaseClaude fixture Codex surgery drill");
+        Console.WriteLine("Task: convert inline SQL into a named dictionary in a partial class and add an active-databases query method.");
+        Console.WriteLine($"Fixture solution: {fixture.SolutionPath}");
+        Console.WriteLine($"Repository file: {mainSourcePath}");
+        Console.WriteLine($"SQL partial file: {sqlSourcePath}");
+        Console.WriteLine($"Log root: {runRoot}");
+        Console.WriteLine();
+
+        List<ScriptedSmokeResult> results = [];
+        int index = 0;
+
+        async Task<ScriptedSmokeResult> StepAsync(string name, string toolName, Dictionary<string, object?>? arguments, string question)
+        {
+            ScriptedSmokeResult result = await RunScriptedStepAsync(
+                ++index,
+                new ScriptedSmokeStep(name, toolName, arguments, question),
+                monitorClient,
+                runRoot);
+            results.Add(result);
+            WriteScriptedSummary(result);
+            return result;
+        }
+
+        async Task<bool> StageAndAcceptAsync(string name, string toolName, Dictionary<string, object?> arguments, string question)
+        {
+            ScriptedSmokeResult stageResult = await StepAsync(name, toolName, arguments, question);
+            string? stagedRecordId = ExtractStagedRecordId(stageResult.ToolResult.ResponseJson);
+            if (stageResult.ToolResult.IsError || string.IsNullOrWhiteSpace(stagedRecordId))
+            {
+                return false;
+            }
+
+            if (!SimulateOperatorSaveFromWinMerge(stageResult.ToolResult.ResponseJson))
+            {
+                return false;
+            }
+
+            ScriptedSmokeResult decisionResult = await StepAsync(
+                "Accept " + name,
+                "record_diff_decision",
+                new Dictionary<string, object?>
+                {
+                    ["stagedRecordId"] = stagedRecordId,
+                    ["decision"] = "accepted",
+                    ["note"] = $"Codex surgery drill accepted {toolName}."
+                },
+                $"Accept staged result from {toolName}.");
+            string classification = FindPropertyValue(JsonNode.Parse(decisionResult.ToolResult.ResponseJson), "classification") ?? string.Empty;
+            return !decisionResult.ToolResult.IsError && classification.Equals("accepted", StringComparison.OrdinalIgnoreCase);
+        }
+
+        await StepAsync("Fixture Status", "get_monitor_status", null, "Verify the Tool Server is pointed at the disposable fixture solution.");
+
+        ScriptedSmokeResult mainMap = await StepAsync(
+            "Repository Source Map",
+            "get_source_map",
+            new Dictionary<string, object?> { ["path"] = mainRelativePath, ["scope"] = "file", ["mode"] = "selector" },
+            "Read selector map for the repository before editing.");
+        string? getDatabaseNamesStableKey = FindSourceMapSymbolProperty(mainMap.ToolResult.ResponseJson, "GetDatabaseNames", "stableSymbolKey");
+        string getDatabaseNamesSelector = JsonSerializer.Serialize(new
+        {
+            stableSymbolKey = getDatabaseNamesStableKey
+        }, JsonOptions);
+
+        ScriptedSmokeResult sqlMap = await StepAsync(
+            "SQL Partial Source Map",
+            "get_source_map",
+            new Dictionary<string, object?> { ["path"] = sqlRelativePath, ["scope"] = "file", ["mode"] = "selector" },
+            "Read selector map for the SQL partial before adding shared query storage.");
+
+        ScriptedSmokeResult bodyRead = await StepAsync(
+            "Read Inline SQL Method",
+            "get_symbol",
+            new Dictionary<string, object?>
+            {
+                ["path"] = mainRelativePath,
+                ["symbolSelectorJson"] = getDatabaseNamesSelector
+            },
+            "Read the inline SQL method body before replacing it.");
+
+        string manifestJson = JsonSerializer.Serialize(new
+        {
+            intent = "Convert inline database SQL into named dictionary entries in a partial class and add active database query method.",
+            risk = "multi-symbol-refactor",
+            readSet = new[]
+            {
+                $"{mainRelativePath}::DatabaseRepository.GetDatabaseNames",
+                $"{sqlRelativePath}::DatabaseRepository"
+            },
+            writeSet = new[]
+            {
+                $"{mainRelativePath}::DatabaseRepository declaration",
+                $"{sqlRelativePath}::DatabaseRepository.SqlQueries",
+                $"{mainRelativePath}::DatabaseRepository.GetDatabaseNames",
+                $"{mainRelativePath}::DatabaseRepository.GetActiveDatabaseNames"
+            },
+            operationPolicy = "MCP staging only; no direct watched-source writes."
+        }, JsonOptions);
+
+        bool setTypePartialAccepted = await StageAndAcceptAsync(
+            "Make Repository Type Partial",
+            "set_type_partial",
+            new Dictionary<string, object?>
+            {
+                ["path"] = mainRelativePath,
+                ["containingType"] = "DatabaseRepository",
+                ["isPartial"] = true,
+                ["manifestJson"] = manifestJson
+            },
+            "Stage adding partial to the repository type declaration so query storage can live in a companion partial file.");
+
+        bool addDictionaryAccepted = await StageAndAcceptAsync(
+            "Add SQL Dictionary Field",
+            "add_symbol",
+            new Dictionary<string, object?>
+            {
+                ["path"] = sqlRelativePath,
+                ["containingType"] = "DatabaseRepository",
+                ["symbolType"] = "field",
+                ["code"] = """
+                    private static readonly IReadOnlyDictionary<string, string> SqlQueries = new Dictionary<string, string>(StringComparer.Ordinal)
+                    {
+                        ["AllDatabases"] = "select name from sys.databases",
+                        ["ActiveDatabases"] = "select name from sys.databases where state_desc = 'ONLINE'"
+                    };
+                    """,
+                ["manifestJson"] = manifestJson
+            },
+            "Stage adding named SQL dictionary entries in the partial class.");
+
+        bool replaceInlineSqlAccepted = await StageAndAcceptAsync(
+            "Replace Inline SQL Method",
+            "submit_symbol",
+            new Dictionary<string, object?>
+            {
+                ["path"] = mainRelativePath,
+                ["symbolSelectorJson"] = getDatabaseNamesSelector,
+                ["code"] = """
+                    public IReadOnlyList<string> GetDatabaseNames()
+                    {
+                        return ExecuteNames(SqlQueries["AllDatabases"]);
+                    }
+                    """,
+                ["manifestJson"] = manifestJson
+            },
+            "Stage replacing inline SQL with named dictionary lookup.");
+
+        bool addActiveMethodAccepted = await StageAndAcceptAsync(
+            "Add Active Database Query Method",
+            "add_symbol",
+            new Dictionary<string, object?>
+            {
+                ["path"] = mainRelativePath,
+                ["containingType"] = "DatabaseRepository",
+                ["symbolType"] = "method",
+                ["afterSymbol"] = "GetDatabaseNames",
+                ["code"] = """
+                    public IReadOnlyList<string> GetActiveDatabaseNames()
+                    {
+                        return ExecuteNames(SqlQueries["ActiveDatabases"]);
+                    }
+                    """,
+                ["manifestJson"] = manifestJson
+            },
+            "Stage adding a method that queries only active databases.");
+
+        ScriptedSmokeResult finalMainMap = await StepAsync(
+            "Final Repository Source Map",
+            "get_source_map",
+            new Dictionary<string, object?> { ["path"] = mainRelativePath, ["scope"] = "file", ["mode"] = "selector" },
+            "Verify final repository symbol shape.");
+        ScriptedSmokeResult finalSqlMap = await StepAsync(
+            "Final SQL Partial Source Map",
+            "get_source_map",
+            new Dictionary<string, object?> { ["path"] = sqlRelativePath, ["scope"] = "file", ["mode"] = "selector" },
+            "Verify final SQL partial symbol shape.");
+
+        string finalMainText = await File.ReadAllTextAsync(mainSourcePath);
+        string finalSqlText = await File.ReadAllTextAsync(sqlSourcePath);
+        bool bodyReadPassed = !bodyRead.ToolResult.IsError
+            && bodyRead.ToolResult.ResponseJson.Contains("const string sql", StringComparison.Ordinal)
+            && !string.IsNullOrWhiteSpace(getDatabaseNamesStableKey);
+        bool finalSourceLooksRight =
+            !finalMainText.Contains("const string sql", StringComparison.Ordinal)
+            && finalMainText.Contains("internal sealed partial class DatabaseRepository", StringComparison.Ordinal)
+            && finalMainText.Contains("GetActiveDatabaseNames", StringComparison.Ordinal)
+            && finalMainText.Contains("SqlQueries[\"AllDatabases\"]", StringComparison.Ordinal)
+            && finalMainText.Contains("SqlQueries[\"ActiveDatabases\"]", StringComparison.Ordinal)
+            && finalSqlText.Contains("SqlQueries", StringComparison.Ordinal)
+            && finalSqlText.Contains("ActiveDatabases", StringComparison.Ordinal);
+        bool sourceMapsLookRight = finalMainMap.ToolResult.ResponseJson.Contains("GetActiveDatabaseNames", StringComparison.Ordinal)
+            && finalSqlMap.ToolResult.ResponseJson.Contains("SqlQueries", StringComparison.Ordinal);
+        bool passed = bodyReadPassed
+            && setTypePartialAccepted
+            && addDictionaryAccepted
+            && replaceInlineSqlAccepted
+            && addActiveMethodAccepted
+            && finalSourceLooksRight
+            && sourceMapsLookRight
+            && sqlMap.ToolResult.ResponseJson.Contains("DatabaseRepository", StringComparison.Ordinal);
+
+        string reportPath = Path.Combine(runRoot, "fixture-codex-surgery-drill-summary.md");
+        await File.WriteAllTextAsync(reportPath, BuildScriptedMarkdownReport(results));
+        Console.WriteLine();
+        Console.WriteLine($"Fixture Codex surgery drill verified: {passed}");
+        Console.WriteLine($"get_symbol inline SQL read: {bodyReadPassed}");
+        Console.WriteLine($"set type partial accepted: {setTypePartialAccepted}");
+        Console.WriteLine($"add SQL dictionary accepted: {addDictionaryAccepted}");
+        Console.WriteLine($"replace inline SQL accepted: {replaceInlineSqlAccepted}");
+        Console.WriteLine($"add active query method accepted: {addActiveMethodAccepted}");
+        Console.WriteLine($"Final source checks: {finalSourceLooksRight}");
+        Console.WriteLine($"Final source-map checks: {sourceMapsLookRight}");
+        Console.WriteLine($"Summary report: {reportPath}");
+
+        return passed ? 0 : 1;
+    }
+
+    private static async Task<int> RunFixturePropertyPlacementSmokeAsync(
+        SmokeFixture fixture,
+        MonitorMcpClientService monitorClient,
+        string runRoot)
+    {
+        string relativePath = Path.Combine("Data", "CustomerRepository.cs");
+        string sourcePath = Path.Combine(fixture.Root, relativePath);
+
+        WriteUtf8BomCrLf(sourcePath, """
+            using System;
+            using System.Collections.Generic;
+            using System.Data;
+            using System.Linq;
+
+            namespace SchemaStudio.Data
+            {
+                internal class CustomerRepository
+                {
+                    private readonly string _connectionString;
+
+                    public bool EnableAuditLogging { get; set; }
+
+                    public bool IncludeArchivedCustomers { get; set; }
+
+                    public int CommandTimeoutSeconds { get; set; }
+
+                    public string DefaultSortColumn { get; set; }
+
+                    public CustomerRepository(string connectionString)
+                    {
+                        _connectionString = connectionString;
+
+                        EnableAuditLogging = false;
+                        IncludeArchivedCustomers = false;
+                        CommandTimeoutSeconds = 30;
+                        DefaultSortColumn = "CustomerName";
+                    }
+
+                    public List<CustomerRecord> GetAllCustomers()
+                    {
+                        string sql = BuildCustomerQuery();
+
+                        LogQuery(sql);
+
+                        return new List<CustomerRecord>();
+                    }
+
+                    public CustomerRecord? GetCustomerById(int customerId)
+                    {
+                        if (customerId <= 0)
+                            return null;
+
+                        LogQuery("GetCustomerById");
+
+                        return new CustomerRecord
+                        {
+                            CustomerId = customerId,
+                            CustomerName = "Sample Customer",
+                            Active = true
+                        };
+                    }
+
+                    public void SaveCustomer(CustomerRecord model)
+                    {
+                        if (model == null)
+                            throw new ArgumentNullException(nameof(model));
+
+                        LogQuery("SaveCustomer");
+                    }
+
+                    private string BuildCustomerQuery()
+                    {
+                        var filters = new List<string>();
+
+                        if (!IncludeArchivedCustomers)
+                            filters.Add("Archived = 0");
+
+                        string whereClause = filters.Count == 0
+                            ? string.Empty
+                            : " WHERE " + string.Join(" AND ", filters);
+
+                        return $@"
+            SELECT
+                CustomerId,
+                CustomerName,
+                Active
+            FROM Customers
+            {whereClause}
+            ORDER BY {DefaultSortColumn}";
+                    }
+
+                    private void LogQuery(string message)
+                    {
+                        if (!EnableAuditLogging)
+                            return;
+
+                        Console.WriteLine(message);
+                    }
+                }
+
+                internal class CustomerRecord
+                {
+                    public int CustomerId { get; set; }
+
+                    public string CustomerName { get; set; } = string.Empty;
+
+                    public bool Active { get; set; }
+                }
+            }
+            """);
+
+        Console.WriteLine("MonitorBaseClaude fixture property placement smoke");
+        Console.WriteLine("Task: add IncludeInactiveCustomers near related public properties without reorganizing the file.");
+        Console.WriteLine($"Fixture solution: {fixture.SolutionPath}");
+        Console.WriteLine($"Repository file: {sourcePath}");
+        Console.WriteLine($"Log root: {runRoot}");
+        Console.WriteLine();
+
+        List<ScriptedSmokeResult> results = [];
+        int index = 0;
+
+        async Task<ScriptedSmokeResult> StepAsync(string name, string toolName, Dictionary<string, object?>? arguments, string question)
+        {
+            ScriptedSmokeResult result = await RunScriptedStepAsync(
+                ++index,
+                new ScriptedSmokeStep(name, toolName, arguments, question),
+                monitorClient,
+                runRoot);
+            results.Add(result);
+            WriteScriptedSummary(result);
+            return result;
+        }
+
+        async Task<bool> StageAndAcceptAsync(string name, string toolName, Dictionary<string, object?> arguments, string question)
+        {
+            ScriptedSmokeResult stageResult = await StepAsync(name, toolName, arguments, question);
+            string? stagedRecordId = ExtractStagedRecordId(stageResult.ToolResult.ResponseJson);
+            if (stageResult.ToolResult.IsError || string.IsNullOrWhiteSpace(stagedRecordId))
+            {
+                return false;
+            }
+
+            if (!SimulateOperatorSaveFromWinMerge(stageResult.ToolResult.ResponseJson))
+            {
+                return false;
+            }
+
+            ScriptedSmokeResult decisionResult = await StepAsync(
+                "Accept " + name,
+                "record_diff_decision",
+                new Dictionary<string, object?>
+                {
+                    ["stagedRecordId"] = stagedRecordId,
+                    ["decision"] = "accepted",
+                    ["note"] = $"Property placement smoke accepted {toolName}."
+                },
+                $"Accept staged result from {toolName}.");
+            string classification = FindPropertyValue(JsonNode.Parse(decisionResult.ToolResult.ResponseJson), "classification") ?? string.Empty;
+            return !decisionResult.ToolResult.IsError && classification.Equals("accepted", StringComparison.OrdinalIgnoreCase);
+        }
+
+        await StepAsync("Fixture Status", "get_monitor_status", null, "Verify the Tool Server is pointed at the disposable fixture solution.");
+
+        ScriptedSmokeResult sourceMap = await StepAsync(
+            "Customer Repository Source Map",
+            "get_source_map",
+            new Dictionary<string, object?> { ["path"] = relativePath, ["scope"] = "file", ["mode"] = "selector" },
+            "Read selector map for the repository and confirm the existing property group.");
+
+        string manifestJson = JsonSerializer.Serialize(new
+        {
+            intent = "Add IncludeInactiveCustomers near related customer filtering properties while preserving existing member order.",
+            risk = "single-property-add",
+            readSet = new[] { $"{relativePath}::CustomerRepository public property group" },
+            writeSet = new[] { $"{relativePath}::CustomerRepository.IncludeInactiveCustomers" },
+            placement = "after IncludeArchivedCustomers; do not reorganize existing members"
+        }, JsonOptions);
+
+        bool propertyAccepted = await StageAndAcceptAsync(
+            "Add IncludeInactiveCustomers Property",
+            "add_symbol",
+            new Dictionary<string, object?>
+            {
+                ["path"] = relativePath,
+                ["containingType"] = "CustomerRepository",
+                ["symbolType"] = "property",
+                ["afterSymbol"] = "IncludeArchivedCustomers",
+                ["code"] = "public bool IncludeInactiveCustomers { get; set; }",
+                ["manifestJson"] = manifestJson
+            },
+            "Stage adding the new property immediately after the related archive/inactive property.");
+
+        ScriptedSmokeResult finalMap = await StepAsync(
+            "Final Customer Repository Source Map",
+            "get_source_map",
+            new Dictionary<string, object?> { ["path"] = relativePath, ["scope"] = "file", ["mode"] = "selector" },
+            "Verify final repository symbol shape includes the new property.");
+
+        string finalText = await File.ReadAllTextAsync(sourcePath);
+        int archivedIndex = finalText.IndexOf("public bool IncludeArchivedCustomers", StringComparison.Ordinal);
+        int inactiveIndex = finalText.IndexOf("public bool IncludeInactiveCustomers", StringComparison.Ordinal);
+        int timeoutIndex = finalText.IndexOf("public int CommandTimeoutSeconds", StringComparison.Ordinal);
+        int constructorIndex = finalText.IndexOf("public CustomerRepository", StringComparison.Ordinal);
+        int getAllIndex = finalText.IndexOf("public List<CustomerRecord> GetAllCustomers", StringComparison.Ordinal);
+        bool placementLooksRight = archivedIndex >= 0
+            && inactiveIndex > archivedIndex
+            && timeoutIndex > inactiveIndex
+            && constructorIndex > timeoutIndex
+            && getAllIndex > constructorIndex;
+        bool formattingLooksRight = finalText.Contains("        public bool IncludeInactiveCustomers { get; set; }", StringComparison.Ordinal)
+            && finalText.Contains("public bool IncludeArchivedCustomers { get; set; }\r\n\r\n        public bool IncludeInactiveCustomers", StringComparison.Ordinal)
+            && finalText.Contains("public bool IncludeInactiveCustomers { get; set; }\r\n\r\n        public int CommandTimeoutSeconds", StringComparison.Ordinal);
+        bool existingMembersPreserved = finalText.Contains("public bool EnableAuditLogging { get; set; }", StringComparison.Ordinal)
+            && finalText.Contains("public string DefaultSortColumn { get; set; }", StringComparison.Ordinal)
+            && finalText.Contains("private string BuildCustomerQuery()", StringComparison.Ordinal)
+            && finalText.Contains("internal class CustomerRecord", StringComparison.Ordinal);
+        bool sourceMapsLookRight = sourceMap.ToolResult.ResponseJson.Contains("IncludeArchivedCustomers", StringComparison.Ordinal)
+            && finalMap.ToolResult.ResponseJson.Contains("IncludeInactiveCustomers", StringComparison.Ordinal);
+        bool passed = propertyAccepted
+            && placementLooksRight
+            && formattingLooksRight
+            && existingMembersPreserved
+            && sourceMapsLookRight;
+
+        string reportPath = Path.Combine(runRoot, "fixture-property-placement-summary.md");
+        await File.WriteAllTextAsync(reportPath, BuildScriptedMarkdownReport(results));
+        Console.WriteLine();
+        Console.WriteLine($"Fixture property placement smoke verified: {passed}");
+        Console.WriteLine($"add property accepted: {propertyAccepted}");
+        Console.WriteLine($"Placement checks: {placementLooksRight}");
+        Console.WriteLine($"Formatting checks: {formattingLooksRight}");
+        Console.WriteLine($"Existing member checks: {existingMembersPreserved}");
+        Console.WriteLine($"Source-map checks: {sourceMapsLookRight}");
+        Console.WriteLine($"Summary report: {reportPath}");
+
+        return passed ? 0 : 1;
+    }
+
+    private static async Task<int> RunFixtureMethodReplacementSmokeAsync(
+        SmokeFixture fixture,
+        MonitorMcpClientService monitorClient,
+        string runRoot)
+    {
+        string relativePath = Path.Combine("Data", "TableRepository.cs");
+        string sourcePath = Path.Combine(fixture.Root, relativePath);
+
+        WriteUtf8BomCrLf(sourcePath, """
+            using System.Collections.Generic;
+
+            namespace SchemaStudio.Data
+            {
+                internal class TableRepository
+                {
+                    private static readonly Dictionary<string, string> SqlQueries = new(StringComparer.Ordinal)
+                    {
+                        ["AllTables"] = "SELECT * FROM Tables"
+                    };
+
+                    public List<TableRecord> GetAllTables()
+                    {
+                        const string sql = "SELECT * FROM Tables";
+                        return Query<TableRecord>(sql);
+                    }
+
+                    public List<TableRecord> GetActiveTables()
+                    {
+                        const string sql = "SELECT * FROM Tables WHERE Active = 1";
+                        return Query<TableRecord>(sql);
+                    }
+
+                    private static List<T> Query<T>(string sql)
+                    {
+                        return [];
+                    }
+                }
+
+                internal sealed class TableRecord
+                {
+                    public int TableId { get; set; }
+
+                    public string TableName { get; set; } = string.Empty;
+
+                    public bool Active { get; set; }
+                }
+            }
+            """);
+
+        Console.WriteLine("MonitorBaseClaude fixture method replacement smoke");
+        Console.WriteLine("Task: replace GetAllTables only, keeping neighboring methods untouched.");
+        Console.WriteLine($"Fixture solution: {fixture.SolutionPath}");
+        Console.WriteLine($"Repository file: {sourcePath}");
+        Console.WriteLine($"Log root: {runRoot}");
+        Console.WriteLine();
+
+        List<ScriptedSmokeResult> results = [];
+        int index = 0;
+
+        async Task<ScriptedSmokeResult> StepAsync(string name, string toolName, Dictionary<string, object?>? arguments, string question)
+        {
+            ScriptedSmokeResult result = await RunScriptedStepAsync(
+                ++index,
+                new ScriptedSmokeStep(name, toolName, arguments, question),
+                monitorClient,
+                runRoot);
+            results.Add(result);
+            WriteScriptedSummary(result);
+            return result;
+        }
+
+        async Task<bool> StageAndAcceptAsync(string name, string toolName, Dictionary<string, object?> arguments, string question)
+        {
+            ScriptedSmokeResult stageResult = await StepAsync(name, toolName, arguments, question);
+            string? stagedRecordId = ExtractStagedRecordId(stageResult.ToolResult.ResponseJson);
+            if (stageResult.ToolResult.IsError || string.IsNullOrWhiteSpace(stagedRecordId))
+            {
+                return false;
+            }
+
+            if (!SimulateOperatorSaveFromWinMerge(stageResult.ToolResult.ResponseJson))
+            {
+                return false;
+            }
+
+            ScriptedSmokeResult decisionResult = await StepAsync(
+                "Accept " + name,
+                "record_diff_decision",
+                new Dictionary<string, object?>
+                {
+                    ["stagedRecordId"] = stagedRecordId,
+                    ["decision"] = "accepted",
+                    ["note"] = $"Method replacement smoke accepted {toolName}."
+                },
+                $"Accept staged result from {toolName}.");
+            string classification = FindPropertyValue(JsonNode.Parse(decisionResult.ToolResult.ResponseJson), "classification") ?? string.Empty;
+            return !decisionResult.ToolResult.IsError && classification.Equals("accepted", StringComparison.OrdinalIgnoreCase);
+        }
+
+        await StepAsync("Fixture Status", "get_monitor_status", null, "Verify the Tool Server is pointed at the disposable fixture solution.");
+
+        ScriptedSmokeResult sourceMap = await StepAsync(
+            "Table Repository Source Map",
+            "get_source_map",
+            new Dictionary<string, object?> { ["path"] = relativePath, ["scope"] = "file", ["mode"] = "selector" },
+            "Read selector map for the repository before replacing one method.");
+        string? getAllTablesStableKey = FindSourceMapSymbolProperty(sourceMap.ToolResult.ResponseJson, "GetAllTables", "stableSymbolKey");
+        string getAllTablesSelector = JsonSerializer.Serialize(new
+        {
+            stableSymbolKey = getAllTablesStableKey
+        }, JsonOptions);
+
+        ScriptedSmokeResult bodyRead = await StepAsync(
+            "Read GetAllTables Body",
+            "get_symbol",
+            new Dictionary<string, object?>
+            {
+                ["path"] = relativePath,
+                ["symbolSelectorJson"] = getAllTablesSelector
+            },
+            "Read the exact target method body before replacement.");
+
+        string originalText = await File.ReadAllTextAsync(sourcePath);
+        string originalActiveMethod = ExtractBetween(originalText, "public List<TableRecord> GetActiveTables()", "private static List<T> Query<T>(string sql)");
+
+        string manifestJson = JsonSerializer.Serialize(new
+        {
+            intent = "Replace only GetAllTables with a named query lookup.",
+            risk = "single-method-replacement",
+            readSet = new[] { $"{relativePath}::TableRepository.GetAllTables", $"{relativePath}::TableRepository.GetActiveTables" },
+            writeSet = new[] { $"{relativePath}::TableRepository.GetAllTables" },
+            nonTargets = new[] { $"{relativePath}::TableRepository.GetActiveTables" }
+        }, JsonOptions);
+
+        bool replacementAccepted = await StageAndAcceptAsync(
+            "Replace GetAllTables Method",
+            "submit_symbol",
+            new Dictionary<string, object?>
+            {
+                ["path"] = relativePath,
+                ["symbolSelectorJson"] = getAllTablesSelector,
+                ["code"] = """
+                    public List<TableRecord> GetAllTables()
+                    {
+                    return Query<TableRecord>(SqlQueries["AllTables"]);
+                    }
+                    """,
+                ["manifestJson"] = manifestJson
+            },
+            "Stage replacing only GetAllTables with the known-answer method.");
+
+        ScriptedSmokeResult finalMap = await StepAsync(
+            "Final Table Repository Source Map",
+            "get_source_map",
+            new Dictionary<string, object?> { ["path"] = relativePath, ["scope"] = "file", ["mode"] = "selector" },
+            "Verify final repository symbol shape after replacement.");
+
+        string finalText = await File.ReadAllTextAsync(sourcePath);
+        string finalActiveMethod = ExtractBetween(finalText, "public List<TableRecord> GetActiveTables()", "private static List<T> Query<T>(string sql)");
+        int getAllIndex = finalText.IndexOf("public List<TableRecord> GetAllTables()", StringComparison.Ordinal);
+        int activeIndex = finalText.IndexOf("public List<TableRecord> GetActiveTables()", StringComparison.Ordinal);
+        int helperIndex = finalText.IndexOf("private static List<T> Query<T>(string sql)", StringComparison.Ordinal);
+        bool bodyReadPassed = !bodyRead.ToolResult.IsError
+            && bodyRead.ToolResultDisplay.Contains("const string sql = \"SELECT * FROM Tables\"", StringComparison.Ordinal)
+            && !string.IsNullOrWhiteSpace(getAllTablesStableKey);
+        bool replacementLooksRight = finalText.Contains("public List<TableRecord> GetAllTables()", StringComparison.Ordinal)
+            && finalText.Contains("            return Query<TableRecord>(SqlQueries[\"AllTables\"]);", StringComparison.Ordinal)
+            && !finalText.Contains("const string sql = \"SELECT * FROM Tables\";", StringComparison.Ordinal);
+        bool orderingLooksRight = getAllIndex >= 0
+            && activeIndex > getAllIndex
+            && helperIndex > activeIndex;
+        bool nonTargetUnchanged = string.Equals(originalActiveMethod, finalActiveMethod, StringComparison.Ordinal);
+        bool sourceMapsLookRight = sourceMap.ToolResult.ResponseJson.Contains("GetAllTables", StringComparison.Ordinal)
+            && finalMap.ToolResult.ResponseJson.Contains("GetActiveTables", StringComparison.Ordinal);
+        bool passed = bodyReadPassed
+            && replacementAccepted
+            && replacementLooksRight
+            && orderingLooksRight
+            && nonTargetUnchanged
+            && sourceMapsLookRight;
+
+        string reportPath = Path.Combine(runRoot, "fixture-method-replacement-summary.md");
+        await File.WriteAllTextAsync(reportPath, BuildScriptedMarkdownReport(results));
+        Console.WriteLine();
+        Console.WriteLine($"Fixture method replacement smoke verified: {passed}");
+        Console.WriteLine($"get_symbol target read: {bodyReadPassed}");
+        Console.WriteLine($"replace method accepted: {replacementAccepted}");
+        Console.WriteLine($"Replacement checks: {replacementLooksRight}");
+        Console.WriteLine($"Ordering checks: {orderingLooksRight}");
+        Console.WriteLine($"Non-target checks: {nonTargetUnchanged}");
+        Console.WriteLine($"Source-map checks: {sourceMapsLookRight}");
+        Console.WriteLine($"Summary report: {reportPath}");
+
+        return passed ? 0 : 1;
+    }
+
+    private static async Task<int> RunFixtureFieldInsertionSmokeAsync(
+        SmokeFixture fixture,
+        MonitorMcpClientService monitorClient,
+        string runRoot)
+    {
+        string relativePath = Path.Combine("Data", "CustomerRepository.Fields.cs");
+        string sourcePath = Path.Combine(fixture.Root, relativePath);
+
+        WriteUtf8BomCrLf(sourcePath, """
+            namespace SchemaStudio.Data
+            {
+                internal class CustomerRepository
+                {
+                    private readonly string _connectionString;
+                    private readonly ILogger _logger;
+
+                    public CustomerRepository(string connectionString, ILogger logger)
+                    {
+                        _connectionString = connectionString;
+                        _logger = logger;
+                    }
+
+                    public void SaveCustomer(CustomerRecord model)
+                    {
+                        _logger.Log("SaveCustomer");
+                    }
+                }
+
+                internal interface ILogger
+                {
+                    void Log(string message);
+                }
+
+                internal interface IClock
+                {
+                    DateTime Now { get; }
+                }
+
+                internal sealed class CustomerRecord
+                {
+                    public int CustomerId { get; set; }
+                }
+            }
+            """);
+
+        Console.WriteLine("MonitorBaseClaude fixture field insertion smoke");
+        Console.WriteLine("Task: add _clock near existing private readonly fields without changing constructor or methods.");
+        Console.WriteLine($"Fixture solution: {fixture.SolutionPath}");
+        Console.WriteLine($"Repository file: {sourcePath}");
+        Console.WriteLine($"Log root: {runRoot}");
+        Console.WriteLine();
+
+        List<ScriptedSmokeResult> results = [];
+        int index = 0;
+
+        async Task<ScriptedSmokeResult> StepAsync(string name, string toolName, Dictionary<string, object?>? arguments, string question)
+        {
+            ScriptedSmokeResult result = await RunScriptedStepAsync(
+                ++index,
+                new ScriptedSmokeStep(name, toolName, arguments, question),
+                monitorClient,
+                runRoot);
+            results.Add(result);
+            WriteScriptedSummary(result);
+            return result;
+        }
+
+        async Task<bool> StageAndAcceptAsync(string name, string toolName, Dictionary<string, object?> arguments, string question)
+        {
+            ScriptedSmokeResult stageResult = await StepAsync(name, toolName, arguments, question);
+            string? stagedRecordId = ExtractStagedRecordId(stageResult.ToolResult.ResponseJson);
+            if (stageResult.ToolResult.IsError || string.IsNullOrWhiteSpace(stagedRecordId))
+            {
+                return false;
+            }
+
+            if (!SimulateOperatorSaveFromWinMerge(stageResult.ToolResult.ResponseJson))
+            {
+                return false;
+            }
+
+            ScriptedSmokeResult decisionResult = await StepAsync(
+                "Accept " + name,
+                "record_diff_decision",
+                new Dictionary<string, object?>
+                {
+                    ["stagedRecordId"] = stagedRecordId,
+                    ["decision"] = "accepted",
+                    ["note"] = $"Field insertion smoke accepted {toolName}."
+                },
+                $"Accept staged result from {toolName}.");
+            string classification = FindPropertyValue(JsonNode.Parse(decisionResult.ToolResult.ResponseJson), "classification") ?? string.Empty;
+            return !decisionResult.ToolResult.IsError && classification.Equals("accepted", StringComparison.OrdinalIgnoreCase);
+        }
+
+        await StepAsync("Fixture Status", "get_monitor_status", null, "Verify the Tool Server is pointed at the disposable fixture solution.");
+
+        ScriptedSmokeResult sourceMap = await StepAsync(
+            "Customer Fields Source Map",
+            "get_source_map",
+            new Dictionary<string, object?> { ["path"] = relativePath, ["scope"] = "file", ["mode"] = "selector" },
+            "Read selector map for the repository and confirm field symbols can be anchored.");
+
+        string originalText = await File.ReadAllTextAsync(sourcePath);
+        string originalConstructorAndMethod = ExtractBetween(originalText, "public CustomerRepository(string connectionString, ILogger logger)", "internal interface ILogger");
+
+        string manifestJson = JsonSerializer.Serialize(new
+        {
+            intent = "Add a private readonly clock field near existing dependency fields.",
+            risk = "single-field-add",
+            readSet = new[] { $"{relativePath}::CustomerRepository private field group" },
+            writeSet = new[] { $"{relativePath}::CustomerRepository._clock" },
+            placement = "after _logger; do not update constructor yet"
+        }, JsonOptions);
+
+        bool fieldAccepted = await StageAndAcceptAsync(
+            "Add Clock Field",
+            "add_symbol",
+            new Dictionary<string, object?>
+            {
+                ["path"] = relativePath,
+                ["containingType"] = "CustomerRepository",
+                ["symbolType"] = "field",
+                ["afterSymbol"] = "_logger",
+                ["code"] = "private readonly IClock _clock;",
+                ["manifestJson"] = manifestJson
+            },
+            "Stage adding the new field immediately after the related injected dependency field.");
+
+        ScriptedSmokeResult finalMap = await StepAsync(
+            "Final Customer Fields Source Map",
+            "get_source_map",
+            new Dictionary<string, object?> { ["path"] = relativePath, ["scope"] = "file", ["mode"] = "selector" },
+            "Verify final source map includes the new field.");
+
+        string finalText = await File.ReadAllTextAsync(sourcePath);
+        string finalConstructorAndMethod = ExtractBetween(finalText, "public CustomerRepository(string connectionString, ILogger logger)", "internal interface ILogger");
+        int connectionStringIndex = finalText.IndexOf("private readonly string _connectionString;", StringComparison.Ordinal);
+        int loggerIndex = finalText.IndexOf("private readonly ILogger _logger;", StringComparison.Ordinal);
+        int clockIndex = finalText.IndexOf("private readonly IClock _clock;", StringComparison.Ordinal);
+        int constructorIndex = finalText.IndexOf("public CustomerRepository(string connectionString, ILogger logger)", StringComparison.Ordinal);
+        bool placementLooksRight = connectionStringIndex >= 0
+            && loggerIndex > connectionStringIndex
+            && clockIndex > loggerIndex
+            && constructorIndex > clockIndex;
+        bool formattingLooksRight = finalText.Contains("        private readonly IClock _clock;\r\n\r\n        public CustomerRepository", StringComparison.Ordinal);
+        bool nonTargetUnchanged = string.Equals(originalConstructorAndMethod, finalConstructorAndMethod, StringComparison.Ordinal);
+        bool sourceMapsLookRight = sourceMap.ToolResult.ResponseJson.Contains("_logger", StringComparison.Ordinal)
+            && finalMap.ToolResult.ResponseJson.Contains("_clock", StringComparison.Ordinal);
+        bool passed = fieldAccepted
+            && placementLooksRight
+            && formattingLooksRight
+            && nonTargetUnchanged
+            && sourceMapsLookRight;
+
+        string reportPath = Path.Combine(runRoot, "fixture-field-insertion-summary.md");
+        await File.WriteAllTextAsync(reportPath, BuildScriptedMarkdownReport(results));
+        Console.WriteLine();
+        Console.WriteLine($"Fixture field insertion smoke verified: {passed}");
+        Console.WriteLine($"add field accepted: {fieldAccepted}");
+        Console.WriteLine($"Placement checks: {placementLooksRight}");
+        Console.WriteLine($"Formatting checks: {formattingLooksRight}");
+        Console.WriteLine($"Non-target checks: {nonTargetUnchanged}");
+        Console.WriteLine($"Source-map checks: {sourceMapsLookRight}");
+        Console.WriteLine($"Summary report: {reportPath}");
+
+        return passed ? 0 : 1;
+    }
+
+    private static async Task<int> RunFixtureFieldRemovalSmokeAsync(
+        SmokeFixture fixture,
+        MonitorMcpClientService monitorClient,
+        string runRoot)
+    {
+        string relativePath = Path.Combine("Data", "CustomerRepository.RemoveField.cs");
+        string sourcePath = Path.Combine(fixture.Root, relativePath);
+
+        WriteUtf8BomCrLf(sourcePath, """
+            namespace SchemaStudio.Data
+            {
+                internal class CustomerRepository
+                {
+                    private readonly string _connectionString;
+                    private readonly ILogger _logger;
+                    private readonly IClock _clock;
+
+                    public CustomerRepository(string connectionString, ILogger logger)
+                    {
+                        _connectionString = connectionString;
+                        _logger = logger;
+                    }
+
+                    public void SaveCustomer(CustomerRecord model)
+                    {
+                        _logger.Log("SaveCustomer");
+                    }
+                }
+
+                internal interface ILogger
+                {
+                    void Log(string message);
+                }
+
+                internal interface IClock
+                {
+                    DateTime Now { get; }
+                }
+
+                internal sealed class CustomerRecord
+                {
+                    public int CustomerId { get; set; }
+                }
+            }
+            """);
+
+        Console.WriteLine("MonitorBaseClaude fixture field removal smoke");
+        Console.WriteLine("Task: remove _clock field only, preserving neighboring fields and constructor/method text.");
+        Console.WriteLine($"Fixture solution: {fixture.SolutionPath}");
+        Console.WriteLine($"Repository file: {sourcePath}");
+        Console.WriteLine($"Log root: {runRoot}");
+        Console.WriteLine();
+
+        List<ScriptedSmokeResult> results = [];
+        int index = 0;
+
+        async Task<ScriptedSmokeResult> StepAsync(string name, string toolName, Dictionary<string, object?>? arguments, string question)
+        {
+            ScriptedSmokeResult result = await RunScriptedStepAsync(
+                ++index,
+                new ScriptedSmokeStep(name, toolName, arguments, question),
+                monitorClient,
+                runRoot);
+            results.Add(result);
+            WriteScriptedSummary(result);
+            return result;
+        }
+
+        async Task<bool> StageAndAcceptAsync(string name, string toolName, Dictionary<string, object?> arguments, string question)
+        {
+            ScriptedSmokeResult stageResult = await StepAsync(name, toolName, arguments, question);
+            string? stagedRecordId = ExtractStagedRecordId(stageResult.ToolResult.ResponseJson);
+            if (stageResult.ToolResult.IsError || string.IsNullOrWhiteSpace(stagedRecordId))
+            {
+                return false;
+            }
+
+            if (!SimulateOperatorSaveFromWinMerge(stageResult.ToolResult.ResponseJson))
+            {
+                return false;
+            }
+
+            ScriptedSmokeResult decisionResult = await StepAsync(
+                "Accept " + name,
+                "record_diff_decision",
+                new Dictionary<string, object?>
+                {
+                    ["stagedRecordId"] = stagedRecordId,
+                    ["decision"] = "accepted",
+                    ["note"] = $"Field removal smoke accepted {toolName}."
+                },
+                $"Accept staged result from {toolName}.");
+            string classification = FindPropertyValue(JsonNode.Parse(decisionResult.ToolResult.ResponseJson), "classification") ?? string.Empty;
+            return !decisionResult.ToolResult.IsError && classification.Equals("accepted", StringComparison.OrdinalIgnoreCase);
+        }
+
+        await StepAsync("Fixture Status", "get_monitor_status", null, "Verify the Tool Server is pointed at the disposable fixture solution.");
+
+        ScriptedSmokeResult sourceMap = await StepAsync(
+            "Customer Remove Field Source Map",
+            "get_source_map",
+            new Dictionary<string, object?> { ["path"] = relativePath, ["scope"] = "file", ["mode"] = "selector" },
+            "Read selector map for the repository and find the _clock field selector.");
+        string? clockStableKey = FindSourceMapSymbolProperty(sourceMap.ToolResult.ResponseJson, "_clock", "stableSymbolKey");
+        string clockSelector = JsonSerializer.Serialize(new
+        {
+            stableSymbolKey = clockStableKey
+        }, JsonOptions);
+
+        string originalText = await File.ReadAllTextAsync(sourcePath);
+        string originalConstructorAndMethod = ExtractBetween(originalText, "public CustomerRepository(string connectionString, ILogger logger)", "internal interface ILogger");
+
+        string manifestJson = JsonSerializer.Serialize(new
+        {
+            intent = "Remove only the unused _clock field.",
+            risk = "single-field-remove",
+            readSet = new[] { $"{relativePath}::CustomerRepository._clock" },
+            writeSet = new[] { $"{relativePath}::CustomerRepository._clock" },
+            nonTargets = new[] { $"{relativePath}::CustomerRepository._connectionString", $"{relativePath}::CustomerRepository._logger" }
+        }, JsonOptions);
+
+        bool fieldAccepted = await StageAndAcceptAsync(
+            "Remove Clock Field",
+            "remove_symbol",
+            new Dictionary<string, object?>
+            {
+                ["path"] = relativePath,
+                ["symbolSelectorJson"] = clockSelector,
+                ["manifestJson"] = manifestJson
+            },
+            "Stage removing the _clock field only.");
+
+        ScriptedSmokeResult finalMap = await StepAsync(
+            "Final Customer Remove Field Source Map",
+            "get_source_map",
+            new Dictionary<string, object?> { ["path"] = relativePath, ["scope"] = "file", ["mode"] = "selector" },
+            "Verify final source map no longer includes the removed field.");
+
+        string finalText = await File.ReadAllTextAsync(sourcePath);
+        string finalConstructorAndMethod = ExtractBetween(finalText, "public CustomerRepository(string connectionString, ILogger logger)", "internal interface ILogger");
+        int connectionStringIndex = finalText.IndexOf("private readonly string _connectionString;", StringComparison.Ordinal);
+        int loggerIndex = finalText.IndexOf("private readonly ILogger _logger;", StringComparison.Ordinal);
+        int constructorIndex = finalText.IndexOf("public CustomerRepository(string connectionString, ILogger logger)", StringComparison.Ordinal);
+        bool selectorLookedRight = !string.IsNullOrWhiteSpace(clockStableKey)
+            && sourceMap.ToolResult.ResponseJson.Contains("_clock", StringComparison.Ordinal);
+        bool removalLooksRight = !finalText.Contains("private readonly IClock _clock;", StringComparison.Ordinal)
+            && !finalText.Contains("_clock = clock;", StringComparison.Ordinal);
+        bool placementLooksRight = connectionStringIndex >= 0
+            && loggerIndex > connectionStringIndex
+            && constructorIndex > loggerIndex;
+        bool formattingLooksRight = finalText.Contains("        private readonly ILogger _logger;\r\n\r\n        public CustomerRepository", StringComparison.Ordinal);
+        bool nonTargetUnchanged = string.Equals(originalConstructorAndMethod, finalConstructorAndMethod, StringComparison.Ordinal);
+        bool sourceMapsLookRight = !finalMap.ToolResult.ResponseJson.Contains("\"name\":\"_clock\"", StringComparison.Ordinal)
+            && finalMap.ToolResult.ResponseJson.Contains("_logger", StringComparison.Ordinal);
+        bool passed = selectorLookedRight
+            && fieldAccepted
+            && removalLooksRight
+            && placementLooksRight
+            && formattingLooksRight
+            && nonTargetUnchanged
+            && sourceMapsLookRight;
+
+        string reportPath = Path.Combine(runRoot, "fixture-field-removal-summary.md");
+        await File.WriteAllTextAsync(reportPath, BuildScriptedMarkdownReport(results));
+        Console.WriteLine();
+        Console.WriteLine($"Fixture field removal smoke verified: {passed}");
+        Console.WriteLine($"selector checks: {selectorLookedRight}");
+        Console.WriteLine($"remove field accepted: {fieldAccepted}");
+        Console.WriteLine($"Removal checks: {removalLooksRight}");
+        Console.WriteLine($"Placement checks: {placementLooksRight}");
+        Console.WriteLine($"Formatting checks: {formattingLooksRight}");
+        Console.WriteLine($"Non-target checks: {nonTargetUnchanged}");
+        Console.WriteLine($"Source-map checks: {sourceMapsLookRight}");
+        Console.WriteLine($"Summary report: {reportPath}");
+
+        return passed ? 0 : 1;
+    }
+
+    private static async Task<int> RunFixtureFieldRemovalDependencySmokeAsync(
+        SmokeFixture fixture,
+        MonitorMcpClientService monitorClient,
+        string runRoot,
+        bool launchOverlayGate = false)
+    {
+        string relativePath = Path.Combine("Data", "CustomerRepository.RemoveFieldDependency.cs");
+        string sourcePath = Path.Combine(fixture.Root, relativePath);
+
+        WriteUtf8BomCrLf(sourcePath, """
+            namespace SchemaStudio.Data
+            {
+                internal class CustomerRepository
+                {
+                    private readonly string _connectionString;
+                    private readonly ILogger _logger;
+                    private readonly IClock _clock;
+
+                    public CustomerRepository(string connectionString, ILogger logger, IClock clock)
+                    {
+                        _connectionString = connectionString;
+                        _logger = logger;
+                        _clock = clock;
+                    }
+
+                    public void SaveCustomer(CustomerRecord model)
+                    {
+                        _logger.Log("SaveCustomer");
+                    }
+                }
+
+                internal interface ILogger
+                {
+                    void Log(string message);
+                }
+
+                internal interface IClock
+                {
+                    DateTime Now { get; }
+                }
+
+                internal sealed class CustomerRecord
+                {
+                    public int CustomerId { get; set; }
+                }
+            }
+            """);
+
+        Console.WriteLine(launchOverlayGate
+            ? "MonitorBaseClaude fixture overlay validation gate smoke"
+            : "MonitorBaseClaude fixture field removal dependency smoke");
+        Console.WriteLine(launchOverlayGate
+            ? "Task: stage compile-failed code and verify launch_staged_diff routes through the overlay validation gate."
+            : "Task: prove removing a field with dependent assignments reports overlay compile errors.");
+        Console.WriteLine($"Fixture solution: {fixture.SolutionPath}");
+        Console.WriteLine($"Repository file: {sourcePath}");
+        Console.WriteLine($"Log root: {runRoot}");
+        Console.WriteLine();
+
+        List<ScriptedSmokeResult> results = [];
+        int index = 0;
+
+        async Task<ScriptedSmokeResult> StepAsync(string name, string toolName, Dictionary<string, object?>? arguments, string question)
+        {
+            ScriptedSmokeResult result = await RunScriptedStepAsync(
+                ++index,
+                new ScriptedSmokeStep(name, toolName, arguments, question),
+                monitorClient,
+                runRoot);
+            results.Add(result);
+            WriteScriptedSummary(result);
+            return result;
+        }
+
+        await StepAsync("Fixture Status", "get_monitor_status", null, "Verify the Tool Server is pointed at the disposable fixture solution.");
+
+        ScriptedSmokeResult sourceMap = await StepAsync(
+            "Customer Remove Dependency Source Map",
+            "get_source_map",
+            new Dictionary<string, object?> { ["path"] = relativePath, ["scope"] = "file", ["mode"] = "selector" },
+            "Read selector map for the repository and find the _clock field selector.");
+        string? clockStableKey = FindSourceMapSymbolProperty(sourceMap.ToolResult.ResponseJson, "_clock", "stableSymbolKey");
+        string clockSelector = JsonSerializer.Serialize(new
+        {
+            stableSymbolKey = clockStableKey
+        }, JsonOptions);
+
+        string manifestJson = JsonSerializer.Serialize(new
+        {
+            intent = "Attempt field-only removal to verify dependent assignment diagnostics are reported.",
+            risk = "field-removal-with-dependents",
+            readSet = new[] { $"{relativePath}::CustomerRepository._clock", $"{relativePath}::CustomerRepository.CustomerRepository" },
+            writeSet = new[] { $"{relativePath}::CustomerRepository._clock" },
+            expectedDiagnostic = "CS0103 _clock assignment remains"
+        }, JsonOptions);
+
+        ScriptedSmokeResult removalResult = await StepAsync(
+            "Remove Clock Field With Dependents",
+            "remove_symbol",
+            new Dictionary<string, object?>
+            {
+                ["path"] = relativePath,
+                ["symbolSelectorJson"] = clockSelector,
+                ["manifestJson"] = manifestJson
+            },
+            "Stage removing only _clock and verify overlay diagnostics report the remaining assignment.");
+
+        ScriptedSmokeResult? launchResult = null;
+        string stagedRecordId = FindPropertyValue(JsonNode.Parse(removalResult.ToolResult.ResponseJson), "stagedRecordId") ?? string.Empty;
+        if (launchOverlayGate)
+        {
+            launchResult = await StepAsync(
+                "Launch Diff Through Overlay Gate",
+                "launch_staged_diff",
+                new Dictionary<string, object?>
+                {
+                    ["stagedRecordId"] = stagedRecordId
+                },
+                "Attempt WinMerge review of compile-failed staged code. The Host dialog must choose force review or cancel.");
+        }
+
+        string finalText = await File.ReadAllTextAsync(sourcePath);
+        JsonNode? removalJson = JsonNode.Parse(removalResult.ToolResult.ResponseJson);
+        JsonNode? launchJson = launchResult is null ? null : JsonNode.Parse(launchResult.ToolResult.ResponseJson);
+        string overlayStatus = FindPropertyValue(removalJson, "status") ?? string.Empty;
+        string overlayHasErrors = FindPropertyValue(removalJson, "hasErrors") ?? string.Empty;
+        string launchStatus = FindPropertyValue(launchJson, "status") ?? string.Empty;
+        string validationGateDecision = FindPropertyValue(launchJson, "validationGateDecision") ?? string.Empty;
+        bool selectorLookedRight = !string.IsNullOrWhiteSpace(clockStableKey)
+            && sourceMap.ToolResult.ResponseJson.Contains("_clock", StringComparison.Ordinal);
+        bool stagedWithDiagnostics = !removalResult.ToolResult.IsError
+            && removalResult.ToolResult.ResponseJson.Contains("compiled-with-errors", StringComparison.Ordinal)
+            && removalResult.ToolResult.ResponseJson.Contains("CS0103", StringComparison.Ordinal)
+            && removalResult.ToolResult.ResponseJson.Contains("_clock", StringComparison.Ordinal);
+        bool sourceNotAccepted = finalText.Contains("private readonly IClock _clock;", StringComparison.Ordinal)
+            && finalText.Contains("_clock = clock;", StringComparison.Ordinal);
+        bool gateBehaved = !launchOverlayGate
+            || (launchResult is not null
+                && !launchResult.ToolResult.IsError
+                && (launchStatus.Equals("overlay-errors-review-cancelled", StringComparison.OrdinalIgnoreCase)
+                    || launchStatus.Equals("overlay-errors-host-unavailable", StringComparison.OrdinalIgnoreCase)
+                    || launchStatus.Equals("winmerge-launched", StringComparison.OrdinalIgnoreCase)));
+        bool passed = selectorLookedRight
+            && stagedWithDiagnostics
+            && sourceNotAccepted
+            && gateBehaved
+            && overlayStatus.Length >= 0
+            && overlayHasErrors.Length >= 0;
+
+        string reportPath = Path.Combine(
+            runRoot,
+            launchOverlayGate ? "fixture-overlay-gate-summary.md" : "fixture-field-removal-dependency-summary.md");
+        await File.WriteAllTextAsync(reportPath, BuildScriptedMarkdownReport(results));
+        Console.WriteLine();
+        Console.WriteLine(launchOverlayGate
+            ? $"Fixture overlay validation gate smoke verified: {passed}"
+            : $"Fixture field removal dependency smoke verified: {passed}");
+        Console.WriteLine($"selector checks: {selectorLookedRight}");
+        Console.WriteLine($"diagnostic checks: {stagedWithDiagnostics}");
+        Console.WriteLine($"source not accepted checks: {sourceNotAccepted}");
+        if (launchOverlayGate)
+        {
+            Console.WriteLine($"launch status: {launchStatus}");
+            Console.WriteLine($"validation gate decision: {validationGateDecision}");
+            Console.WriteLine($"gate checks: {gateBehaved}");
+        }
+
+        Console.WriteLine($"Summary report: {reportPath}");
+
+        return passed ? 0 : 1;
+    }
+
+    private static async Task<int> RunFixtureTemplateClassSmokeAsync(
+        SmokeFixture fixture,
+        MonitorMcpClientService monitorClient,
+        string runRoot)
+    {
+        string relativePath = Path.Combine("Services", "CustomerImportService.cs");
+        string sourcePath = Path.Combine(fixture.Root, relativePath);
+        Directory.CreateDirectory(Path.GetDirectoryName(sourcePath)!);
+        WriteUtf8BomCrLf(sourcePath, string.Empty);
+
+        string generatedClass = """
+            using System.Collections.Generic;
+
+            namespace SchemaStudio.Services
+            {
+                internal sealed partial class CustomerImportService
+                {
+                    #region Fields
+
+                    private readonly ICustomerRepository _repository;
+                    private readonly ILogger _logger;
+
+                    #endregion
+
+                    #region Constructors
+
+                    public CustomerImportService(ICustomerRepository repository, ILogger logger)
+                    {
+                        _repository = repository;
+                        _logger = logger;
+                    }
+
+                    #endregion
+
+                    #region Attributes
+
+                    #endregion
+
+                    #region Properties
+
+                    public bool IsPreviewEnabled { get; set; }
+
+                    #endregion
+
+                    #region Public Methods
+
+                    public void ImportCustomers(IEnumerable<CustomerRecord> customers)
+                    {
+                        ImportOptions options = CreateDefaultOptions();
+                        _logger.Log(options.Mode.ToString());
+                    }
+
+                    public bool CanImport(CustomerRecord customer)
+                    {
+                        return customer != null;
+                    }
+
+                    #endregion
+
+                    #region Private Methods
+
+                    private static ImportOptions CreateDefaultOptions()
+                    {
+                        return new ImportOptions();
+                    }
+
+                    #endregion
+
+                    #region Converters
+
+                    private static ImportOptions ToOptions(CustomerImportMode mode)
+                    {
+                        return new ImportOptions
+                        {
+                            Mode = mode
+                        };
+                    }
+
+                    #endregion
+
+                    #region Nested Types
+
+                    private enum CustomerImportMode
+                    {
+                        Standard,
+                        Preview
+                    }
+
+                    private sealed class ImportOptions
+                    {
+                        public CustomerImportMode Mode { get; set; } = CustomerImportMode.Standard;
+                    }
+
+                    #endregion
+                }
+
+                internal interface ICustomerRepository
+                {
+                }
+
+                internal interface ILogger
+                {
+                    void Log(string message);
+                }
+
+                internal sealed class CustomerRecord
+                {
+                    public int CustomerId { get; set; }
+                }
+            }
+            """;
+
+        Console.WriteLine("MonitorBaseClaude fixture template class smoke");
+        Console.WriteLine("Task: stage a new generated class template with stable regions and member ordering.");
+        Console.WriteLine($"Fixture solution: {fixture.SolutionPath}");
+        Console.WriteLine($"Generated file: {sourcePath}");
+        Console.WriteLine($"Log root: {runRoot}");
+        Console.WriteLine();
+
+        List<ScriptedSmokeResult> results = [];
+        int index = 0;
+
+        async Task<ScriptedSmokeResult> StepAsync(string name, string toolName, Dictionary<string, object?>? arguments, string question)
+        {
+            ScriptedSmokeResult result = await RunScriptedStepAsync(
+                ++index,
+                new ScriptedSmokeStep(name, toolName, arguments, question),
+                monitorClient,
+                runRoot);
+            results.Add(result);
+            WriteScriptedSummary(result);
+            return result;
+        }
+
+        async Task<bool> StageAndAcceptAsync(string name, string toolName, Dictionary<string, object?> arguments, string question)
+        {
+            ScriptedSmokeResult stageResult = await StepAsync(name, toolName, arguments, question);
+            string? stagedRecordId = ExtractStagedRecordId(stageResult.ToolResult.ResponseJson);
+            if (stageResult.ToolResult.IsError || string.IsNullOrWhiteSpace(stagedRecordId))
+            {
+                return false;
+            }
+
+            if (!SimulateOperatorSaveFromWinMerge(stageResult.ToolResult.ResponseJson))
+            {
+                return false;
+            }
+
+            ScriptedSmokeResult decisionResult = await StepAsync(
+                "Accept " + name,
+                "record_diff_decision",
+                new Dictionary<string, object?>
+                {
+                    ["stagedRecordId"] = stagedRecordId,
+                    ["decision"] = "accepted",
+                    ["note"] = $"Template class smoke accepted {toolName}."
+                },
+                $"Accept staged result from {toolName}.");
+            string classification = FindPropertyValue(JsonNode.Parse(decisionResult.ToolResult.ResponseJson), "classification") ?? string.Empty;
+            return !decisionResult.ToolResult.IsError && classification.Equals("accepted", StringComparison.OrdinalIgnoreCase);
+        }
+
+        await StepAsync("Fixture Status", "get_monitor_status", null, "Verify the Tool Server is pointed at the disposable fixture solution.");
+
+        string manifestJson = JsonSerializer.Serialize(new
+        {
+            intent = "Generate a new service class from namespace/visibility/className/isPartial parameters.",
+            risk = "new-file-template",
+            parameters = new
+            {
+                @namespace = "SchemaStudio.Services",
+                visibility = "internal",
+                className = "CustomerImportService",
+                isPartial = true
+            },
+            expectedRegions = new[] { "Fields", "Constructors", "Attributes", "Properties", "Public Methods", "Private Methods", "Converters", "Nested Types" }
+        }, JsonOptions);
+
+        bool submitAccepted = await StageAndAcceptAsync(
+            "Submit Template Class",
+            "submit_file",
+            new Dictionary<string, object?>
+            {
+                ["path"] = relativePath,
+                ["content"] = generatedClass,
+                ["manifestJson"] = manifestJson
+            },
+            "Stage the generated class template as a whole-file candidate.");
+
+        ScriptedSmokeResult finalMap = await StepAsync(
+            "Final Template Class Source Map",
+            "get_source_map",
+            new Dictionary<string, object?> { ["path"] = relativePath, ["scope"] = "file", ["mode"] = "selector" },
+            "Verify final source map includes the generated class and nested types.");
+
+        string finalText = await File.ReadAllTextAsync(sourcePath);
+        string[] orderedMarkers =
+        [
+            "#region Fields",
+            "#region Constructors",
+            "#region Attributes",
+            "#region Properties",
+            "#region Public Methods",
+            "#region Private Methods",
+            "#region Converters",
+            "#region Nested Types"
+        ];
+        bool regionsOrdered = MarkersAreOrdered(finalText, orderedMarkers);
+        bool templateShapeLooksRight = finalText.Contains("namespace SchemaStudio.Services", StringComparison.Ordinal)
+            && finalText.Contains("internal sealed partial class CustomerImportService", StringComparison.Ordinal)
+            && finalText.Contains("private enum CustomerImportMode", StringComparison.Ordinal)
+            && finalText.Contains("private sealed class ImportOptions", StringComparison.Ordinal)
+            && finalText.Contains("private static ImportOptions ToOptions(CustomerImportMode mode)", StringComparison.Ordinal);
+        bool sourceMapsLookRight = finalMap.ToolResult.ResponseJson.Contains("CustomerImportService", StringComparison.Ordinal)
+            && finalMap.ToolResult.ResponseJson.Contains("CustomerImportMode", StringComparison.Ordinal)
+            && finalMap.ToolResult.ResponseJson.Contains("ImportOptions", StringComparison.Ordinal);
+        bool passed = submitAccepted
+            && regionsOrdered
+            && templateShapeLooksRight
+            && sourceMapsLookRight;
+
+        string reportPath = Path.Combine(runRoot, "fixture-template-class-summary.md");
+        await File.WriteAllTextAsync(reportPath, BuildScriptedMarkdownReport(results));
+        Console.WriteLine();
+        Console.WriteLine($"Fixture template class smoke verified: {passed}");
+        Console.WriteLine($"submit file accepted: {submitAccepted}");
+        Console.WriteLine($"Region order checks: {regionsOrdered}");
+        Console.WriteLine($"Template shape checks: {templateShapeLooksRight}");
+        Console.WriteLine($"Source-map checks: {sourceMapsLookRight}");
+        Console.WriteLine($"Generated file: {sourcePath}");
+        Console.WriteLine($"Summary report: {reportPath}");
+
+        return passed ? 0 : 1;
+    }
+
+    private static async Task<int> RunFixtureNewFileSmokeAsync(
+        SmokeFixture fixture,
+        MonitorMcpClientService monitorClient,
+        string runRoot)
+    {
+        string acceptedRelativePath = Path.Combine("Services", "GeneratedCustomerAuditService.cs");
+        string rejectedRelativePath = Path.Combine("Services", "RejectedGeneratedService.cs");
+        string acceptedSourcePath = Path.Combine(fixture.Root, acceptedRelativePath);
+        string rejectedSourcePath = Path.Combine(fixture.Root, rejectedRelativePath);
+
+        Console.WriteLine("MonitorBaseClaude fixture new-file smoke");
+        Console.WriteLine("Task: stage brand-new watched paths through submit_file and classify accept/reject without placeholder source files.");
+        Console.WriteLine($"Fixture solution: {fixture.SolutionPath}");
+        Console.WriteLine($"Accepted new file: {acceptedSourcePath}");
+        Console.WriteLine($"Rejected new file: {rejectedSourcePath}");
+        Console.WriteLine($"Log root: {runRoot}");
+        Console.WriteLine();
+
+        List<ScriptedSmokeResult> results = [];
+        int index = 0;
+
+        async Task<ScriptedSmokeResult> StepAsync(string name, string toolName, Dictionary<string, object?>? arguments, string question)
+        {
+            ScriptedSmokeResult result = await RunScriptedStepAsync(
+                ++index,
+                new ScriptedSmokeStep(name, toolName, arguments, question),
+                monitorClient,
+                runRoot);
+            results.Add(result);
+            WriteScriptedSummary(result);
+            return result;
+        }
+
+        string acceptedContent = """
+            using SchemaStudio.AIHelpers;
+
+            namespace SchemaStudio.Services
+            {
+                [AIFileContext("GeneratedCustomerAuditService.cs", "New-file smoke fixture service staged through submit_file.")]
+                [FileVersion("1.0")]
+                internal sealed class GeneratedCustomerAuditService
+                {
+                    public string BuildAuditLabel(string customerName)
+                    {
+                        ArgumentNullException.ThrowIfNull(customerName);
+                        return $"Customer: {customerName.Trim()}";
+                    }
+                }
+            }
+            """;
+
+        string rejectedContent = """
+            namespace SchemaStudio.Services
+            {
+                internal sealed class RejectedGeneratedService
+                {
+                    public string Name => "Rejected";
+                }
+            }
+            """;
+
+        await StepAsync("Fixture Status", "get_monitor_status", null, "Verify the Tool Server is pointed at the disposable fixture solution.");
+
+        ScriptedSmokeResult acceptedStage = await StepAsync(
+            "Stage Accepted New File",
+            "submit_file",
+            new Dictionary<string, object?>
+            {
+                ["path"] = acceptedRelativePath,
+                ["content"] = acceptedContent,
+                ["manifestJson"] = JsonSerializer.Serialize(new
+                {
+                    intent = "Stage a brand-new C# file without creating a placeholder watched file first.",
+                    expectedCreatedFile = acceptedRelativePath,
+                    risk = "new-file"
+                }, JsonOptions)
+            },
+            "Stage a new file path that does not exist in the watched fixture.");
+        string acceptedRecordId = ExtractStagedRecordId(acceptedStage.ToolResult.ResponseJson) ?? string.Empty;
+        bool acceptedOriginalIsNew = (FindPropertyValue(JsonNode.Parse(acceptedStage.ToolResult.ResponseJson), "originalHash") ?? string.Empty)
+            .Equals("<new-file>", StringComparison.OrdinalIgnoreCase);
+        bool acceptedSave = SimulateOperatorSaveFromWinMerge(acceptedStage.ToolResult.ResponseJson);
+        ScriptedSmokeResult acceptedDecision = await StepAsync(
+            "Accept New File",
+            "record_diff_decision",
+            new Dictionary<string, object?>
+            {
+                ["stagedRecordId"] = acceptedRecordId,
+                ["decision"] = "accepted",
+                ["note"] = "New-file smoke accepted after simulated Operator save."
+            },
+            "Classify accepted new file after the watched file is created from the staged candidate.");
+        string acceptedClassification = FindPropertyValue(JsonNode.Parse(acceptedDecision.ToolResult.ResponseJson), "classification") ?? string.Empty;
+
+        ScriptedSmokeResult rejectedStage = await StepAsync(
+            "Stage Rejected New File",
+            "submit_file",
+            new Dictionary<string, object?>
+            {
+                ["path"] = rejectedRelativePath,
+                ["content"] = rejectedContent,
+                ["manifestJson"] = JsonSerializer.Serialize(new
+                {
+                    intent = "Stage a brand-new C# file that the Operator rejects by not saving.",
+                    expectedCreatedFile = rejectedRelativePath,
+                    risk = "new-file-reject"
+                }, JsonOptions)
+            },
+            "Stage another new file path that does not exist in the watched fixture.");
+        string rejectedRecordId = ExtractStagedRecordId(rejectedStage.ToolResult.ResponseJson) ?? string.Empty;
+        bool rejectedOriginalIsNew = (FindPropertyValue(JsonNode.Parse(rejectedStage.ToolResult.ResponseJson), "originalHash") ?? string.Empty)
+            .Equals("<new-file>", StringComparison.OrdinalIgnoreCase);
+        ScriptedSmokeResult rejectedDecision = await StepAsync(
+            "Reject New File",
+            "record_diff_decision",
+            new Dictionary<string, object?>
+            {
+                ["stagedRecordId"] = rejectedRecordId,
+                ["decision"] = "rejected",
+                ["note"] = "New-file smoke rejected without creating watched file."
+            },
+            "Classify rejected new file while the watched file remains absent.");
+        string rejectedClassification = FindPropertyValue(JsonNode.Parse(rejectedDecision.ToolResult.ResponseJson), "classification") ?? string.Empty;
+
+        ScriptedSmokeResult finalMap = await StepAsync(
+            "Accepted New File Source Map",
+            "get_source_map",
+            new Dictionary<string, object?> { ["path"] = acceptedRelativePath, ["scope"] = "file", ["mode"] = "selector" },
+            "Verify accepted new C# file is now visible to source maps.");
+
+        bool passed = !acceptedStage.ToolResult.IsError
+            && !acceptedDecision.ToolResult.IsError
+            && !rejectedStage.ToolResult.IsError
+            && !rejectedDecision.ToolResult.IsError
+            && acceptedOriginalIsNew
+            && rejectedOriginalIsNew
+            && acceptedSave
+            && File.Exists(acceptedSourcePath)
+            && !File.Exists(rejectedSourcePath)
+            && acceptedClassification.Equals("accepted", StringComparison.OrdinalIgnoreCase)
+            && rejectedClassification.Equals("rejected", StringComparison.OrdinalIgnoreCase)
+            && finalMap.ToolResult.ResponseJson.Contains("GeneratedCustomerAuditService", StringComparison.Ordinal);
+
+        string reportPath = Path.Combine(runRoot, "fixture-new-file-summary.md");
+        await File.WriteAllTextAsync(reportPath, BuildScriptedMarkdownReport(results));
+        Console.WriteLine();
+        Console.WriteLine($"Fixture new-file smoke verified: {passed}");
+        Console.WriteLine($"accepted original hash sentinel: {acceptedOriginalIsNew}");
+        Console.WriteLine($"accepted save simulated: {acceptedSave}");
+        Console.WriteLine($"accepted classification: {acceptedClassification}");
+        Console.WriteLine($"rejected original hash sentinel: {rejectedOriginalIsNew}");
+        Console.WriteLine($"rejected classification: {rejectedClassification}");
+        Console.WriteLine($"Summary report: {reportPath}");
+
+        return passed ? 0 : 1;
+    }
+
+    private static async Task<int> RunFixtureOverlayQueueBlockSmokeAsync(
+        SmokeFixture fixture,
+        MonitorMcpClientService monitorClient,
+        string runRoot)
+    {
+        string badRelativePath = Path.Combine("Data", "CustomerRepository.QueueBlockBad.cs");
+        string goodRelativePath = Path.Combine("Data", "CustomerRepository.QueueBlockGood.cs");
+        string badSourcePath = Path.Combine(fixture.Root, badRelativePath);
+        string goodSourcePath = Path.Combine(fixture.Root, goodRelativePath);
+        Directory.CreateDirectory(Path.GetDirectoryName(badSourcePath)!);
+
+        WriteUtf8BomCrLf(
+            badSourcePath,
+            """
+            using System;
+
+            namespace SchemaStudio.Data
+            {
+                internal class CustomerRepositoryQueueBlockBad
+                {
+                    private readonly IClock _clock;
+
+                    public CustomerRepositoryQueueBlockBad(IClock clock)
+                    {
+                        _clock = clock;
+                    }
+
+                    public DateTime GetNow()
+                    {
+                        return _clock.Now;
+                    }
+                }
+            }
+            """);
+
+        WriteUtf8BomCrLf(
+            goodSourcePath,
+            """
+            namespace SchemaStudio.Data
+            {
+                internal class CustomerRepositoryQueueBlockGood
+                {
+                    public string GetName()
+                    {
+                        return "Before";
+                    }
+                }
+            }
+            """);
+
+        Console.WriteLine("MonitorBaseClaude fixture overlay queue block smoke");
+        Console.WriteLine("Task: prove a cancelled overlay gate blocks later diff launches in the same session.");
+        Console.WriteLine($"Fixture solution: {fixture.SolutionPath}");
+        Console.WriteLine($"Bad file: {badSourcePath}");
+        Console.WriteLine($"Good file: {goodSourcePath}");
+        Console.WriteLine($"Log root: {runRoot}");
+        Console.WriteLine();
+
+        List<ScriptedSmokeResult> results = [];
+        int index = 0;
+
+        async Task<ScriptedSmokeResult> StepAsync(string name, string toolName, Dictionary<string, object?>? arguments, string question)
+        {
+            ScriptedSmokeResult result = await RunScriptedStepAsync(
+                ++index,
+                new ScriptedSmokeStep(name, toolName, arguments, question),
+                monitorClient,
+                runRoot);
+            results.Add(result);
+            WriteScriptedSummary(result);
+            return result;
+        }
+
+        ScriptedSmokeResult sessionResult = await StepAsync(
+            "Start Queue Session",
+            "start_monitor_session",
+            new Dictionary<string, object?> { ["purpose"] = "overlay queue block smoke" },
+            "Create one session so two staged records share a review queue.");
+        string sessionId = ExtractSessionId(sessionResult.ToolResult.ResponseJson) ?? throw new InvalidOperationException("No session id returned.");
+
+        ScriptedSmokeResult badMap = await StepAsync(
+            "Bad Source Map",
+            "get_source_map",
+            new Dictionary<string, object?> { ["path"] = badRelativePath, ["scope"] = "file", ["mode"] = "selector" },
+            "Read selector map for the bad candidate field.");
+        string? clockStableKey = FindSourceMapSymbolProperty(badMap.ToolResult.ResponseJson, "_clock", "stableSymbolKey");
+        string clockSelector = JsonSerializer.Serialize(new
+        {
+            stableSymbolKey = clockStableKey
+        }, JsonOptions);
+
+        ScriptedSmokeResult badStage = await StepAsync(
+            "Stage Bad Candidate",
+            "remove_symbol",
+            new Dictionary<string, object?>
+            {
+                ["path"] = badRelativePath,
+                ["symbolSelectorJson"] = clockSelector,
+                ["sessionId"] = sessionId
+            },
+            "Stage compile-failed candidate A in the shared session.");
+        string badRecordId = ExtractStagedRecordId(badStage.ToolResult.ResponseJson) ?? throw new InvalidOperationException("No bad staged record id returned.");
+
+        ScriptedSmokeResult badLaunch = await StepAsync(
+            "Block Bad Candidate Review",
+            "launch_staged_diff",
+            new Dictionary<string, object?> { ["stagedRecordId"] = badRecordId },
+            "Create a machine block or Host cancel so candidate A marks the session queue blocked.");
+
+        string goodContent = """
+            namespace SchemaStudio.Data
+            {
+                internal class CustomerRepositoryQueueBlockGood
+                {
+                    public string GetName()
+                    {
+                        return "After";
+                    }
+                }
+            }
+            """;
+        ScriptedSmokeResult goodStage = await StepAsync(
+            "Stage Good Candidate",
+            "submit_file",
+            new Dictionary<string, object?>
+            {
+                ["path"] = goodRelativePath,
+                ["content"] = goodContent,
+                ["sessionId"] = sessionId
+            },
+            "Stage compile-clean candidate B in the same session.");
+        string goodRecordId = ExtractStagedRecordId(goodStage.ToolResult.ResponseJson) ?? throw new InvalidOperationException("No good staged record id returned.");
+
+        ScriptedSmokeResult goodLaunch = await StepAsync(
+            "Attempt Later Diff",
+            "launch_staged_diff",
+            new Dictionary<string, object?> { ["stagedRecordId"] = goodRecordId },
+            "Prove candidate B cannot launch while candidate A is blocked.");
+
+        JsonNode? badLaunchJson = JsonNode.Parse(badLaunch.ToolResult.ResponseJson);
+        JsonNode? goodLaunchJson = JsonNode.Parse(goodLaunch.ToolResult.ResponseJson);
+        string badLaunchStatus = FindPropertyValue(badLaunchJson, "status") ?? string.Empty;
+        string goodLaunchStatus = FindPropertyValue(goodLaunchJson, "status") ?? string.Empty;
+        string goodGateStatus = FindPropertyValue(goodLaunchJson, "validationGateStatus") ?? string.Empty;
+
+        bool badWasBlocked = badLaunchStatus.Equals("overlay-errors-host-unavailable", StringComparison.OrdinalIgnoreCase)
+            || badLaunchStatus.Equals("overlay-errors-review-cancelled", StringComparison.OrdinalIgnoreCase);
+        bool goodWasBlockedByQueue = goodLaunchStatus.Equals("review-chain-blocked", StringComparison.OrdinalIgnoreCase)
+            && goodGateStatus.Equals("blocked-by-prior-review-gate", StringComparison.OrdinalIgnoreCase);
+        bool passed = badWasBlocked && goodWasBlockedByQueue;
+
+        string reportPath = Path.Combine(runRoot, "fixture-overlay-queue-block-summary.md");
+        await File.WriteAllTextAsync(reportPath, BuildScriptedMarkdownReport(results));
+        Console.WriteLine();
+        Console.WriteLine($"Fixture overlay queue block smoke verified: {passed}");
+        Console.WriteLine($"bad launch status: {badLaunchStatus}");
+        Console.WriteLine($"good launch status: {goodLaunchStatus}");
+        Console.WriteLine($"good gate status: {goodGateStatus}");
+        Console.WriteLine($"Summary report: {reportPath}");
+
+        return passed ? 0 : 1;
+    }
+
+    private static async Task<int> RunFixtureRoslynSemanticSmokeAsync(
+        MonitorClientSettings settings,
+        string[] args,
+        string runRoot)
+    {
+        string? resolvedSolutionPath = RoslynCodeLensMcpClientService.ResolveSolutionPath(settings.CodeLensSolutionPath);
+        if (string.IsNullOrWhiteSpace(resolvedSolutionPath))
+        {
+            Console.WriteLine($"CodeLens solution path not found: {settings.CodeLensSolutionPath}");
+            return 1;
+        }
+
+        string symbolQuery = ReadOption(args, "--symbol-query") ?? "Program";
+        string requestedTypeName = ReadOption(args, "--type-name") ?? symbolQuery;
+        string requestedSymbol = ReadOption(args, "--symbol") ?? $"{requestedTypeName}.Main";
+        string implementationSymbol = ReadOption(args, "--implementation-symbol") ?? requestedTypeName;
+
+        Console.WriteLine("MonitorBaseClaude fixture Roslyn semantic smoke");
+        Console.WriteLine("Task: exercise the external Roslyn CodeLens semantic tool ladder.");
+        Console.WriteLine($"CodeLens solution: {resolvedSolutionPath}");
+        Console.WriteLine($"Symbol query: {symbolQuery}");
+        Console.WriteLine($"Type name: {requestedTypeName}");
+        Console.WriteLine($"Member symbol: {requestedSymbol}");
+        Console.WriteLine($"Implementation symbol: {implementationSymbol}");
+        Console.WriteLine($"Log root: {runRoot}");
+        Console.WriteLine();
+
+        using RoslynCodeLensMcpClientService codeLensClient = new();
+        List<RoslynSemanticSmokeResult> results = [];
+        int index = 0;
+
+        async Task<RoslynSemanticSmokeResult> StepAsync(string name, string toolName, IReadOnlyDictionary<string, object?>? arguments, string question)
+        {
+            DateTimeOffset startedAt = DateTimeOffset.Now;
+            RoslynCodeLensMcpClientService.McpToolInvocation invocation = await codeLensClient.InvokeToolAsync(
+                resolvedSolutionPath,
+                toolName,
+                arguments,
+                null);
+            RoslynSemanticSmokeResult result = new(
+                new ScriptedSmokeStep(name, toolName, arguments, question),
+                startedAt,
+                DateTimeOffset.Now,
+                invocation,
+                invocation.RawJson);
+
+            string logPath = Path.Combine(runRoot, $"{++index:00}_{SanitizeFileName(name)}.json");
+            await File.WriteAllTextAsync(logPath, JsonSerializer.Serialize(result, JsonOptions));
+            results.Add(result);
+
+            Console.WriteLine($"{name} -> {toolName}");
+            Console.WriteLine(question);
+            Console.WriteLine($"Error: {invocation.IsError}");
+            Console.WriteLine($"Summary: {invocation.Summary}");
+            Console.WriteLine(Indent(TruncateForConsole(invocation.RawJson, 1800), "  "));
+            Console.WriteLine(new string('-', 80));
+            return result;
+        }
+
+        RoslynSemanticSmokeResult toolsResult = await StepAsync(
+            "List Tools",
+            "tools/list",
+            null,
+            "Read live Roslyn CodeLens tool names before calling semantic tools.");
+        IReadOnlySet<string> availableTools = ExtractToolNames(toolsResult.Invocation.RawJson);
+
+        string[] requiredTools =
+        [
+            "list_solutions",
+            "get_diagnostics",
+            "search_symbols",
+            "get_type_overview",
+            "find_references",
+            "find_callers",
+            "find_implementations",
+            "analyze_change_impact"
+        ];
+        string[] missingTools = requiredTools
+            .Where(toolName => !availableTools.Contains(toolName))
+            .ToArray();
+
+        await StepAsync(
+            "List Solutions",
+            "list_solutions",
+            null,
+            "Verify the Roslyn server loaded the target solution.");
+
+        await StepAsync(
+            "Get Diagnostics",
+            "get_diagnostics",
+            null,
+            "Verify diagnostics can be queried for the loaded solution.");
+
+        RoslynSemanticSmokeResult searchResult = await StepAsync(
+            "Search Symbols",
+            "search_symbols",
+            new Dictionary<string, object?> { ["query"] = symbolQuery },
+            "Find candidate symbols with the schema-required query argument.");
+        string typeName = ReadOption(args, "--type-name")
+            ?? ExtractFirstStringProperty(searchResult.Invocation.RawJson, "fullyQualifiedName", "fullName", "typeName", "containingType", "name")
+            ?? requestedTypeName;
+
+        RoslynSemanticSmokeResult typeOverviewResult = await StepAsync(
+            "Get Type Overview",
+            "get_type_overview",
+            new Dictionary<string, object?> { ["typeName"] = typeName },
+            "Inspect one selected type using the schema-required typeName argument.");
+        string symbol = ReadOption(args, "--symbol")
+            ?? ExtractMemberSymbol(typeOverviewResult.Invocation.RawJson, typeName)
+            ?? requestedSymbol;
+
+        await StepAsync(
+            "Find References",
+            "find_references",
+            new Dictionary<string, object?> { ["symbol"] = symbol },
+            "Find semantic references using the schema-required symbol argument.");
+
+        await StepAsync(
+            "Find Callers",
+            "find_callers",
+            new Dictionary<string, object?> { ["symbol"] = symbol },
+            "Find callers using the schema-required symbol argument.");
+
+        await StepAsync(
+            "Find Implementations",
+            "find_implementations",
+            new Dictionary<string, object?> { ["symbol"] = implementationSymbol },
+            "Find implementations using the schema-required symbol argument.");
+
+        await StepAsync(
+            "Analyze Change Impact",
+            "analyze_change_impact",
+            new Dictionary<string, object?> { ["symbol"] = symbol },
+            "Analyze semantic change impact using the schema-required symbol argument.");
+
+        bool passed = missingTools.Length == 0 && results.All(result => !result.Invocation.IsError);
+        string reportPath = Path.Combine(runRoot, "fixture-roslyn-semantic-summary.md");
+        await File.WriteAllTextAsync(reportPath, BuildRoslynSemanticMarkdownReport(results, missingTools, typeName, symbol, implementationSymbol));
+
+        Console.WriteLine();
+        Console.WriteLine($"Fixture Roslyn semantic smoke verified: {passed}");
+        Console.WriteLine($"Missing tools: {(missingTools.Length == 0 ? "(none)" : string.Join(", ", missingTools))}");
+        Console.WriteLine($"Type used: {typeName}");
+        Console.WriteLine($"Symbol used: {symbol}");
+        Console.WriteLine($"Implementation symbol used: {implementationSymbol}");
+        Console.WriteLine($"Summary report: {reportPath}");
+
+        return passed ? 0 : 1;
+    }
+
+    private static IReadOnlySet<string> ExtractToolNames(string rawJson)
+    {
+        SortedSet<string> names = new(StringComparer.Ordinal);
+        try
+        {
+            JsonNode? root = JsonNode.Parse(rawJson);
+            if (root is JsonArray array)
+            {
+                foreach (JsonNode? item in array)
+                {
+                    string? value = item?.GetValue<string>();
+                    if (!string.IsNullOrWhiteSpace(value))
+                    {
+                        names.Add(value);
+                    }
+                }
+            }
+        }
+        catch (JsonException)
+        {
+        }
+
+        return names;
+    }
+
+    private static string? ExtractMemberSymbol(string rawJson, string typeName)
+    {
+        string? memberName = ExtractFirstStringProperty(rawJson, "methodName", "memberName", "name");
+        if (string.IsNullOrWhiteSpace(memberName)
+            || memberName.Equals(typeName, StringComparison.Ordinal)
+            || memberName.Equals(typeName.Split('.').Last(), StringComparison.Ordinal))
+        {
+            return null;
+        }
+
+        return $"{typeName}.{memberName}";
+    }
+
+    private static string? ExtractFirstStringProperty(string rawJson, params string[] propertyNames)
+    {
+        try
+        {
+            return ExtractFirstStringProperty(JsonNode.Parse(rawJson), propertyNames);
+        }
+        catch (JsonException)
+        {
+            return null;
+        }
+    }
+
+    private static string? ExtractFirstStringProperty(JsonNode? node, params string[] propertyNames)
+    {
+        if (node is JsonObject obj)
+        {
+            foreach (string propertyName in propertyNames)
+            {
+                KeyValuePair<string, JsonNode?> property = obj.FirstOrDefault(candidate =>
+                    candidate.Key.Equals(propertyName, StringComparison.OrdinalIgnoreCase));
+                if (!string.IsNullOrEmpty(property.Key)
+                    && property.Value is JsonValue value
+                    && value.TryGetValue(out string? text)
+                    && !string.IsNullOrWhiteSpace(text))
+                {
+                    return text;
+                }
+            }
+
+            foreach (KeyValuePair<string, JsonNode?> property in obj)
+            {
+                string? nested = ExtractFirstStringProperty(property.Value, propertyNames);
+                if (!string.IsNullOrWhiteSpace(nested))
+                {
+                    return nested;
+                }
+            }
+        }
+        else if (node is JsonArray array)
+        {
+            foreach (JsonNode? item in array)
+            {
+                string? nested = ExtractFirstStringProperty(item, propertyNames);
+                if (!string.IsNullOrWhiteSpace(nested))
+                {
+                    return nested;
+                }
+            }
+        }
+
+        return null;
+    }
+
+    private static string BuildRoslynSemanticMarkdownReport(
+        IReadOnlyList<RoslynSemanticSmokeResult> results,
+        IReadOnlyList<string> missingTools,
+        string typeName,
+        string symbol,
+        string implementationSymbol)
+    {
+        List<string> lines =
+        [
+            "# Roslyn Semantic Tool Smoke Test Summary",
+            "",
+            $"Generated: {DateTimeOffset.Now:O}",
+            $"Type used: `{typeName}`",
+            $"Symbol used: `{symbol}`",
+            $"Implementation symbol used: `{implementationSymbol}`",
+            $"Missing tools: `{(missingTools.Count == 0 ? "(none)" : string.Join(", ", missingTools))}`",
+            ""
+        ];
+
+        foreach (RoslynSemanticSmokeResult result in results)
+        {
+            lines.Add($"## {result.Step.Name}");
+            lines.Add("");
+            lines.Add($"Tool: `{result.Step.ToolName}`");
+            lines.Add($"Question: {result.Step.Question}");
+            lines.Add($"Error: `{result.Invocation.IsError}`");
+            lines.Add($"Summary: `{result.Invocation.Summary}`");
+            lines.Add("");
+            lines.Add("```json");
+            lines.Add(NormalizeNewlines(result.Invocation.RawJson));
+            lines.Add("```");
+            lines.Add("");
+        }
+
+        return string.Join(Environment.NewLine, lines);
+    }
+
     private static void LaunchOperatorDiffFromSmokeTest(MonitorMcpToolCallResult toolResult)
     {
         if (toolResult.IsError)
@@ -2467,6 +4578,45 @@ internal static class Program
         return text.Length <= maxLength ? text : text[..maxLength] + Environment.NewLine + "...(truncated for console)";
     }
 
+    private static string CreateUniqueRunName()
+    {
+        return $"{DateTime.Now:yyyyMMdd_HHmmssfff}_{Guid.NewGuid():N}"[..33];
+    }
+
+    private static string ExtractBetween(string text, string startMarker, string endMarker)
+    {
+        int start = text.IndexOf(startMarker, StringComparison.Ordinal);
+        if (start < 0)
+        {
+            return string.Empty;
+        }
+
+        int end = text.IndexOf(endMarker, start + startMarker.Length, StringComparison.Ordinal);
+        if (end < 0)
+        {
+            return text[start..];
+        }
+
+        return text[start..end];
+    }
+
+    private static bool MarkersAreOrdered(string text, IReadOnlyList<string> markers)
+    {
+        int previousIndex = -1;
+        foreach (string marker in markers)
+        {
+            int index = text.IndexOf(marker, StringComparison.Ordinal);
+            if (index <= previousIndex)
+            {
+                return false;
+            }
+
+            previousIndex = index;
+        }
+
+        return true;
+    }
+
     private static string BuildProgramRejectedProposal(MonitorClientSettings settings)
     {
         string watchedRoot = Path.GetDirectoryName(settings.WatchedSolutionPath) ?? string.Empty;
@@ -2491,7 +4641,7 @@ internal static class Program
 
     private static SmokeFixture CreateDbv2ShapeFixture(MonitorClientSettings settings, string runRoot)
     {
-        string fixtureRoot = Path.Combine(settings.UiRoot, "Working", "Fixtures", "Dbv2ShapeAcceptSmoke", DateTime.Now.ToString("yyyyMMdd_HHmmssfff"));
+        string fixtureRoot = Path.Combine(settings.UiRoot, "Working", "Fixtures", "Dbv2ShapeAcceptSmoke", CreateUniqueRunName());
         Directory.CreateDirectory(fixtureRoot);
         Directory.CreateDirectory(Path.Combine(fixtureRoot, "AI"));
         Directory.CreateDirectory(Path.Combine(fixtureRoot, "Configuration"));
@@ -2617,7 +4767,7 @@ internal static class Program
 
     private static SmokeFixture CreateRazorShapeFixture(MonitorClientSettings settings, string runRoot)
     {
-        string fixtureRoot = Path.Combine(settings.UiRoot, "Working", "Fixtures", "RazorShapeSmoke", DateTime.Now.ToString("yyyyMMdd_HHmmssfff"));
+        string fixtureRoot = Path.Combine(settings.UiRoot, "Working", "Fixtures", "RazorShapeSmoke", CreateUniqueRunName());
         Directory.CreateDirectory(fixtureRoot);
         Directory.CreateDirectory(Path.Combine(fixtureRoot, "Components", "Pages"));
         Directory.CreateDirectory(Path.Combine(fixtureRoot, "Properties"));
@@ -2755,12 +4905,12 @@ internal static class Program
             string? sourceFilePath = FindPropertyValue(node, "SourceFilePath") ?? FindPropertyValue(node, "sourceFilePath");
             if (string.IsNullOrWhiteSpace(stagedFilePath)
                 || string.IsNullOrWhiteSpace(sourceFilePath)
-                || !File.Exists(stagedFilePath)
-                || !File.Exists(sourceFilePath))
+                || !File.Exists(stagedFilePath))
             {
                 return false;
             }
 
+            Directory.CreateDirectory(Path.GetDirectoryName(sourceFilePath)!);
             File.Copy(stagedFilePath, sourceFilePath, overwrite: true);
             return true;
         }
@@ -2958,6 +5108,13 @@ internal sealed record ScriptedSmokeResult(
     DateTimeOffset StartedAt,
     DateTimeOffset FinishedAt,
     MonitorMcpToolCallResult ToolResult,
+    string ToolResultDisplay);
+
+internal sealed record RoslynSemanticSmokeResult(
+    ScriptedSmokeStep Step,
+    DateTimeOffset StartedAt,
+    DateTimeOffset FinishedAt,
+    RoslynCodeLensMcpClientService.McpToolInvocation Invocation,
     string ToolResultDisplay);
 
 internal sealed record SmokeQuestion(

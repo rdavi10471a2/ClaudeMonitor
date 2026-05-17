@@ -1,5 +1,6 @@
 using System.ComponentModel;
 using System.Diagnostics;
+using System.IO.Pipes;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
@@ -7,12 +8,15 @@ using System.Text.Json.Serialization;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
+using Microsoft.CodeAnalysis.Formatting;
 using ModelContextProtocol.Server;
 
 namespace MonitorBaseClaude.McpServer;
 
 public sealed partial class MonitorWorkflowService
 {
+    private const string NewFileOriginalHash = "<new-file>";
+
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
         WriteIndented = true
@@ -22,6 +26,8 @@ public sealed partial class MonitorWorkflowService
     {
         DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull
     };
+
+    private static readonly SyntaxAnnotation FormatAnnotation = new("MonitorBaseClaudeFormat");
 
     private static readonly string[] WinMergeCandidates =
     [
@@ -308,7 +314,7 @@ public sealed partial class MonitorWorkflowService
 
     public MonitorFileSubmitResult SubmitFile(string sourceFilePath, string content, string? sessionId = null, string? manifestJson = null, bool launchDiff = false)
     {
-        MonitorFileContext context = ResolveFileContext(sourceFilePath);
+        MonitorFileContext context = ResolveFileContext(sourceFilePath, allowMissing: true);
         return StageFileReplacement("submit_file", context, content, sessionId, manifestJson, launchDiff);
     }
 
@@ -320,8 +326,10 @@ public sealed partial class MonitorWorkflowService
         MemberDeclarationSyntax target = ResolveSingleMember(root, selector, context.RelativeSourcePath);
         MemberDeclarationSyntax replacement = ParseMemberDeclaration(code, "replacement symbol")
             .WithLeadingTrivia(target.GetLeadingTrivia())
-            .WithTrailingTrivia(target.GetTrailingTrivia());
+            .WithTrailingTrivia(target.GetTrailingTrivia())
+            .WithAdditionalAnnotations(FormatAnnotation);
         CompilationUnitSyntax newRoot = root.ReplaceNode(target, replacement);
+        newRoot = FormatAnnotatedNodes(newRoot);
         return StageFileReplacement("submit_symbol", context, newRoot.ToFullString(), sessionId, manifestJson, launchDiff: false);
     }
 
@@ -356,6 +364,26 @@ public sealed partial class MonitorWorkflowService
         return StageFileReplacement("remove_using", context, newRoot.ToFullString(), sessionId, manifestJson, launchDiff: false);
     }
 
+    public MonitorFileSubmitResult SetTypePartial(string sourceFilePath, string containingType, bool isPartial = true, string? sessionId = null, string? manifestJson = null)
+    {
+        MonitorFileContext context = ResolveCSharpFileContext(sourceFilePath, "set_type_partial");
+        CompilationUnitSyntax root = ParseCompilationUnit(context);
+        TypeDeclarationSyntax type = ResolveSingleType(root, containingType);
+        bool currentlyPartial = type.Modifiers.Any(modifier => modifier.IsKind(SyntaxKind.PartialKeyword));
+        if (currentlyPartial == isPartial)
+        {
+            return StageFileReplacement("set_type_partial", context, root.ToFullString(), sessionId, manifestJson, launchDiff: false);
+        }
+
+        TypeDeclarationSyntax newType = isPartial
+            ? type.WithModifiers(type.Modifiers.Add(SyntaxFactory.Token(SyntaxKind.PartialKeyword).WithTrailingTrivia(SyntaxFactory.Space)))
+            : type.WithModifiers(SyntaxFactory.TokenList(type.Modifiers.Where(modifier => !modifier.IsKind(SyntaxKind.PartialKeyword))));
+        newType = newType.WithAdditionalAnnotations(FormatAnnotation);
+        CompilationUnitSyntax newRoot = root.ReplaceNode(type, newType);
+        newRoot = FormatAnnotatedNodes(newRoot);
+        return StageFileReplacement("set_type_partial", context, newRoot.ToFullString(), sessionId, manifestJson, launchDiff: false);
+    }
+
     public MonitorFileSubmitResult AddSymbol(
         string sourceFilePath,
         string containingType,
@@ -387,9 +415,44 @@ public sealed partial class MonitorWorkflowService
             insertIndex = afterIndex + 1;
         }
 
+        newMember = ApplyInsertionTrivia(newMember, type, insertIndex)
+            .WithAdditionalAnnotations(FormatAnnotation);
         TypeDeclarationSyntax newType = type.WithMembers(members.Insert(insertIndex, newMember));
         CompilationUnitSyntax newRoot = root.ReplaceNode(type, newType);
+        newRoot = FormatAnnotatedNodes(newRoot);
         return StageFileReplacement("add_symbol", context, newRoot.ToFullString(), sessionId, manifestJson, launchDiff: false);
+    }
+
+    public MonitorFileSubmitResult AddField(string sourceFilePath, string containingType, string declaration, string? afterSymbol = null, string? sessionId = null, string? manifestJson = null)
+    {
+        return AddSymbol(sourceFilePath, containingType, "field", declaration, afterSymbol, sessionId, manifestJson);
+    }
+
+    public MonitorFileSubmitResult AddProperty(string sourceFilePath, string containingType, string declaration, string? afterSymbol = null, string? sessionId = null, string? manifestJson = null)
+    {
+        return AddSymbol(sourceFilePath, containingType, "property", declaration, afterSymbol, sessionId, manifestJson);
+    }
+
+    public MonitorFileSubmitResult AddMethod(string sourceFilePath, string containingType, string declaration, string? afterSymbol = null, string? sessionId = null, string? manifestJson = null)
+    {
+        return AddSymbol(sourceFilePath, containingType, "method", declaration, afterSymbol, sessionId, manifestJson);
+    }
+
+    public MonitorFileSubmitResult AddConstructor(string sourceFilePath, string containingType, string declaration, string? afterSymbol = null, string? sessionId = null, string? manifestJson = null)
+    {
+        return AddSymbol(sourceFilePath, containingType, "constructor", declaration, afterSymbol, sessionId, manifestJson);
+    }
+
+    public MonitorFileSubmitResult AddNestedType(string sourceFilePath, string containingType, string declaration, string? afterSymbol = null, string? sessionId = null, string? manifestJson = null)
+    {
+        MemberDeclarationSyntax member = ParseMemberDeclaration(declaration, "new nested type");
+        string kind = SymbolKind(member);
+        if (kind is not ("class" or "struct" or "interface" or "record" or "enum"))
+        {
+            throw new InvalidOperationException($"Nested type declaration must be class, struct, interface, record, or enum. Actual kind: '{kind}'.");
+        }
+
+        return AddSymbol(sourceFilePath, containingType, kind, declaration, afterSymbol, sessionId, manifestJson);
     }
 
     public MonitorFileSubmitResult RemoveSymbol(string sourceFilePath, string symbolSelectorJson, string? sessionId = null, string? manifestJson = null)
@@ -433,7 +496,8 @@ public sealed partial class MonitorWorkflowService
             content,
             validation,
             overlayValidation);
-        bool isNoOp = stagedRecord.OriginalHash.Equals(stagedRecord.StagedHash, StringComparison.OrdinalIgnoreCase);
+        bool isNoOp = !IsNewFileRecord(stagedRecord)
+            && stagedRecord.OriginalHash.Equals(stagedRecord.StagedHash, StringComparison.OrdinalIgnoreCase);
         string stagedRecordPath = WriteStagedEditRecord(stagedRecord);
         string? diffToolPath = null;
         int? processId = null;
@@ -466,6 +530,13 @@ public sealed partial class MonitorWorkflowService
             diffToolPath,
             diffArguments,
             processId);
+    }
+
+    private static CompilationUnitSyntax FormatAnnotatedNodes(CompilationUnitSyntax root)
+    {
+        using AdhocWorkspace workspace = new();
+        SyntaxNode formatted = Formatter.Format(root, FormatAnnotation, workspace);
+        return (CompilationUnitSyntax)formatted;
     }
 
     public MonitorDiffDecisionResult RecordDiffDecision(
@@ -520,10 +591,28 @@ public sealed partial class MonitorWorkflowService
         return result with { DecisionRecordPath = decisionRecordPath };
     }
 
-    public MonitorStagedDiffLaunchResult LaunchStagedDiff(string stagedRecordId)
+    public MonitorStagedDiffLaunchResult LaunchStagedDiff(string stagedRecordId, bool forceReviewOnOverlayErrors = false)
     {
         (StagedEditRecord record, string recordPath) = ReadStagedEditRecord(stagedRecordId);
         string stagedFilePath = record.ServerDerivedMetadata.StagedFilePath;
+        (StagedEditRecord BlockedRecord, string BlockedRecordPath)? blockedReview = FindBlockedReviewRecord(record);
+        if (blockedReview is not null)
+        {
+            return MonitorStagedDiffLaunchResult.NotLaunched(
+                "review-chain-blocked",
+                record,
+                recordPath,
+                stagedFilePath,
+                ResolveWinMergePath(),
+                $"Review queue is blocked by staged record {blockedReview.Value.BlockedRecord.RecordId} ({blockedReview.Value.BlockedRecord.RelativeSourcePath}). Fix or force-review the blocked item before launching another diff.")
+                with
+                {
+                    ValidationGateStatus = "blocked-by-prior-review-gate",
+                    ValidationGateDecision = "cancel_for_fix",
+                    ValidationGateMessage = $"Blocked by {blockedReview.Value.BlockedRecord.RecordId}."
+                };
+        }
+
         string? winMergePath = ResolveWinMergePath();
         if (winMergePath is null)
         {
@@ -536,7 +625,7 @@ public sealed partial class MonitorWorkflowService
                 "WinMerge was not found. Install WinMerge or add it to the standard Program Files path.");
         }
 
-        if (!File.Exists(record.SourceFilePath))
+        if (!File.Exists(record.SourceFilePath) && !IsNewFileRecord(record))
         {
             return MonitorStagedDiffLaunchResult.NotLaunched(
                 "source-missing",
@@ -558,6 +647,40 @@ public sealed partial class MonitorWorkflowService
                 "Staged candidate file was not found.");
         }
 
+        if (record.OverlayValidation.HasErrors && !forceReviewOnOverlayErrors)
+        {
+            HostValidationGateDecision gateDecision = RequestOverlayValidationReview(record);
+            if (!gateDecision.Decision.Equals("force_review", StringComparison.OrdinalIgnoreCase))
+            {
+                StagedEditRecord blockedRecord = record with { QueueStatus = "blocked-overlay-validation" };
+                File.WriteAllText(recordPath, JsonSerializer.Serialize(blockedRecord, JsonOptions));
+                return MonitorStagedDiffLaunchResult.NotLaunched(
+                    gateDecision.Status.Equals("host-unavailable", StringComparison.OrdinalIgnoreCase)
+                        ? "overlay-errors-host-unavailable"
+                        : "overlay-errors-review-cancelled",
+                    record,
+                    recordPath,
+                    stagedFilePath,
+                    winMergePath,
+                    gateDecision.Message)
+                    with
+                    {
+                        ValidationGateStatus = gateDecision.Status,
+                        ValidationGateDecision = gateDecision.Status.Equals("host-unavailable", StringComparison.OrdinalIgnoreCase)
+                            ? "host_unavailable"
+                            : gateDecision.Decision,
+                        ValidationGateMessage = gateDecision.Message
+                    };
+            }
+        }
+
+        if (record.QueueStatus.Equals("blocked-overlay-validation", StringComparison.OrdinalIgnoreCase))
+        {
+            record = record with { QueueStatus = "force-review-launched" };
+            File.WriteAllText(recordPath, JsonSerializer.Serialize(record, JsonOptions));
+        }
+
+        ClearSupersededBlockedOverlayRecords(record);
         DiffLaunchResult launchResult = LaunchWinMergeDetached(winMergePath, record.SourceFilePath, stagedFilePath);
         return new MonitorStagedDiffLaunchResult(
             launchResult.ProcessId is null ? "launch-failed" : "winmerge-launched",
@@ -569,7 +692,110 @@ public sealed partial class MonitorWorkflowService
             winMergePath,
             launchResult.ProcessId,
             launchResult.Arguments,
-            "After operator review, call record_diff_decision with accepted only if WinMerge saved the full staged candidate; otherwise call rejected.");
+            "After operator review, call record_diff_decision with accepted only if WinMerge saved the full staged candidate; otherwise call rejected.",
+            record.OverlayValidation.HasErrors ? "completed" : null,
+            record.OverlayValidation.HasErrors ? "force_review" : null,
+            record.OverlayValidation.HasErrors ? "Overlay compile errors were force-reviewed before WinMerge launch." : null);
+    }
+
+    private (StagedEditRecord BlockedRecord, string BlockedRecordPath)? FindBlockedReviewRecord(StagedEditRecord currentRecord)
+    {
+        if (string.IsNullOrWhiteSpace(currentRecord.SessionId))
+        {
+            return null;
+        }
+
+        foreach ((StagedEditRecord record, string recordPath) in ReadSessionStagedRecordEntries(currentRecord.SessionId))
+        {
+            if (record.RecordId.Equals(currentRecord.RecordId, StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            if (record.RelativeSourcePath.Equals(currentRecord.RelativeSourcePath, StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            if (record.QueueStatus.Equals("blocked-overlay-validation", StringComparison.OrdinalIgnoreCase))
+            {
+                return (record, recordPath);
+            }
+        }
+
+        return null;
+    }
+
+    private void ClearSupersededBlockedOverlayRecords(StagedEditRecord currentRecord)
+    {
+        if (string.IsNullOrWhiteSpace(currentRecord.SessionId))
+        {
+            return;
+        }
+
+        foreach ((StagedEditRecord record, string recordPath) in ReadSessionStagedRecordEntries(currentRecord.SessionId))
+        {
+            if (record.RecordId.Equals(currentRecord.RecordId, StringComparison.OrdinalIgnoreCase)
+                || !record.RelativeSourcePath.Equals(currentRecord.RelativeSourcePath, StringComparison.OrdinalIgnoreCase)
+                || !record.QueueStatus.Equals("blocked-overlay-validation", StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            StagedEditRecord superseded = record with { QueueStatus = "superseded-by-corrected-candidate" };
+            File.WriteAllText(recordPath, JsonSerializer.Serialize(superseded, JsonOptions));
+        }
+    }
+
+    private static HostValidationGateDecision RequestOverlayValidationReview(StagedEditRecord record)
+    {
+        string diagnostics = string.Join(
+            Environment.NewLine,
+            record.OverlayValidation.Diagnostics.Take(12).Select(diagnostic =>
+                $"{diagnostic.Id} {diagnostic.FilePath}({diagnostic.Line},{diagnostic.Column}): {diagnostic.Message}"));
+        if (record.OverlayValidation.Diagnostics.Count > 12)
+        {
+            diagnostics += Environment.NewLine + $"...and {record.OverlayValidation.Diagnostics.Count - 12} more diagnostic(s).";
+        }
+
+        try
+        {
+            using NamedPipeClientStream pipe = new(".", "MonitorBaseClaude.McpProxyHub", PipeDirection.InOut, PipeOptions.Asynchronous);
+            pipe.Connect(2500);
+            using StreamReader reader = new(pipe, Encoding.UTF8, leaveOpen: true);
+            using StreamWriter writer = new(pipe, new UTF8Encoding(false), leaveOpen: true) { AutoFlush = true };
+
+            string request = JsonSerializer.Serialize(new
+            {
+                kind = "hostRequest",
+                requestType = "overlayValidationReview",
+                stagedRecordId = record.RecordId,
+                relativeSourcePath = record.RelativeSourcePath,
+                sourceFilePath = record.SourceFilePath,
+                diagnosticCount = record.OverlayValidation.Diagnostics.Count,
+                diagnostics
+            });
+
+            writer.WriteLine(request);
+            string? responseLine = reader.ReadLine();
+            if (string.IsNullOrWhiteSpace(responseLine))
+            {
+                return new HostValidationGateDecision("host-empty-response", "cancel_for_fix", "WinForms host returned no validation gate decision. Review was not launched.");
+            }
+
+            HostValidationGateDecision? response = JsonSerializer.Deserialize<HostValidationGateDecision>(responseLine, new JsonSerializerOptions
+            {
+                PropertyNameCaseInsensitive = true
+            });
+            return response ?? new HostValidationGateDecision("host-invalid-response", "cancel_for_fix", "WinForms host returned an invalid validation gate decision. Review was not launched.");
+        }
+        catch (Exception ex) when (ex is TimeoutException or IOException or InvalidOperationException)
+        {
+            return new HostValidationGateDecision(
+                "host-unavailable",
+                "host_unavailable",
+                "Overlay compile validation has errors and the WinForms host was not available to approve force review. Start MonitorBaseClaude WinForms or fix diagnostics before launching review.");
+        }
     }
 
     public IReadOnlyList<MonitorFileMatch> FindFile(string fileNameOrPattern, int maxResults = 25)
@@ -595,14 +821,14 @@ public sealed partial class MonitorWorkflowService
             .ToArray();
     }
 
-    private MonitorFileContext ResolveFileContext(string sourceFilePath)
+    private MonitorFileContext ResolveFileContext(string sourceFilePath, bool allowMissing = false)
     {
         string watchedProjectFolder = Path.GetDirectoryName(settings.WatchedSolutionPath)
             ?? throw new InvalidOperationException("Watched solution path does not have a containing folder.");
         string sourcePath = Path.IsPathRooted(sourceFilePath)
             ? Path.GetFullPath(sourceFilePath)
             : Path.GetFullPath(Path.Combine(watchedProjectFolder, sourceFilePath));
-        if (!File.Exists(sourcePath))
+        if (!allowMissing && !File.Exists(sourcePath))
         {
             throw new FileNotFoundException("Source file was not found.", sourcePath);
         }
@@ -764,6 +990,35 @@ public sealed partial class MonitorWorkflowService
         }
 
         return -1;
+    }
+
+    private static MemberDeclarationSyntax ApplyInsertionTrivia(MemberDeclarationSyntax newMember, TypeDeclarationSyntax type, int insertIndex)
+    {
+        SyntaxList<MemberDeclarationSyntax> members = type.Members;
+        if (members.Count == 0)
+        {
+            return newMember
+                .WithLeadingTrivia(SyntaxFactory.Whitespace("        "))
+                .WithTrailingTrivia(SyntaxFactory.CarriageReturnLineFeed);
+        }
+
+        SyntaxTriviaList leadingTrivia;
+        if (insertIndex < members.Count && SymbolKind(newMember).Equals(SymbolKind(members[insertIndex]), StringComparison.OrdinalIgnoreCase))
+        {
+            leadingTrivia = members[insertIndex].GetLeadingTrivia();
+        }
+        else if (insertIndex > 0)
+        {
+            leadingTrivia = members[insertIndex - 1].GetLeadingTrivia();
+        }
+        else
+        {
+            leadingTrivia = members[insertIndex].GetLeadingTrivia();
+        }
+
+        return newMember
+            .WithLeadingTrivia(leadingTrivia)
+            .WithTrailingTrivia(SyntaxFactory.CarriageReturnLineFeed);
     }
 
     private static int GetArity(MemberDeclarationSyntax member)
@@ -962,7 +1217,9 @@ public sealed partial class MonitorWorkflowService
         string baseName = Path.GetFileNameWithoutExtension(context.SourceFilePath);
         string extension = Path.GetExtension(context.SourceFilePath);
         string stagedPath = Path.Combine(stagedTargetDir, $"{SanitizeForFileName(recordId)}{extension}");
-        TextFileShape sourceShape = DetectTextFileShape(context.SourceFilePath);
+        TextFileShape sourceShape = File.Exists(context.SourceFilePath)
+            ? DetectTextFileShape(context.SourceFilePath)
+            : new TextFileShape(new UTF8Encoding(encoderShouldEmitUTF8Identifier: true), Environment.NewLine);
         File.WriteAllText(stagedPath, NormalizeLineEndings(content, sourceShape.NewLine), sourceShape.Encoding);
         return stagedPath;
     }
@@ -1071,7 +1328,7 @@ public sealed partial class MonitorWorkflowService
         MonitorSyntaxValidationResult validation,
         MonitorOverlayValidationResult overlayValidation)
     {
-        string originalContent = File.ReadAllText(context.SourceFilePath);
+        string originalContent = File.Exists(context.SourceFilePath) ? File.ReadAllText(context.SourceFilePath) : string.Empty;
         StagedEditMetadata metadata = DeriveStagedEditMetadata(context.SourceFilePath, originalContent, stagedFilePath, stagedContent);
         return new StagedEditRecord(
             recordId,
@@ -1080,7 +1337,7 @@ public sealed partial class MonitorWorkflowService
             context.RelativeSourcePath,
             operation,
             DateTimeOffset.UtcNow,
-            ComputeSha256(context.SourceFilePath),
+            File.Exists(context.SourceFilePath) ? ComputeSha256(context.SourceFilePath) : NewFileOriginalHash,
             ComputeSha256(stagedFilePath),
             manifestJson,
             metadata,
@@ -1216,6 +1473,30 @@ public sealed partial class MonitorWorkflowService
 
     private static DiffDecisionClassification ClassifyStrictDiffDecision(StagedEditRecord record, string normalizedDecision)
     {
+        if (IsNewFileRecord(record))
+        {
+            bool sourceExists = File.Exists(record.SourceFilePath);
+            string newFileCurrentHash = sourceExists ? ComputeSha256(record.SourceFilePath) : NewFileOriginalHash;
+            if (normalizedDecision.Equals("rejected", StringComparison.OrdinalIgnoreCase))
+            {
+                return new DiffDecisionClassification(
+                    newFileCurrentHash,
+                    sourceExists ? "dirty-unexpected" : "rejected",
+                    OriginalNormalizedHash: null,
+                    StagedNormalizedHash: null,
+                    CurrentNormalizedHash: null);
+            }
+
+            return new DiffDecisionClassification(
+                newFileCurrentHash,
+                sourceExists && newFileCurrentHash.Equals(record.StagedHash, StringComparison.OrdinalIgnoreCase)
+                    ? "accepted"
+                    : "dirty-unexpected",
+                OriginalNormalizedHash: null,
+                StagedNormalizedHash: null,
+                CurrentNormalizedHash: null);
+        }
+
         string currentHash = ComputeSha256(record.SourceFilePath);
         if (normalizedDecision.Equals("rejected", StringComparison.OrdinalIgnoreCase))
         {
@@ -1257,6 +1538,11 @@ public sealed partial class MonitorWorkflowService
             OriginalNormalizedHash: null,
             StagedNormalizedHash: stagedNormalizedHash,
             CurrentNormalizedHash: currentNormalizedHash);
+    }
+
+    private static bool IsNewFileRecord(StagedEditRecord record)
+    {
+        return record.OriginalHash.Equals(NewFileOriginalHash, StringComparison.OrdinalIgnoreCase);
     }
 
     private static string ComputeNormalizedFileHash(string path)
@@ -1598,6 +1884,14 @@ public sealed partial class MonitorWorkflowService
 
     private IEnumerable<StagedEditRecord> ReadSessionStagedRecords(string sessionId)
     {
+        foreach ((StagedEditRecord record, _) in ReadSessionStagedRecordEntries(sessionId))
+        {
+            yield return record;
+        }
+    }
+
+    private IEnumerable<(StagedEditRecord Record, string RecordPath)> ReadSessionStagedRecordEntries(string sessionId)
+    {
         string recordsRoot = Path.Combine(settings.UiRoot, "Working", "Staged", "Records");
         if (!Directory.Exists(recordsRoot))
         {
@@ -1619,7 +1913,7 @@ public sealed partial class MonitorWorkflowService
 
             if (record is not null && string.Equals(record.SessionId, sessionId, StringComparison.Ordinal))
             {
-                yield return record;
+                yield return (record, recordPath);
             }
         }
     }
@@ -2783,7 +3077,10 @@ public sealed record MonitorStagedDiffLaunchResult(
     string? DiffToolPath,
     int? ProcessId,
     string? DiffToolArguments,
-    string NextStep)
+    string NextStep,
+    string? ValidationGateStatus = null,
+    string? ValidationGateDecision = null,
+    string? ValidationGateMessage = null)
 {
     public static MonitorStagedDiffLaunchResult NotLaunched(
         string status,
@@ -2806,6 +3103,11 @@ public sealed record MonitorStagedDiffLaunchResult(
             "Review was not launched. Fix the reported issue, then retry launch_staged_diff before calling record_diff_decision.");
     }
 }
+
+internal sealed record HostValidationGateDecision(
+    string Status,
+    string Decision,
+    string Message);
 
 public sealed record StagedEditRecord(
     string RecordId,

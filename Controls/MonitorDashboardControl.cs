@@ -8,6 +8,8 @@ namespace MonitorBaseClaude.Controls;
 [FileVersion("2.4")]
 public sealed class MonitorDashboardControl : UserControl
 {
+    private const int FriendlySplitterWidth = 12;
+
     private readonly MonitorClientSettings settings;
     private readonly CommandBarControl commandBar;
     private readonly SplitContainer verticalSplit;
@@ -43,15 +45,21 @@ public sealed class MonitorDashboardControl : UserControl
             Dock = DockStyle.Fill,
             Orientation = Orientation.Horizontal,
             FixedPanel = FixedPanel.Panel2,
-            SplitterWidth = 6
+            SplitterWidth = FriendlySplitterWidth,
+            BackColor = SystemColors.ControlDark
         };
         workspaceSplit = new SplitContainer
         {
             Dock = DockStyle.Fill,
             Orientation = Orientation.Vertical,
             FixedPanel = FixedPanel.Panel1,
-            SplitterWidth = 6
+            SplitterWidth = FriendlySplitterWidth,
+            BackColor = SystemColors.ControlDark
         };
+        verticalSplit.Panel1.BackColor = SystemColors.Control;
+        verticalSplit.Panel2.BackColor = SystemColors.Control;
+        workspaceSplit.Panel1.BackColor = SystemColors.Control;
+        workspaceSplit.Panel2.BackColor = SystemColors.Control;
 
         monitorMcpClientService = new MonitorMcpClientService(settings);
         ollamaToolExplorerService = new OllamaToolExplorerService(settings);
@@ -60,12 +68,12 @@ public sealed class MonitorDashboardControl : UserControl
         ollamaToolExplorerControl = new OllamaToolExplorerControl(settings, monitorMcpClientService, ollamaToolExplorerService, localMcpDiscoveryService) { Dock = DockStyle.Fill };
         toolNavigatorControl = new ToolNavigatorControl { Dock = DockStyle.Fill, MinimumSize = new Size(220, 200) };
         testBenchControl = new McpTestBenchControl(mcpClientService, settings) { Dock = DockStyle.Fill, MinimumSize = new Size(850, 360) };
-        telemetryLogControl = new TelemetryLogControl(TelemetryLogControl.ResolveRoslynCodeLensLogRoot(settings))
+        telemetryLogControl = new TelemetryLogControl(TelemetryLogControl.ResolveRoslynCodeLensLogRoot(settings), "Roslyn Tooling")
         {
             Dock = DockStyle.Fill,
             MinimumSize = new Size(900, 260)
         };
-        monitorMcpTelemetryLogControl = new TelemetryLogControl(TelemetryLogControl.ResolveMonitorMcpLogRoot(settings))
+        monitorMcpTelemetryLogControl = new TelemetryLogControl(TelemetryLogControl.ResolveMonitorMcpLogRoot(settings), "System Monitor")
         {
             Dock = DockStyle.Fill,
             MinimumSize = new Size(850, 360)
@@ -73,21 +81,15 @@ public sealed class MonitorDashboardControl : UserControl
 
         workspaceSplit.Panel1.Controls.Add(toolNavigatorControl);
         workspaceSplit.Panel2.Controls.Add(testBenchControl);
-        TabPage monitorPage = new("Monitor");
-        TabPage localAiPage = new("Local AI Tool Explorer");
-        TabPage codeLensPage = new("CodeLens Test Bench");
-        TabPage monitorMcpTelemetryPage = new("Monitor MCP Calls");
-        monitorPage.Controls.Add(monitorHomeControl);
-        localAiPage.Controls.Add(ollamaToolExplorerControl);
-        codeLensPage.Controls.Add(workspaceSplit);
-        monitorMcpTelemetryPage.Controls.Add(monitorMcpTelemetryLogControl);
-        mainTabs.TabPages.Add(monitorPage);
-        mainTabs.TabPages.Add(localAiPage);
-        mainTabs.TabPages.Add(codeLensPage);
-        mainTabs.TabPages.Add(monitorMcpTelemetryPage);
+        TabPage systemMonitorPage = new("System Monitor");
+        TabPage roslynToolingPage = new("Roslyn Tooling");
+        systemMonitorPage.Controls.Add(monitorMcpTelemetryLogControl);
+        roslynToolingPage.Controls.Add(telemetryLogControl);
+        mainTabs.TabPages.Add(systemMonitorPage);
+        mainTabs.TabPages.Add(roslynToolingPage);
         mainTabs.SelectedIndex = 0;
         verticalSplit.Panel1.Controls.Add(mainTabs);
-        verticalSplit.Panel2.Controls.Add(telemetryLogControl);
+        verticalSplit.Panel2Collapsed = true;
         Controls.Add(verticalSplit);
         Controls.Add(commandBar);
 
@@ -132,15 +134,11 @@ public sealed class MonitorDashboardControl : UserControl
     {
         commandBar.AddMenuItem("File", "Exit", (_, _) => FindForm()?.Close());
         commandBar.AddMenuItem("Proxy", "Refresh Telemetry", (_, _) => RefreshAllTelemetry());
-        commandBar.AddMenuItem("View", "Monitor", (_, _) => mainTabs.SelectedIndex = 0);
-        commandBar.AddMenuItem("View", "Local AI Tool Explorer", (_, _) => mainTabs.SelectedIndex = 1);
-        commandBar.AddMenuItem("View", "CodeLens Test Bench", (_, _) => mainTabs.SelectedIndex = 2);
-        commandBar.AddMenuItem("View", "Monitor MCP Calls", (_, _) => mainTabs.SelectedIndex = 3);
-        commandBar.AddMenuItem("View", "Tool Navigator", (_, _) => TogglePanel(workspaceSplit.Panel1));
-        commandBar.AddMenuItem("View", "Telemetry", (_, _) => TogglePanel(verticalSplit.Panel2));
+        commandBar.AddMenuItem("View", "System Monitor", (_, _) => mainTabs.SelectedIndex = 0);
+        commandBar.AddMenuItem("View", "Roslyn Tooling", (_, _) => mainTabs.SelectedIndex = 1);
         commandBar.AddMenuItem("View", "Current Session", (_, _) => ShowSessionInspectorWindow());
         commandBar.AddMenuItem("Tools", "Open CodeLens Telemetry Folder", (_, _) => telemetryLogControl.OpenLogFolder());
-        commandBar.AddMenuItem("Tools", "Open Monitor MCP Telemetry Folder", (_, _) => monitorMcpTelemetryLogControl.OpenLogFolder());
+        commandBar.AddMenuItem("Tools", "Open System Monitor Telemetry Folder", (_, _) => monitorMcpTelemetryLogControl.OpenLogFolder());
     }
 
     private void RefreshAllTelemetry()
@@ -156,18 +154,19 @@ public sealed class MonitorDashboardControl : UserControl
             return;
         }
 
-        if (workspaceSplit.Width < 900 || verticalSplit.Height < 650)
+        if (verticalSplit.Height < 650)
         {
             BeginInvoke(ApplyInitialSplitterLayout);
             return;
         }
 
         splitterLayoutSized = true;
-        int maxWorkspaceDistance = Math.Max(25, workspaceSplit.Width - workspaceSplit.Panel2MinSize - workspaceSplit.SplitterWidth);
-        workspaceSplit.SplitterDistance = Math.Clamp((int)(workspaceSplit.Width * 0.14), 160, maxWorkspaceDistance);
 
-        int maxVerticalDistance = Math.Max(25, verticalSplit.Height - verticalSplit.Panel2MinSize - verticalSplit.SplitterWidth);
-        verticalSplit.SplitterDistance = Math.Clamp(verticalSplit.Height - 320, verticalSplit.Panel1MinSize, maxVerticalDistance);
+        if (!verticalSplit.Panel2Collapsed)
+        {
+            int maxVerticalDistance = Math.Max(25, verticalSplit.Height - verticalSplit.Panel2MinSize - verticalSplit.SplitterWidth);
+            verticalSplit.SplitterDistance = Math.Clamp(verticalSplit.Height - 320, verticalSplit.Panel1MinSize, maxVerticalDistance);
+        }
     }
 
     private void TogglePanel(SplitterPanel panel)

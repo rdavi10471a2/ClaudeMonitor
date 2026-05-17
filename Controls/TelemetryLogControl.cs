@@ -10,7 +10,10 @@ namespace MonitorBaseClaude.Controls;
 [FileVersion("1.2")]
 public sealed class TelemetryLogControl : UserControl
 {
+    private const int FriendlySplitterWidth = 12;
+
     private readonly string logRoot;
+    private readonly string title;
     private readonly DataGridView requestsGrid = new();
     private readonly DataGridView callsGrid = new();
     private readonly DataGridView errorsGrid = new();
@@ -26,13 +29,19 @@ public sealed class TelemetryLogControl : UserControl
     }
 
     public TelemetryLogControl(string logRoot)
+        : this(logRoot, "MCP Traffic")
+    {
+    }
+
+    public TelemetryLogControl(string logRoot, string title)
     {
         Dock = DockStyle.Fill;
         this.logRoot = logRoot;
+        this.title = title;
         BuildLayout();
         refreshTimer.Interval = 3000;
         refreshTimer.Tick += (_, _) => RefreshLogs();
-        refreshTimer.Start();
+        McpProxyHubService.TelemetryRecorded += OnHubTelemetryRecorded;
         RefreshLogs();
     }
 
@@ -40,6 +49,7 @@ public sealed class TelemetryLogControl : UserControl
     {
         if (disposing)
         {
+            McpProxyHubService.TelemetryRecorded -= OnHubTelemetryRecorded;
             refreshTimer.Dispose();
         }
 
@@ -78,7 +88,7 @@ public sealed class TelemetryLogControl : UserControl
         TableLayoutPanel buttons = new()
         {
             Dock = DockStyle.Fill,
-            ColumnCount = 4,
+            ColumnCount = 5,
             RowCount = 1,
             Padding = new Padding(8, 5, 0, 0),
             MinimumSize = new Size(0, 38)
@@ -94,9 +104,9 @@ public sealed class TelemetryLogControl : UserControl
         openFolderButton.Text = "Open Log Folder";
         openFolderButton.Dock = DockStyle.Fill;
         openFolderButton.Click += (_, _) => OpenLogFolder();
-        autoRefreshCheckBox.Text = "Auto 3s";
+        autoRefreshCheckBox.Text = "Auto";
         autoRefreshCheckBox.AutoSize = true;
-        autoRefreshCheckBox.Checked = true;
+        autoRefreshCheckBox.Checked = false;
         autoRefreshCheckBox.Dock = DockStyle.Fill;
         autoRefreshCheckBox.Margin = new Padding(8, 3, 0, 0);
         autoRefreshCheckBox.CheckedChanged += (_, _) =>
@@ -110,19 +120,26 @@ public sealed class TelemetryLogControl : UserControl
         buttons.Controls.Add(refreshButton, 0, 0);
         buttons.Controls.Add(openFolderButton, 1, 0);
         buttons.Controls.Add(autoRefreshCheckBox, 2, 0);
+        buttons.Controls.Add(new Label
+        {
+            Text = title,
+            Dock = DockStyle.Fill,
+            TextAlign = ContentAlignment.MiddleRight,
+            Font = new Font(SystemFonts.DefaultFont, FontStyle.Bold),
+            Padding = new Padding(0, 0, 12, 0)
+        }, 3, 0);
 
         TabControl tabs = new()
         {
             Dock = DockStyle.Fill
         };
-        tabs.TabPages.Add(CreateTab("Requests", requestsGrid));
-        tabs.TabPages.Add(CreateTab("Responses", callsGrid));
+        tabs.TabPages.Add(CreateTab("Traffic", CreateTrafficLayout()));
         tabs.TabPages.Add(CreateTab("Errors", errorsGrid));
         tabs.TabPages.Add(CreateTab("stderr", stderrBox));
 
-        ConfigureGrid(requestsGrid, "Time", "Method", "Tool", "PID", "Process", "Arguments");
-        ConfigureGrid(callsGrid, "Time", "Direction", "Method", "Tool", "PID", "ms", "Bytes", "Error");
-        ConfigureGrid(errorsGrid, "Time", "Event", "Message");
+        ConfigureTrafficGrid(requestsGrid, "Source", "Time", "Method", "Tool", "PID", "Process", "Arguments");
+        ConfigureTrafficGrid(callsGrid, "Source", "Time", "Direction", "Method", "Tool", "ms", "Bytes", "Error");
+        ConfigureGrid(errorsGrid, "Source", "Time", "Event", "Message");
         stderrBox.Dock = DockStyle.Fill;
         stderrBox.ReadOnly = true;
         stderrBox.BorderStyle = BorderStyle.None;
@@ -142,6 +159,47 @@ public sealed class TelemetryLogControl : UserControl
         return tab;
     }
 
+    private Control CreateTrafficLayout()
+    {
+        SplitContainer trafficSplit = new()
+        {
+            Dock = DockStyle.Fill,
+            Orientation = Orientation.Vertical,
+            SplitterWidth = FriendlySplitterWidth,
+            BackColor = SystemColors.ControlDark
+        };
+        trafficSplit.Panel1.BackColor = SystemColors.Control;
+        trafficSplit.Panel2.BackColor = SystemColors.Control;
+
+        trafficSplit.Panel1.Controls.Add(CreateLabeledPanel("Requests", requestsGrid));
+        trafficSplit.Panel2.Controls.Add(CreateLabeledPanel("Responses", callsGrid));
+        return trafficSplit;
+    }
+
+    private static Control CreateLabeledPanel(string title, Control content)
+    {
+        TableLayoutPanel panel = new()
+        {
+            Dock = DockStyle.Fill,
+            ColumnCount = 1,
+            RowCount = 2
+        };
+        panel.RowStyles.Add(new RowStyle(SizeType.Absolute, 24));
+        panel.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
+
+        Label label = new()
+        {
+            Text = title,
+            Dock = DockStyle.Fill,
+            Padding = new Padding(6, 4, 0, 0),
+            Font = new Font(SystemFonts.DefaultFont, FontStyle.Bold)
+        };
+
+        panel.Controls.Add(label, 0, 0);
+        panel.Controls.Add(content, 0, 1);
+        return panel;
+    }
+
     private static void ConfigureGrid(DataGridView grid, params string[] columns)
     {
         grid.Dock = DockStyle.Fill;
@@ -157,12 +215,45 @@ public sealed class TelemetryLogControl : UserControl
         }
     }
 
+    private static void ConfigureTrafficGrid(DataGridView grid, params string[] columns)
+    {
+        ConfigureGrid(grid, columns);
+        grid.AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.None;
+        grid.ScrollBars = ScrollBars.Both;
+        grid.AutoSizeRowsMode = DataGridViewAutoSizeRowsMode.None;
+        grid.AllowUserToResizeColumns = true;
+        grid.DefaultCellStyle.WrapMode = DataGridViewTriState.False;
+        grid.ColumnHeadersHeightSizeMode = DataGridViewColumnHeadersHeightSizeMode.DisableResizing;
+
+        SetColumnWidth(grid, "Source", 64);
+        SetColumnWidth(grid, "Time", 96);
+        SetColumnWidth(grid, "Direction", 78);
+        SetColumnWidth(grid, "Method", 130);
+        SetColumnWidth(grid, "Tool", 220);
+        SetColumnWidth(grid, "PID", 72);
+        SetColumnWidth(grid, "Process", 260);
+        SetColumnWidth(grid, "ms", 64);
+        SetColumnWidth(grid, "Bytes", 72);
+        SetColumnWidth(grid, "Error", 70);
+        SetColumnWidth(grid, "Arguments", 1400);
+    }
+
+    private static void SetColumnWidth(DataGridView grid, string name, int width)
+    {
+        if (grid.Columns[name] is { } column)
+        {
+            column.Width = width;
+            column.MinimumWidth = Math.Min(width, 80);
+        }
+    }
+
     private void LoadRequests()
     {
         requestsGrid.Rows.Clear();
         foreach (JsonObject entry in ReadJsonLines("requests.jsonl").TakeLast(200))
         {
             requestsGrid.Rows.Add(
+                "history",
                 ShortTime(entry["timestampUtc"]?.GetValue<string>()),
                 entry["method"]?.GetValue<string>() ?? string.Empty,
                 entry["tool"]?.GetValue<string>() ?? string.Empty,
@@ -180,11 +271,11 @@ public sealed class TelemetryLogControl : UserControl
         foreach (JsonObject entry in ReadJsonLines("responses.jsonl").TakeLast(200))
         {
             callsGrid.Rows.Add(
+                "history",
                 ShortTime(entry["timestampUtc"]?.GetValue<string>()),
                 entry["direction"]?.GetValue<string>() ?? string.Empty,
                 entry["method"]?.GetValue<string>() ?? string.Empty,
                 entry["tool"]?.GetValue<string>() ?? string.Empty,
-                entry["processId"]?.ToString() ?? string.Empty,
                 entry["elapsedMs"]?.ToString() ?? string.Empty,
                 entry["messageBytes"]?.ToString() ?? string.Empty,
                 entry["isError"]?.ToString() ?? string.Empty);
@@ -199,6 +290,7 @@ public sealed class TelemetryLogControl : UserControl
         foreach (JsonObject entry in ReadJsonLines("errors.jsonl").TakeLast(200))
         {
             errorsGrid.Rows.Add(
+                "history",
                 ShortTime(entry["timestampUtc"]?.GetValue<string>()),
                 entry["event"]?.GetValue<string>() ?? string.Empty,
                 entry["message"]?.GetValue<string>() ?? string.Empty);
@@ -219,9 +311,72 @@ public sealed class TelemetryLogControl : UserControl
         stderrBox.ScrollToCaret();
     }
 
+    private void OnHubTelemetryRecorded(object? sender, McpHubTelemetryRecord record)
+    {
+        if (!string.Equals(Path.GetFullPath(record.LogRoot), Path.GetFullPath(logRoot), StringComparison.OrdinalIgnoreCase))
+        {
+            return;
+        }
+
+        if (InvokeRequired)
+        {
+            BeginInvoke(() => AddLiveTelemetry(record));
+            return;
+        }
+
+        AddLiveTelemetry(record);
+    }
+
+    private void AddLiveTelemetry(McpHubTelemetryRecord record)
+    {
+        JsonObject entry = record.Entry;
+        switch (record.FileName)
+        {
+            case "requests.jsonl":
+                requestsGrid.Rows.Add(
+                    "live",
+                    ShortTime(entry["timestampUtc"]?.GetValue<string>()),
+                    entry["method"]?.GetValue<string>() ?? string.Empty,
+                    entry["tool"]?.GetValue<string>() ?? string.Empty,
+                    entry["processId"]?.ToString() ?? entry["hubProcessId"]?.ToString() ?? string.Empty,
+                    ShortProcessPath(entry["processPath"]?.GetValue<string>() ?? entry["hubProcessPath"]?.GetValue<string>()),
+                    CompactJson(entry["arguments"]));
+                TrimGrid(requestsGrid, 250);
+                ScrollToLastRow(requestsGrid);
+                break;
+            case "responses.jsonl":
+                callsGrid.Rows.Add(
+                    "live",
+                    ShortTime(entry["timestampUtc"]?.GetValue<string>()),
+                    entry["direction"]?.GetValue<string>() ?? string.Empty,
+                    entry["method"]?.GetValue<string>() ?? string.Empty,
+                    entry["tool"]?.GetValue<string>() ?? string.Empty,
+                    entry["elapsedMs"]?.ToString() ?? string.Empty,
+                    entry["messageBytes"]?.ToString() ?? string.Empty,
+                    entry["isError"]?.ToString() ?? string.Empty);
+                TrimGrid(callsGrid, 250);
+                ScrollToLastRow(callsGrid);
+                break;
+            case "errors.jsonl":
+                errorsGrid.Rows.Add(
+                    "live",
+                    ShortTime(entry["timestampUtc"]?.GetValue<string>()),
+                    entry["event"]?.GetValue<string>() ?? string.Empty,
+                    entry["message"]?.GetValue<string>() ?? string.Empty);
+                TrimGrid(errorsGrid, 250);
+                ScrollToLastRow(errorsGrid);
+                break;
+            case "stderr.jsonl":
+                stderrBox.AppendText($"[{ShortTime(entry["timestampUtc"]?.GetValue<string>())}] {entry["message"]?.GetValue<string>()}{Environment.NewLine}");
+                stderrBox.SelectionStart = stderrBox.TextLength;
+                stderrBox.ScrollToCaret();
+                break;
+        }
+    }
+
     private static void ScrollToLastRow(DataGridView grid)
     {
-        if (grid.Rows.Count == 0)
+        if (grid.Rows.Count == 0 || !grid.IsHandleCreated || grid.DisplayedRowCount(includePartialRow: true) == 0)
         {
             return;
         }
@@ -229,38 +384,86 @@ public sealed class TelemetryLogControl : UserControl
         int lastIndex = grid.Rows.Count - 1;
         grid.ClearSelection();
         grid.Rows[lastIndex].Selected = true;
-        grid.FirstDisplayedScrollingRowIndex = lastIndex;
+        try
+        {
+            grid.FirstDisplayedScrollingRowIndex = lastIndex;
+        }
+        catch (InvalidOperationException)
+        {
+            // The grid may still be measuring inside a newly-created split panel.
+        }
+    }
+
+    private static void TrimGrid(DataGridView grid, int maxRows)
+    {
+        while (grid.Rows.Count > maxRows)
+        {
+            grid.Rows.RemoveAt(0);
+        }
     }
 
     private IEnumerable<JsonObject> ReadJsonLines(string fileName)
     {
-        string path = Path.Combine(logRoot, fileName);
-        if (!File.Exists(path))
+        foreach (JsonObject entry in ReadJsonLinesUnordered(fileName)
+            .OrderBy(entry => entry["timestampUtc"]?.GetValue<string>() ?? string.Empty, StringComparer.Ordinal))
+        {
+            yield return entry;
+        }
+    }
+
+    private IEnumerable<JsonObject> ReadJsonLinesUnordered(string fileName)
+    {
+        foreach (string path in GetTelemetryFiles(fileName))
+        {
+            foreach (string line in File.ReadLines(path))
+            {
+                if (string.IsNullOrWhiteSpace(line))
+                {
+                    continue;
+                }
+
+                JsonNode? node;
+                try
+                {
+                    node = JsonNode.Parse(line);
+                }
+                catch
+                {
+                    continue;
+                }
+
+                if (node is JsonObject obj)
+                {
+                    yield return obj;
+                }
+            }
+        }
+    }
+
+    private IEnumerable<string> GetTelemetryFiles(string fileName)
+    {
+        if (!Directory.Exists(logRoot))
         {
             yield break;
         }
 
-        foreach (string line in File.ReadLines(path))
+        string exactPath = Path.Combine(logRoot, fileName);
+        if (File.Exists(exactPath))
         {
-            if (string.IsNullOrWhiteSpace(line))
-            {
-                continue;
-            }
+            yield return exactPath;
+        }
 
-            JsonNode? node;
-            try
-            {
-                node = JsonNode.Parse(line);
-            }
-            catch
-            {
-                continue;
-            }
+        string extension = Path.GetExtension(fileName);
+        string stem = Path.GetFileNameWithoutExtension(fileName);
+        string pattern = string.IsNullOrWhiteSpace(extension)
+            ? $"{stem}.*"
+            : $"{stem}.*{extension}";
 
-            if (node is JsonObject obj)
-            {
-                yield return obj;
-            }
+        foreach (string path in Directory.EnumerateFiles(logRoot, pattern)
+            .Where(path => !string.Equals(path, exactPath, StringComparison.OrdinalIgnoreCase))
+            .OrderBy(path => path, StringComparer.OrdinalIgnoreCase))
+        {
+            yield return path;
         }
     }
 

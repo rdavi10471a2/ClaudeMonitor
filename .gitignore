@@ -16,6 +16,9 @@ appsettings.json
 # Monitor-owned generated state
 Working/
 
+# Repo-local MCP tool installs
+Tools/RoslynCodeLens/
+
 # Logs / temporary files
 *.log
 *.tmp

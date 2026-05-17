@@ -14,11 +14,20 @@ public sealed class MonitorMcpTelemetryService
     private readonly string logRoot;
     private readonly int processId = Environment.ProcessId;
     private readonly string processPath = Environment.ProcessPath ?? string.Empty;
+    private readonly bool disabled = string.Equals(
+        Environment.GetEnvironmentVariable("MONITORBASECLAUDE_DISABLE_SERVER_TELEMETRY"),
+        "1",
+        StringComparison.OrdinalIgnoreCase);
 
     public MonitorMcpTelemetryService(MonitorServerSettings settings)
     {
         logRoot = Path.Combine(settings.UiRoot, "Working", "History", "McpTelemetry", "MonitorBaseClaude");
         Directory.CreateDirectory(logRoot);
+        if (disabled)
+        {
+            return;
+        }
+
         WriteJsonLine("requests.jsonl", new
         {
             timestampUtc = DateTimeOffset.UtcNow,
@@ -103,6 +112,11 @@ public sealed class MonitorMcpTelemetryService
 
     private void WriteJsonLine(string fileName, object entry)
     {
+        if (disabled)
+        {
+            return;
+        }
+
         string path = Path.Combine(logRoot, fileName);
         string line = JsonSerializer.Serialize(entry, JsonOptions);
         File.AppendAllText(path, line + Environment.NewLine, Encoding.UTF8);

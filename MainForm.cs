@@ -10,6 +10,7 @@ namespace MonitorBaseClaude;
 public sealed class MainForm : Form
 {
     private readonly MonitorDashboardControl dashboard;
+    private readonly McpProxyHubService proxyHub;
 
     public MainForm()
     {
@@ -18,11 +19,23 @@ public sealed class MainForm : Form
         WindowState = FormWindowState.Maximized;
         MinimumSize = new Size(1100, 720);
 
+        MonitorClientSettings settings = MonitorClientSettings.Load();
+        proxyHub = new McpProxyHubService(settings, this);
         dashboard = new MonitorDashboardControl
         {
             Dock = DockStyle.Fill
         };
 
         Controls.Add(dashboard);
+    }
+
+    protected override void Dispose(bool disposing)
+    {
+        if (disposing)
+        {
+            proxyHub.Dispose();
+        }
+
+        base.Dispose(disposing);
     }
 }

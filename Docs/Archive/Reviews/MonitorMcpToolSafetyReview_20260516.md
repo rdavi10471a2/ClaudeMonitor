@@ -39,6 +39,8 @@
 
 ## Scope answers
 
+2026-05-17 update: the live manifest now documents `set_type_partial`, the typed add tools (`add_field`, `add_property`, `add_method`, `add_constructor`, `add_nested_type`), overlay review gating, and `get_smoke_test_catalog`. The remaining planned-only entries are still marked as planned in the manifest.
+
 1) **Tools exposed in code vs manifest:**
 - Code-exposed tools are all in `MonitorTools` (`Program.cs`).
 - Manifest adds planned entries that are not yet implemented in code.
@@ -47,7 +49,7 @@
 - `get_file`, `get_file_outline`, `get_source_map`, `get_symbol`, `find_file`, `check_file_hash`, `get_workflow_status`, `get_monitor_status`, `list_*`, `get_ledger` etc.
 
 3) **Tools staging edits:**
-- `submit_file`, `submit_symbol`, `add_using`, `remove_using`, `add_symbol`, `remove_symbol` (`MonitorWorkflowService.Submit*` / `Add*/Remove*`).
+- `submit_file`, `submit_symbol`, `set_type_partial`, `add_using`, `remove_using`, `add_symbol`, `remove_symbol`, `add_field`, `add_property`, `add_method`, `add_constructor`, and `add_nested_type` (`MonitorWorkflowService.Submit*` / `Add*/Remove*`).
 
 4) **Workflow state / recovery tools:**
 - `start_monitor_session`, `record_monitor_session_event`, `list/ get_monitor_session`, `record_diff_decision`, `RefreshFile` (recover path), `recover` behavior via blocked-record status updates.

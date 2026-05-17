@@ -228,6 +228,18 @@ public sealed class MonitorTools
     }
 
     [McpServerTool]
+    [Description("Stage adding or removing the partial modifier on one C# type declaration. Use when a refactor needs a partial companion file. Produces a full staged candidate; does not overwrite watched source.")]
+    public MonitorFileSubmitResult SetTypePartial(
+        [Description("Source file path, absolute or relative to the watched solution folder.")] string path,
+        [Description("Containing type name.")] string containingType,
+        [Description("True to require partial; false to remove partial.")] bool isPartial = true,
+        [Description("Optional durable session handle to link this staged edit to a monitor workflow session.")] string? sessionId = null,
+        [Description("Optional JSON manifest expressing Model intent.")] string? manifestJson = null)
+    {
+        return Track(nameof(SetTypePartial), new { path, containingType, isPartial, sessionId, manifestLength = manifestJson?.Length ?? 0 }, () => workflowService.SetTypePartial(path, containingType, isPartial, sessionId, manifestJson));
+    }
+
+    [McpServerTool]
     [Description("Stage adding one C# member to a containing type. Produces a full staged candidate; does not overwrite watched source.")]
     public MonitorFileSubmitResult AddSymbol(
         [Description("Source file path, absolute or relative to the watched solution folder.")] string path,
@@ -239,6 +251,71 @@ public sealed class MonitorTools
         [Description("Optional JSON manifest expressing Model intent.")] string? manifestJson = null)
     {
         return Track(nameof(AddSymbol), new { path, containingType, symbolType, codeLength = code.Length, afterSymbol, sessionId, manifestLength = manifestJson?.Length ?? 0 }, () => workflowService.AddSymbol(path, containingType, symbolType, code, afterSymbol, sessionId, manifestJson));
+    }
+
+    [McpServerTool]
+    [Description("Stage adding one C# field to a containing type. Prefer this over generic add_symbol for field insertion. Produces a full staged candidate; does not overwrite watched source.")]
+    public MonitorFileSubmitResult AddField(
+        [Description("Source file path, absolute or relative to the watched solution folder.")] string path,
+        [Description("Containing type name.")] string containingType,
+        [Description("Complete C# field declaration, such as private readonly IClock _clock;.")] string declaration,
+        [Description("Optional existing member name after which to insert the field, such as _logger.")] string? afterSymbol = null,
+        [Description("Optional durable session handle to link this staged edit to a monitor workflow session.")] string? sessionId = null,
+        [Description("Optional JSON manifest expressing Model intent.")] string? manifestJson = null)
+    {
+        return Track(nameof(AddField), new { path, containingType, declarationLength = declaration.Length, afterSymbol, sessionId, manifestLength = manifestJson?.Length ?? 0 }, () => workflowService.AddField(path, containingType, declaration, afterSymbol, sessionId, manifestJson));
+    }
+
+    [McpServerTool]
+    [Description("Stage adding one C# property to a containing type. Prefer this over generic add_symbol for property insertion. Produces a full staged candidate; does not overwrite watched source.")]
+    public MonitorFileSubmitResult AddProperty(
+        [Description("Source file path, absolute or relative to the watched solution folder.")] string path,
+        [Description("Containing type name.")] string containingType,
+        [Description("Complete C# property declaration.")] string declaration,
+        [Description("Optional existing member name after which to insert the property.")] string? afterSymbol = null,
+        [Description("Optional durable session handle to link this staged edit to a monitor workflow session.")] string? sessionId = null,
+        [Description("Optional JSON manifest expressing Model intent.")] string? manifestJson = null)
+    {
+        return Track(nameof(AddProperty), new { path, containingType, declarationLength = declaration.Length, afterSymbol, sessionId, manifestLength = manifestJson?.Length ?? 0 }, () => workflowService.AddProperty(path, containingType, declaration, afterSymbol, sessionId, manifestJson));
+    }
+
+    [McpServerTool]
+    [Description("Stage adding one C# method to a containing type. Prefer this over generic add_symbol for method insertion. Produces a full staged candidate; does not overwrite watched source.")]
+    public MonitorFileSubmitResult AddMethod(
+        [Description("Source file path, absolute or relative to the watched solution folder.")] string path,
+        [Description("Containing type name.")] string containingType,
+        [Description("Complete C# method declaration.")] string declaration,
+        [Description("Optional existing member name after which to insert the method.")] string? afterSymbol = null,
+        [Description("Optional durable session handle to link this staged edit to a monitor workflow session.")] string? sessionId = null,
+        [Description("Optional JSON manifest expressing Model intent.")] string? manifestJson = null)
+    {
+        return Track(nameof(AddMethod), new { path, containingType, declarationLength = declaration.Length, afterSymbol, sessionId, manifestLength = manifestJson?.Length ?? 0 }, () => workflowService.AddMethod(path, containingType, declaration, afterSymbol, sessionId, manifestJson));
+    }
+
+    [McpServerTool]
+    [Description("Stage adding one C# constructor to a containing type. Prefer this over generic add_symbol for constructor overload insertion. Produces a full staged candidate; does not overwrite watched source.")]
+    public MonitorFileSubmitResult AddConstructor(
+        [Description("Source file path, absolute or relative to the watched solution folder.")] string path,
+        [Description("Containing type name.")] string containingType,
+        [Description("Complete C# constructor declaration.")] string declaration,
+        [Description("Optional existing constructor/member name after which to insert the constructor.")] string? afterSymbol = null,
+        [Description("Optional durable session handle to link this staged edit to a monitor workflow session.")] string? sessionId = null,
+        [Description("Optional JSON manifest expressing Model intent.")] string? manifestJson = null)
+    {
+        return Track(nameof(AddConstructor), new { path, containingType, declarationLength = declaration.Length, afterSymbol, sessionId, manifestLength = manifestJson?.Length ?? 0 }, () => workflowService.AddConstructor(path, containingType, declaration, afterSymbol, sessionId, manifestJson));
+    }
+
+    [McpServerTool]
+    [Description("Stage adding one nested C# type to a containing type. The declaration must be class, struct, interface, record, or enum. Produces a full staged candidate; does not overwrite watched source.")]
+    public MonitorFileSubmitResult AddNestedType(
+        [Description("Source file path, absolute or relative to the watched solution folder.")] string path,
+        [Description("Containing type name.")] string containingType,
+        [Description("Complete nested C# type declaration.")] string declaration,
+        [Description("Optional existing member name after which to insert the nested type.")] string? afterSymbol = null,
+        [Description("Optional durable session handle to link this staged edit to a monitor workflow session.")] string? sessionId = null,
+        [Description("Optional JSON manifest expressing Model intent.")] string? manifestJson = null)
+    {
+        return Track(nameof(AddNestedType), new { path, containingType, declarationLength = declaration.Length, afterSymbol, sessionId, manifestLength = manifestJson?.Length ?? 0 }, () => workflowService.AddNestedType(path, containingType, declaration, afterSymbol, sessionId, manifestJson));
     }
 
     [McpServerTool]
@@ -255,7 +332,7 @@ public sealed class MonitorTools
     [McpServerTool]
     [Description("Classify a completed WinMerge review for a staged edit. The decision argument is the Operator-reported outcome; accepted requires reported accepted plus watched==staged, or accepted-normalized when only BOM/EOL shape differs; rejected requires reported rejected plus watched==original; other mismatches are dirty-unexpected.")]
     public MonitorDiffDecisionResult RecordDiffDecision(
-        [Description("Staged edit record id returned by submit_file.")] string stagedRecordId,
+        [Description("Staged edit record id returned by submit_file, submit_symbol, set_type_partial, add_symbol, remove_symbol, add_using, or remove_using.")] string stagedRecordId,
         [Description("Operator-reported outcome: accepted if WinMerge saved the full candidate, or rejected if it was not saved. Hash comparison is authoritative.")] string decision,
         [Description("Optional Operator note.")] string? note = null,
         [Description("Optional session handle. Defaults to the staged record session when present.")] string? sessionId = null)
@@ -281,11 +358,12 @@ public sealed class MonitorTools
     }
 
     [McpServerTool]
-    [Description("Launch WinMerge for a staged edit record and return review paths. This does not classify or accept the edit; after review call record_diff_decision.")]
+    [Description("Launch WinMerge for a staged edit record and return review paths. If overlay compile validation has errors, this asks the WinForms Host for an explicit force-review decision before launching. This does not classify or accept the edit; after review call record_diff_decision.")]
     public MonitorStagedDiffLaunchResult LaunchStagedDiff(
-        [Description("Staged edit record id returned by submit_file, submit_symbol, add_symbol, remove_symbol, add_using, or remove_using.")] string stagedRecordId)
+        [Description("Staged edit record id returned by submit_file, submit_symbol, add_symbol, remove_symbol, add_using, or remove_using.")] string stagedRecordId,
+        [Description("Bypass the WinForms overlay-error dialog and force review. Use only when the Operator explicitly requested review of a compile-failed staged candidate.")] bool forceReviewOnOverlayErrors = false)
     {
-        return Track(nameof(LaunchStagedDiff), new { stagedRecordId }, () => workflowService.LaunchStagedDiff(stagedRecordId));
+        return Track(nameof(LaunchStagedDiff), new { stagedRecordId, forceReviewOnOverlayErrors }, () => workflowService.LaunchStagedDiff(stagedRecordId, forceReviewOnOverlayErrors));
     }
 
     [McpServerTool]
@@ -353,6 +431,36 @@ public sealed class MonitorTools
     }
 
     [McpServerTool]
+    [Description("Return the normal Claude staging guide, including session-overlay rules. This is review-facing guidance, not debug smoke coverage.")]
+    public string GetStagingGuide()
+    {
+        return Track(nameof(GetStagingGuide), null, () =>
+        {
+            string stagingPath = Path.Combine(settings.UiRoot, "Docs", "Skills", "SystemMonitorStaging.md");
+            string overlayPath = Path.Combine(settings.UiRoot, "Docs", "Skills", "SessionOverlayValidation.md");
+
+            List<string> sections = [];
+            sections.Add(ReadMarkdownOrMissing(stagingPath, "System Monitor staging guide"));
+            sections.Add(ReadMarkdownOrMissing(overlayPath, "Session overlay validation guide"));
+
+            return string.Join($"{Environment.NewLine}{Environment.NewLine}---{Environment.NewLine}{Environment.NewLine}", sections);
+        });
+    }
+
+    [McpServerTool]
+    [Description("Return the smoke-test catalog for MonitorBaseClaude, including runnable modes, coverage areas, outputs, and known gaps.")]
+    public string GetSmokeTestCatalog()
+    {
+        return Track(nameof(GetSmokeTestCatalog), null, () =>
+        {
+            string path = Path.Combine(settings.UiRoot, "Docs", "SmokeTestCatalog.md");
+            return File.Exists(path)
+                ? File.ReadAllText(path)
+                : "Smoke test catalog file was not found.";
+        });
+    }
+
+    [McpServerTool]
     [Description("List watched project folders under the configured watched-projects root.")]
     public IReadOnlyList<WatchedProjectInfo> ListWatchedProjects()
     {
@@ -378,6 +486,13 @@ public sealed class MonitorTools
     private T Track<T>(string toolName, object? arguments, Func<T> action)
     {
         return telemetryService.Track(toolName, arguments, action);
+    }
+
+    private static string ReadMarkdownOrMissing(string path, string description)
+    {
+        return File.Exists(path)
+            ? File.ReadAllText(path)
+            : $"{description} was not found at {path}.";
     }
 
     private static bool IsHiddenOrBuildFolder(string path)

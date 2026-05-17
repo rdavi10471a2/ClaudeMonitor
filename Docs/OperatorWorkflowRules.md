@@ -66,8 +66,11 @@ Accept means the whole structural candidate becomes the next converged pattern. 
 
 - Never launch multiple GUI diff windows back-to-back.
 - Multi-file changes must become an ordered review queue.
+- For coupled multi-file C# changes, the agent must use one monitor session and stage all required files before the first review launch.
+- The Tool Server validates staged C# files as a session overlay, so proposed changes in file A compile against proposed changes in file B before either file is reviewed.
 - The Tool Server stages and validates edits, then returns source/staged paths.
 - The Host launches the first GUI diff only, then waits for the Operator to finish review.
+- If a staged candidate is blocked before review, such as overlay compile errors plus Operator cancel, the Host must stop the review queue. Do not advance to the next file until the agent stages a corrected candidate or the Operator explicitly forces review.
 - The Operator reports `accepted` only after saving the full staged candidate in WinMerge, or `rejected` when leaving the watched source unchanged.
 - The Operator must not edit either side of the diff and must not partially merge hunks.
 - Accept means the Operator used the Host-owned diff tool to save the whole staged candidate into the watched file, then the Tool Server verifies the watched file exactly matches the staged proposal hash.
@@ -76,7 +79,9 @@ Accept means the whole structural candidate becomes the next converged pattern. 
 - Expected v1 behavior is accept all or reject all. If the proposal is close but not right, reject it and ask for a new staged proposal.
 - The diff review is a final sanity check, not the main editing surface. Use it to catch drastic rewrites, moved code, or boundary mistakes. The source file is a voting member in generation, so a valid proposal should respect the current file shape.
 - After a decision, the Tool Server verifies what landed before the next diff is released.
-- For multi-file C# edits, staged files may be validated together as an overlay even while diffs are reviewed one at a time.
+- For multi-file C# edits, staged files are expected to validate together as an overlay while diffs are still reviewed one at a time.
+- A cancelled overlay gate, missing Host, missing staged file, missing source file, dirty-unexpected classification, or any other not-launched review result is a hard stop for the current queue. The model must not keep walking the chain by opening later diffs.
+- For session-based multi-file work, this is also server-enforced: an overlay-error Operator cancel or Host-unavailable result marks the staged record `blocked-overlay-validation`. Later `launch_staged_diff` calls for other records in the same session return `review-chain-blocked` until the blocked item is corrected or explicitly force-reviewed. Host-unavailable is a machine block, not a fabricated Operator action.
 
 ## Decision Classification Rule
 
@@ -105,6 +110,8 @@ A no-op candidate does not need Operator review because Accept and Reject collap
 WinMerge and other GUI review tools are Host-owned. The Monitor Tool Server must not own interactive GUI lifetime because stdio server-launched windows proved unreliable: WinMerge can appear briefly, disappear, or become hard to correlate with telemetry. The stable operator workflow is Tool Server stages, Host launches, Operator saves or does not save in WinMerge, Tool Server verifies.
 
 Closing WinMerge is not a decision. The Host may show window/process status, but `record_diff_decision` is called only after the Operator reports the outcome. Vote-plus-hash agreement is authoritative.
+
+Overlay compile validation is also a Host-owned gate. If `launch_staged_diff` detects overlay errors, it asks the WinForms Host for an explicit choice before WinMerge opens. `Cancel Review` returns diagnostics to the agent and stops the review queue. `Force WinMerge Review` is the only path that opens WinMerge for a compile-failed staged candidate.
 
 ## Sidecar Test Runner
 

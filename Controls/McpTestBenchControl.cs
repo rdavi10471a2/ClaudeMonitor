@@ -11,6 +11,8 @@ namespace MonitorBaseClaude.Controls;
 [FileVersion("1.4")]
 public sealed class McpTestBenchControl : UserControl
 {
+    private const int FriendlySplitterWidth = 12;
+
     private readonly RoslynCodeLensMcpClientService mcpClientService;
     private readonly MonitorClientSettings settings;
     private readonly TextBox solutionPathTextBox = new();
@@ -187,7 +189,10 @@ public sealed class McpTestBenchControl : UserControl
     {
         payloadSplit.Dock = DockStyle.Fill;
         payloadSplit.Orientation = Orientation.Vertical;
-        payloadSplit.SplitterWidth = 6;
+        payloadSplit.SplitterWidth = FriendlySplitterWidth;
+        payloadSplit.BackColor = SystemColors.ControlDark;
+        payloadSplit.Panel1.BackColor = SystemColors.Control;
+        payloadSplit.Panel2.BackColor = SystemColors.Control;
         payloadSplit.Panel1.Controls.Add(CreatePayloadPanel("Request", requestBox));
         payloadSplit.Panel2.Controls.Add(CreatePayloadPanel("Response", responseBox));
 

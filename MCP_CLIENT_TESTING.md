@@ -4,6 +4,8 @@ This workspace has a project-scoped Claude Code MCP configuration in `.mcp.json`
 
 Claude-facing project rules live in `CLAUDE.md`. Codex/build-agent implementation rules live in `AGENTS.md`. Claude Desktop tests should paste or attach `CLAUDE.md` if Desktop does not read the file automatically.
 
+For a compact Claude workflow sheet, use `Docs\ClaudeRoslynSystemMonitorSkill.md`. It is written like a skill definition: first calls, golden rules, semantic read flow, protected edit flow, and async-change flow.
+
 ## Server
 
 ```text
@@ -55,6 +57,8 @@ The real migration rule is that the legacy monitor command/help surface becomes 
 ## Roslyn CodeLens Pairing
 
 Use Roslyn CodeLens MCP for semantic questions such as diagnostics, references, callers, implementations, type hierarchy, dependency analysis, and generated code. Use Monitor MCP for staging, hashes, WinMerge review paths, ledgers, and `record_diff_decision`.
+
+Use `Docs/RoslynToolingTeachingSpec.md` as the concrete recipe sheet for Roslyn arguments. The important discipline is schema-first argument acquisition: `search_symbols` uses `query`, while reference/caller/impact tools use `symbol`.
 
 The expected C# context loop is:
 

@@ -12,12 +12,18 @@
     <Compile Remove="MainForm.Designer.cs" />
     <Compile Remove="MonitorBaseClaude.McpServer\**\*.cs" />
     <Compile Remove="MonitorBaseClaude.ToolSmokeTests\**\*.cs" />
+    <Compile Remove="Tools\CodeLensTelemetryProxy\**\*.cs" />
+    <Compile Remove="Tools\McpHubBridge\**\*.cs" />
     <Compile Remove="Working\**\*.cs" />
     <EmbeddedResource Remove="MonitorBaseClaude.McpServer\**\*" />
     <EmbeddedResource Remove="MonitorBaseClaude.ToolSmokeTests\**\*" />
+    <EmbeddedResource Remove="Tools\CodeLensTelemetryProxy\**\*" />
+    <EmbeddedResource Remove="Tools\McpHubBridge\**\*" />
     <EmbeddedResource Remove="Working\**\*" />
     <None Remove="MonitorBaseClaude.McpServer\**\*" />
     <None Remove="MonitorBaseClaude.ToolSmokeTests\**\*" />
+    <None Remove="Tools\CodeLensTelemetryProxy\**\*" />
+    <None Remove="Tools\McpHubBridge\**\*" />
     <None Remove="Working\**\*" />
   </ItemGroup>
 

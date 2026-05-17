@@ -1,24 +1,5 @@
 $ErrorActionPreference = 'Stop'
 
-$defaultRoslynCodelensExe = Join-Path $env:USERPROFILE '.dotnet\tools\roslyn-codelens-mcp.exe'
-$roslynCodelensCommand = $null
-if (Test-Path -LiteralPath $defaultRoslynCodelensExe) {
-    $roslynCodelensCommand = $defaultRoslynCodelensExe
-} else {
-    $resolvedCommand = Get-Command 'roslyn-codelens-mcp.exe' -ErrorAction SilentlyContinue
-    if ($null -eq $resolvedCommand) {
-        $resolvedCommand = Get-Command 'roslyn-codelens-mcp' -ErrorAction SilentlyContinue
-    }
-
-    if ($null -ne $resolvedCommand) {
-        $roslynCodelensCommand = $resolvedCommand.Source
-    }
-}
-
-if ([string]::IsNullOrWhiteSpace($roslynCodelensCommand)) {
-    throw "roslyn-codelens-mcp was not found at $defaultRoslynCodelensExe or on PATH. Install the global tool or update the launcher."
-}
-
 $repoRoot = Resolve-Path (Join-Path $PSScriptRoot '..')
 $settingsPath = Join-Path $repoRoot 'appsettings.json'
 
@@ -48,20 +29,10 @@ if (-not (Test-Path -LiteralPath $solutionPath)) {
     throw "CodeLens solution path not found: $solutionPath"
 }
 
-$telemetryProxyCandidates = @(
-    (Join-Path $repoRoot 'Tools\CodeLensTelemetryProxy\bin\Debug\net10.0\CodeLensTelemetryProxy.exe'),
-    (Join-Path (Split-Path -Parent $repoRoot) 'ClaudeMonitor\Tools\CodeLensTelemetryProxy\bin\Debug\net10.0\CodeLensTelemetryProxy.exe')
-)
-
-$telemetryProxyCommand = $telemetryProxyCandidates |
-    Where-Object { Test-Path -LiteralPath $_ } |
-    Select-Object -First 1
-
-if ($telemetryProxyCommand) {
-    $logRoot = Join-Path $repoRoot 'Working\History\McpTelemetry\RoslynCodeLens'
-    & $telemetryProxyCommand $solutionPath --server-command $roslynCodelensCommand --log-root $logRoot
-    exit $LASTEXITCODE
+$hubBridgeCommand = Join-Path $repoRoot 'Tools\McpHubBridge\bin\Debug\net10.0\McpHubBridge.exe'
+if (-not (Test-Path -LiteralPath $hubBridgeCommand)) {
+    throw "McpHubBridge.exe not found. Build the solution first: dotnet build `"$repoRoot\MonitorBaseClaude.slnx`""
 }
 
-& $roslynCodelensCommand $solutionPath
+& $hubBridgeCommand --server roslyn --solution $solutionPath
 exit $LASTEXITCODE

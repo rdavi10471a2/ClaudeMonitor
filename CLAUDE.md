@@ -51,10 +51,13 @@ Expected:
 Complete candidate prepared
 -> submit_file or submit_symbol
 -> launch_staged_diff, or Host/sidecar opens WinMerge using returned source/staged paths
+   -> if launch/review is blocked or cancelled, stop the queue and fix before continuing
 -> Operator saves the whole candidate or leaves source unchanged
 -> record_diff_decision(stagedRecordId, accepted|rejected)
 -> obey the returned classification
 ```
+
+For coupled multi-file C# edits, use one monitor session and stage the whole intended WriteSet before the first `launch_staged_diff`. Overlay compilation must see the proposed files together; WinMerge review is still serial, one file at a time.
 
 ### Unsafe Or Ambiguous Requests
 
@@ -63,6 +66,7 @@ Direct watched-source write requested -> refuse and stage instead.
 Partial hunk merge requested -> refuse and regenerate a smaller candidate.
 Name-only symbol mutation requested -> use get_source_map and a structured selector first.
 Dirty-unexpected returned -> stop editing that path until Host/Operator refreshes or inspects state.
+Overlay gate cancelled or review not launched -> stop the current multi-file chain and stage a corrected candidate before opening later diffs.
 ```
 
 For staging or removing a symbol, prefer `stableSymbolKey` or structured `symbolSelectorJson` from `get_source_map`. Name-only `symbolName` is a fallback of last resort for read compatibility and should not be treated as safe mutation authority.
@@ -85,6 +89,8 @@ Classification is vote-plus-hash gated:
 
 If the candidate is a no-op and the staged hash equals the original baseline hash, do not enqueue a normal diff by default. Report it as no-change/no-op so Accept and Reject cannot collapse into the same hash state.
 
+If overlay compile validation has errors, `launch_staged_diff` must get an explicit Host/Operator force-review decision before WinMerge opens. `Cancel Review`, missing Host, missing source, missing staged file, or any not-launched result stops the current review queue. Do not proceed to later files in a multi-file batch until the blocked item is corrected or explicitly force-reviewed.
+
 ## Source Structure
 
 The current watched file is a voting member in the loop. It carries the prior converged pattern: names, order, comments, attributes, boundaries, namespaces, partial-class shape, and local style.
@@ -98,6 +104,10 @@ Duplication is not automatically debt. Do not extract helper methods or create a
 Use the Monitor MCP server for workflow state, sessions, staged candidates, hashes, ledgers, diff review coordination, and accept/reject classification.
 
 Use Roslyn CodeLens MCP for external code intelligence: diagnostics, references, callers, type hierarchy, dependency analysis, generated code, and broad semantic questions.
+
+When using Roslyn Tooling, follow `Docs/RoslynToolingTeachingSpec.md` for exact argument names, argument acquisition, tool recipes, and negative examples. Do not guess Roslyn argument names. For reference/caller/impact tools, obtain canonical symbols through `search_symbols` and `get_type_overview`; use the schema-required argument name `symbol` where required.
+
+Always prefer Roslyn tools over text or grep search for C# symbol discovery. Never edit watched source directly; all watched-source changes must go through System Monitor staging. Use diagnostics after staged edits compile to confirm no new errors before requesting Operator review.
 
 Do not use Roslyn CodeLens `apply_code_action` against watched source in this workflow. Treat CodeLens as read/analysis-only unless the Operator explicitly authorizes a separate non-monitor mutation path. Refactorings and fixes for watched source should be converted into a complete candidate and staged through Monitor MCP so WinMerge review and vote-plus-hash classification remain authoritative.
 

@@ -1,16 +1,11 @@
 $ErrorActionPreference = 'Stop'
 
 $repoRoot = Resolve-Path (Join-Path $PSScriptRoot '..')
-$exePath = Join-Path $repoRoot 'MonitorBaseClaude.McpServer\bin\Debug\net10.0\MonitorBaseClaude.McpServer.exe'
-$settingsPath = Join-Path $repoRoot 'appsettings.json'
-
-if (-not (Test-Path -LiteralPath $settingsPath)) {
-    $settingsPath = Join-Path $repoRoot 'appsettings.template.json'
-}
+$exePath = Join-Path $repoRoot 'Tools\McpHubBridge\bin\Debug\net10.0\McpHubBridge.exe'
 
 if (-not (Test-Path -LiteralPath $exePath)) {
-    throw "MonitorBaseClaude.McpServer.exe not found. Build the project first: dotnet build $($exePath -replace '\\bin\\.*$','\\MonitorBaseClaude.McpServer.csproj')"
+    throw "McpHubBridge.exe not found. Build the solution first: dotnet build `"$repoRoot\MonitorBaseClaude.slnx`""
 }
 
-& $exePath --settings $settingsPath
+& $exePath --server monitor
 exit $LASTEXITCODE
