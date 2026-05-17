@@ -102,6 +102,41 @@
 - Started WinForms host `MonitorBaseClaude.exe`, PID 41280, ready in 2.1 s.
 - MCP server will respawn through `Tools\Start-MonitorBaseClaudeMcp.ps1` when Claude Code reconnects (`/mcp`).
 
+### 2026-05-17 — Session kill, recovery, and rerun scope change
+
+- Chat session was killed mid-pass after the pre-rerun ops commit (`f8b6363`). Context recovered from `STATUS.md`, this file, and the untracked `Pass2_Proposed/SingleFile_DatabaseDomainRepository.cs.txt`.
+- MCP servers re-verified alive after the rebuild:
+  - `get_workflow_status` returned watched solution `C:\Schema Studio - DBV2\Schema Studio.sln` (exists), working root present, WinMerge at `C:\Program Files\WinMerge\WinMergeU.exe`.
+  - `get_monitor_status` returned mcpServerRoot present.
+  - `get_staging_guide` schema is now exposed via `tools/list` — Finding 2 marker is gone for this tool. Typed insertion tools and `get_staging_guide` are visible in deferred list, confirming the rebuilt binary is the active server.
+- Operator scope change for the rerun: **do not** retest the new-file / partial-class path in this rerun. Stick to the same file, single-file shape, minimal changes — stress-test the full pipeline (`submit_file` → overlay compile → `launch_staged_diff` → WinMerge → save/no-save → `record_diff_decision` → vote-plus-hash) end-to-end on an unambiguous diff, not the larger async + SQL-dict rewrite the original Pass 2 attempted.
+- The aggressive single-file candidate at `Pass2_Proposed/SingleFile_DatabaseDomainRepository.cs.txt` is therefore out of scope for the rerun. Kept on disk for Codex review as evidence of the original intended shape.
+- Stale record `20260517_174813445_submit_file_DatabaseDomainRepository_4bc6cba3` from the halted session: Operator chose to restart the whole scenario rather than reject explicitly. Old session is abandoned; the pre-launch record remains orphaned and will not be classified. Not ideal for audit purity but matches Operator intent.
+
+### 2026-05-17 ~18:18 UTC — Pass 2 rerun: staged, WinMerge launched, awaiting Operator
+
+Sequence of what actually happened after the rebuild + host start (so the chat view, if confused, can be reconstructed from this record):
+
+1. **Tool-surface probe.** `ToolSearch select:...get_workflow_status,get_monitor_status,get_tool_manifest,get_staging_guide` returned all four schemas, including `get_staging_guide` (which was Finding 2 in Pass 1). Rebuilt server confirmed active.
+2. **Liveness probes.** `get_workflow_status` returned watched solution + WinMerge path; `get_monitor_status` returned mcpServerRoot present.
+3. **Scope clarification mistake (mine).** Operator wrote "minimal changes to stress test everything but new file / partial class." I initially misread that as "absolute-minimum diff" and proposed three null guards. Operator corrected: minimal is relative to the *original* Pass 2 scope (async + static SQL dict), not stripped down. Out of scope for the rerun is only the new-file / partial-class path. The aggressive single-file candidate at `Pass2_Proposed/SingleFile_DatabaseDomainRepository.cs.txt` was therefore the correct shape.
+4. **Fresh session.** `start_monitor_session` → `monitor-20260517231612-66ef0e2bfc0b4eae9`. Old session and its pre-launch staged record (`20260517_174813445_..._4bc6cba3`) are orphaned per Operator choice; not explicitly rejected.
+5. **Discovery.** `find_file` resolved `SchemaStudio.Data\DatabaseDomainRepository.cs`, length 2010. `get_source_map` (file/selector) returned 7 symbols, no diagnostics, sha256 `1328f291...`, estimatedTokenProxy 2251. `get_file` read the baseline (2007 bytes, mixed `\n` / `\r\n` line endings). `get_file` on the `DatabaseDomainRepositoryAsync.cs` sibling confirmed the project's global usings cover `Task` / `CancellationToken` — only `Dapper` and `Microsoft.Data.SqlClient` need to be explicit.
+6. **Staging.** `submit_file` with the SingleFile candidate content against the existing path (no new path):
+   - **stagedRecordId**: `20260517_181844880_submit_file_DatabaseDomainRepository_f921afa8`
+   - **originalHash**: `1328f29145311d119bb5dcff4d57d00bbf53772a9080e0b427a5449bb6aa81ce`
+   - **stagedHash**: `1682d14dc90bfea056642838c97b9d701cba7cb7decd6443337cba3d068dc816`
+   - **syntaxValidation**: 0 errors
+   - **overlayValidation**: status `compiled`, 82 syntax trees, 0 diagnostics — **clean compile**. This is the key win over the original Pass 2 attempt, which hit `CS0103: The name 'Sql' does not exist` because the dict lived in a partial companion that never staged. Same-file dict resolves it.
+   - **symbolsRemoved**: `GetByDatabase`, `Insert`, `Update`, `SaveAll` (the sync API)
+   - **symbolsAdded**: `Sql` field, `GetByDatabaseAsync`, `InsertAsync`, `UpdateAsync`, `SaveAllAsync`
+   - **usings**: unchanged (`Dapper`, `Microsoft.Data.SqlClient`)
+7. **Diff launch.** `launch_staged_diff` returned `winmerge-launched`, processId 72520, WinMerge invoked with `/wait /maximize /ignoreeol:1`. Left pane: proposed; right pane: existing source. The launch script is at `C:\Users\RichardDavison\AppData\Local\Temp\MonitorBaseClaude\DiffLaunchers\launch-20260517-181907025-DatabaseDomainRepository.cmd`.
+8. **Blocked on Operator.** The next step is the Operator save / no-save in WinMerge, then I call `record_diff_decision`. Vote-plus-hash will classify; expected outcomes given the diff is a real structural change:
+   - Saved → `accepted` (watched hash should equal `1682d14d...`).
+   - Closed without saving → `rejected` (watched hash should equal `1328f291...`).
+   - Anything else → `dirty-unexpected`. Investigate before re-voting.
+
 ### Timing And Token Tracking (added by Operator request, mid-pass)
 
 Going forward each test pass records:

@@ -64,3 +64,25 @@ Detail in `Pass2_DatabaseDomainRepository_Async.md`. Summary:
 - Operator halted Pass 2 mid-run: the MCP server was not rebuilt and the WinForms host was not started, so any `launch_staged_diff` would have returned `host_unavailable` rather than a real Operator decision. Pass 2 staging outcomes are not valid evidence of current server behavior.
 - New findings filed: 6 (`submit_file` new-path opaque failure), 7 (setup docs do not say to start the WinForms host), 8 (test-validity gate I should have caught up-front).
 - Next step: rebuild `MonitorBaseClaude.McpServer`, start the WinForms host, then rerun Pass 2 against a fresh binary.
+
+## Pass 2 Rerun — 2026-05-17 ~18:18 UTC — DatabaseDomainRepository async + static SQL dict (single file)
+
+Detail in `Pass2_DatabaseDomainRepository_Async.md` under the "Pass 2 rerun" subsection. Summary:
+
+- Recovered from a killed chat session; both MCP servers verified alive after the rebuild. `get_staging_guide` now exposed in `tools/list` (Finding 2 marker is gone).
+- Scope: same file (`SchemaStudio.Data\DatabaseDomainRepository.cs`), single-file shape, no new file / no partial class. Async API + static `IReadOnlyDictionary<string,string> Sql` + regions (Fields / Constructors / SQL Statements / Public Methods). I initially misread "minimal changes" as absolute-minimum and proposed null guards; Operator corrected back to the original async + SQL-dict scope.
+- New monitor session `monitor-20260517231612-66ef0e2bfc0b4eae9`. Old session's pre-launch record `20260517_174813445_..._4bc6cba3` is orphaned per Operator choice (not explicitly rejected).
+- `submit_file` staged record `20260517_181844880_submit_file_DatabaseDomainRepository_f921afa8`. Overlay validation: 82 syntax trees compiled, **0 diagnostics**. This is the key improvement over the original Pass 2: the same-file SQL dict resolves the `CS0103: The name 'Sql' does not exist` errors that blocked the partial-split attempt.
+- `launch_staged_diff` returned `winmerge-launched`. First attempt cancelled by Operator (combined async + dict + regions + null guards diff was unreadable in WinMerge). Recorded `rejected`, restaged a simplified candidate (dict + async only, no regions, no extra null guards), relaunched.
+- Operator saved the simplified candidate. `record_diff_decision(accepted)` → classification **`accepted-normalized`** (baseline had mixed `\n` / `\r\n`, normalized on save). Vote-plus-hash agreed. End-to-end pipeline validated.
+
+## Pass 3 — 2026-05-17 ~18:33 UTC — SchemaObjectRepository async-only
+
+Detail in `Pass3_SchemaObjectRepository_Async.md`. Summary:
+
+- Operator asked for a simpler test on a different repository file: async only, no SQL dict.
+- Target: `SchemaStudio.Data\SchemaObjectRepository.cs`, 3838 bytes, 5 public methods.
+- Roslyn-first discovery: `search_symbols`, `get_type_overview`, `find_callers` × 4. All callers empty. `find_references` also empty despite `search_symbols` flagging a `_schemaObjectRepository` field in `IntegrationsViewImportControl` — see Finding 11.
+- Staged record `20260517_183111241_submit_file_SchemaObjectRepository_03226b7b`. Overlay validation: 82 syntax trees, **2 overlay files** (wider consumer slice), 0 diagnostics. Confirmed the consumer field doesn't invoke any renamed methods.
+- Operator accepted in WinMerge. `record_diff_decision` → **`accepted-normalized`**, decisionMatchesClassification true, normalized hashes match (`05318b53...`).
+- Findings filed: 10 (Claude Roslyn-first inconsistency), 11 (`find_references` empty where `search_symbols` shows a real type usage), 12 (token waste calling both source_map and get_file for whole-file rewrites).

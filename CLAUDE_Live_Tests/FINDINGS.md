@@ -153,3 +153,71 @@ Format per finding: Title, Severity, File/tool, Observed, Expected, Minimal fix,
 **Minimal fix:** Add a header line at the top of `Docs/ClaudeMinimalReviewPack/MONITOR_MCP_TOOL_MANIFEST.md`: "Snapshot of `MonitorBaseClaude.McpServer/MONITOR_MCP_TOOL_MANIFEST.md`; regenerate before bundling."
 
 **Evidence:** Both files exist. The merge created the pack copy. `get_tool_manifest` serves only the server-root copy. No sync exists today.
+
+---
+
+## Pass 2 Rerun + Pass 3 — 2026-05-17
+
+### Finding 10
+
+**Title:** Claude is inconsistent about applying Roslyn-first to symbol discovery
+
+**Severity:** procedural / corrective rule needed
+
+**File/tool:** Claude tester workflow; reinforced by `CLAUDE.md` "Always prefer Roslyn tools over text or grep search for C# symbol discovery"
+
+**Observed:** In the Pass 2 rerun, Claude skipped Roslyn entirely for `DatabaseDomainRepository.cs` and went straight to Monitor tools (`find_file`, `get_source_map`, `get_file`). Internal justification was that the killed prior session had already established the symbol shape and caller count. For `SchemaObjectRepository.cs` in Pass 3, Claude deliberately led with Roslyn (`search_symbols`, `get_type_overview`, `find_callers` x4, `find_references` x2). The Operator's Roslyn telemetry proxy lit up for the second file but not the first, which made the telemetry an unreliable window into the workflow.
+
+**Expected:** Every new file = full Roslyn discovery first, regardless of whether the model thinks it already knows the answer. Treat Roslyn as the entry point for *every* C# read cycle, not as a discretionary call.
+
+**Minimal fix:** Saved as feedback memory `feedback_roslyn_first_saves_tokens.md`. No code change needed; this is a model-behavior correction the Operator caught live. Adding a one-line reminder near the top of `Docs/ClaudeMinimalReviewPack/Skills/RoslynFirstNavigation.md`: "Apply this rule per cycle, not per session — don't shortcut with 'I already discovered this earlier'."
+
+**Evidence:** Operator: "i am still not getting any bloody feedback on rosln calls" after Pass 2 rerun completed; "why did the prior file not generate rosln chnges but htis one does. that mke no sensee" after Pass 3 discovery.
+
+### Finding 11
+
+**Title:** `find_references` returns empty for a type that `search_symbols` shows has a real field-typed usage
+
+**Severity:** suspected Roslyn CodeLens inconsistency; needs verification
+
+**File/tool:** `mcp__roslyn-codelens__find_references` vs `mcp__roslyn-codelens__search_symbols`
+
+**Observed:** `search_symbols("SchemaObjectRepository")` returned three results: the class declaration plus `SchemaObjectRepository IntegrationsViewImportControl._schemaObjectRepository` (a field of that type in the UI project). `find_references("SchemaStudio.Data.SchemaObjectRepository")` returned `[]`. `find_references("SchemaObjectRepository.GetByDatabase")` also returned `[]`. The field-typed declaration is a legitimate type usage and should appear in `find_references` for the type. The overlay compile during `submit_file` confirmed there are no actual method invocations on the field (so `find_callers` was right), but the type *is* referenced as a field type and `find_references` missed that.
+
+**Expected:** `find_references` on a type returns every place the type appears in source, including field/property/parameter/return-type declarations. If the tool intentionally limits to member-access references, that limitation should be documented.
+
+**Minimal fix:** Verify against a small test type with known field-typed references. If reproducible, file as a bug in the Roslyn CodeLens adapter. If by design, document in the tool description ("returns method/field accesses, not type-position uses").
+
+**Evidence:** Pass 3 discovery sequence in `Pass3_SchemaObjectRepository_Async.md`. Live session timestamp ~18:30 UTC, 2026-05-17.
+
+### Finding 12
+
+**Title:** Calling `get_source_map` plus `get_file` for whole-file `submit_file` rewrites doubles discovery cost
+
+**Severity:** procedural / corrective rule needed
+
+**File/tool:** Claude tester workflow; reinforced by `CLAUDE.md` "Read And Narrow Before Editing"
+
+**Observed:** For a whole-file `submit_file` operation, the model called `get_source_map` (selector mode, ~2500 estimatedTokenProxy) *and* `get_file` (~1000 tokens). The source_map's purpose is to deliver stable symbol-selector keys for `get_symbol` / `submit_symbol` / `add_symbol` / `remove_symbol` — none of which are used by a whole-file submit. Both Pass 2 rerun and Pass 3 paid this double cost.
+
+**Expected:** Discovery cost is bounded by the staging mode that follows it. Whole-file `submit_file` → Roslyn shape (`search_symbols` + `get_type_overview` + `find_callers`) plus Monitor `get_file`; **skip** `get_source_map`. Symbol-scoped staging → Roslyn shape plus Monitor `get_source_map` selector plus `get_symbol`; **skip** `get_file`.
+
+**Minimal fix:** Saved as feedback memory `feedback_roslyn_first_saves_tokens.md`. Suggest tightening `CLAUDE.md` "Read And Narrow Before Editing" to spell this out per staging mode. Today the rule reads as if source_map is always required before editing, which encourages the over-call.
+
+**Evidence:** Operator: "tjhe point is roslnn is supposed to save tokens." Pass 2 rerun and Pass 3 both ran the redundant pair.
+
+### Finding 13
+
+**Title:** `submit_file` was used where symbol-level staging tools were the right fit
+
+**Severity:** procedural / corrective rule needed (architecture-aware)
+
+**File/tool:** Claude tester workflow; rebuilt server now exposes `submit_symbol`, `add_method`, `add_field`, `add_property`, `add_constructor`, `add_nested_type`, `remove_symbol`, `add_using`, `remove_using`, `set_type_partial`
+
+**Observed:** Pass 2 rerun (DatabaseDomainRepository) and Pass 3 (SchemaObjectRepository) both staged async conversions as whole-file `submit_file` payloads. Each was conceptually N independent method-body edits (the rest of the file unchanged). The rebuilt server exposes typed-insertion and symbol-replace tools that could express the same change as a sequence of small symbol-scoped stagings — sending only the changed method bodies over the wire. Operator framed the architectural rule: "you are reasoning in the cloud and editing locally" — meaning the model should reason about intent and let the local server + Roslyn compose the resulting file, not ship the whole file from the cloud.
+
+**Expected:** `submit_file` is reserved for legitimately whole-file rewrites: new file creation, removing the entire class shape, generated-code regeneration. Async conversions, single-method edits, adding helpers, and similar should go through `submit_symbol` (replace), `add_method` / `remove_symbol` (insert/delete), and friends.
+
+**Minimal fix:** Saved as feedback memory `feedback_reason_in_cloud_edit_locally.md`. Suggest adding a "Choose your staging mode" section to `Docs/Skills/SystemMonitorStaging.md` listing intent → tool mapping, and a corrective example showing the same async conversion done two ways (submit_file vs N submit_symbol calls) with a payload-size comparison.
+
+**Evidence:** Operator: "submit file is more for a full new file edit" and "you need to use the ROSLNN to edit the local copy and never send a full file." Pass 2 rerun and Pass 3 are the violating cases. Both accepted-normalized — the *change* was correct, the *tool choice* was the issue.
