@@ -72,6 +72,56 @@ Format per finding: Title, Severity, File/tool, Observed, Expected, Minimal fix,
 
 **Evidence:** `Program.cs` lines 66 to 69 and manifest lines 168 to 170 confirm `GetWorkflowStatus` returns paths and diff tool resolution only.
 
+### Finding 8 — Pass 2 test-validity gate I should have caught up-front
+
+**Title:** Pass 2 staging is not a valid test result without a rebuilt server and a running WinForms host
+
+**Severity:** confusing (procedural; not a code bug)
+
+**File/tool:** Claude tester workflow
+
+**Observed:** I started staging real candidates against DBV2 while the running MCP server was still the stale binary (Finding 2) and without confirming the WinForms host was running. Any `submit_file` result is therefore from an older code path, and any `launch_staged_diff` call would return `host_unavailable`, not a real Operator decision. Findings 6 and 7 are still real signal, but the staged-record itself should not be treated as evidence of current server behavior.
+
+**Expected:** Before staging anything against DBV2, confirm (a) the MCP server binary matches current source, (b) the WinForms host is running, and (c) `get_workflow_status` and a Host ping (if surfaced) report healthy. Treat any pre-condition failure as a hard stop.
+
+**Minimal fix:** Add a one-line "test pre-conditions" rule at the top of `CLAUDE_Live_Tests/README.md` and at the top of `MCP_CLIENT_TESTING.md`'s Claude Code section. Pass 2 staging in session `monitor-20260517223523-706ea5677979487a9` is now annotated invalid in STATUS.md.
+
+**Evidence:** Operator caught this mid-pass: "if you have not done a rebuild then this is not a valid test."
+
+### Finding 7
+
+**Title:** Setup docs do not say to start the WinForms host before MCP testing
+
+**Severity:** stale / suggestion
+
+**File/tool:** `MCP_CLIENT_TESTING.md`, `Docs/ClaudeMinimalReviewPack/README.md`, skill cards
+
+**Observed:** `MCP_CLIENT_TESTING.md` walks through building and opening the MCP server but says nothing about the WinForms host. The skill cards reference the "WinForms Host" for the overlay-error gate and the actual WinMerge launch, but no doc tells a fresh Claude/Operator that the WinForms host must be running for the workflow to function end-to-end. Without it, `launch_staged_diff` returns `host_unavailable` and the queue cannot advance.
+
+**Expected:** A short "Pre-flight" section near the top of `MCP_CLIENT_TESTING.md` listing the steps in order: (1) rebuild MonitorBaseClaude.McpServer, (2) start the MonitorBaseClaude WinForms host, (3) confirm MCP connection in Claude Code, (4) run `get_monitor_status` / `get_workflow_status`. Pass 1 also missed this — Finding 7 is filed against my own earlier pass.
+
+**Minimal fix:** Insert a pre-flight checklist in `MCP_CLIENT_TESTING.md` and mirror a one-liner in `Docs/ClaudeMinimalReviewPack/README.md`.
+
+**Evidence:** Operator: "the docs are supposed to say you should start the winforms app as well." No active doc in `Docs/ClaudeMinimalReviewPack/` or `MCP_CLIENT_TESTING.md` includes this instruction.
+
+### Finding 6 — Pass 2 confirmation of a known bug
+
+**Title:** `submit_file` against a brand-new watched path fails opaquely
+
+**Severity:** blocker for the create-file workflow
+
+**File/tool:** `monitor-base-claude` MCP tool `submit_file`
+
+**Observed:** Submitting `SchemaStudio.Data\DatabaseDomainRepository.Sql.cs` (a new partial companion file that does not exist in watched source) returns only `An error occurred invoking 'submit_file'.` with no further detail. Retried once with the same result. The companion file is required by the modified main file (which staged fine); without it the overlay validation correctly reports `CS0103: The name 'Sql' does not exist`. This forced re-planning the test into a single-file shape, losing the partial-class-companion test goal.
+
+**Expected:** `submit_file` against a new path either stages the candidate or returns a structured error explaining why (for example, "new-path staging not enabled in this server build"). Same surface as for an existing path. This was reportedly fixed around commit `b0618de`, so the live result suggests either a regression or that the running server binary predates the fix.
+
+**Minimal fix:** Rebuild and restart `MonitorBaseClaude.McpServer` (Pass 1 Finding 2 root cause) and retry. If the failure persists after a confirmed fresh binary, the new-path code path itself has a regression worth tracing in `MonitorWorkflowService.SubmitFile`.
+
+**Evidence:** Session `monitor-20260517223523-706ea5677979487a9`. First call at 22:48 UTC failed; retry seconds later also failed. The modify-existing-path call inside the same session succeeded normally and produced staged record `20260517_174813445_submit_file_DatabaseDomainRepository_4bc6cba3`. Operator decided to bail on the partial split and restage as a single file for this pass.
+
+---
+
 ### Finding 5
 
 **Title:** Duplicate `MONITOR_MCP_TOOL_MANIFEST.md` copies risk drift

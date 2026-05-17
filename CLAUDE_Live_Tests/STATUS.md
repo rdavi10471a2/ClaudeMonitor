@@ -52,4 +52,15 @@
 
 - Re-run `tools/list`, then call `get_monitor_status`, `get_tool_manifest`, `get_staging_guide`, `get_workflow_status` and confirm each returns the documented payload shape.
 - Walk the source-map narrowing flow once on a small file in DBV2 (read-only, no staging) and confirm `suggestedNextCalls` ranks correctly.
-- File any new findings as Pass 2.
+- Retry Pass 2 partial-split staging against a fresh server binary with the WinForms host running.
+
+## Pass 2 — 2026-05-17 — DatabaseDomainRepository Async + Static SQL Dict (aborted)
+
+Detail in `Pass2_DatabaseDomainRepository_Async.md`. Summary:
+
+- Intended scope: convert `DatabaseDomainRepository` to async, extract the three SQL literals to a named static dictionary, allow partial-class split, introduce C# regions as insertion-anchor context, demonstrate the create-file path via `submit_file` against a new watched path.
+- Discovery (Roslyn + Monitor) found a pre-existing `DatabaseDomainRepositoryAsync` class with the same shape, both classes have zero callers in the solution, and neither file uses regions today.
+- Staging partial-split: modify-existing-path succeeded (record `20260517_174813445_submit_file_DatabaseDomainRepository_4bc6cba3` with `CS0103: The name 'Sql' does not exist` from overlay validation, as expected). New-path `submit_file` for the partial companion failed twice with an opaque error.
+- Operator halted Pass 2 mid-run: the MCP server was not rebuilt and the WinForms host was not started, so any `launch_staged_diff` would have returned `host_unavailable` rather than a real Operator decision. Pass 2 staging outcomes are not valid evidence of current server behavior.
+- New findings filed: 6 (`submit_file` new-path opaque failure), 7 (setup docs do not say to start the WinForms host), 8 (test-validity gate I should have caught up-front).
+- Next step: rebuild `MonitorBaseClaude.McpServer`, start the WinForms host, then rerun Pass 2 against a fresh binary.
