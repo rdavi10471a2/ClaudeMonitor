@@ -113,6 +113,10 @@ Do not use Roslyn CodeLens `apply_code_action` against watched source in this wo
 
 `get_source_map` is a Monitor-owned read/discovery tool. It is expected before C# edits because it gives compact current structure and stable lexical symbol keys without loading full bodies. Treat it like a code manifest: signatures identify the contract surface (return type, name, arguments, modifiers), while bodies come from `get_symbol`. Use `navigation` mode to choose a file/member, `selector` mode to get stable keys and hashes for a chosen file, `detail` mode when contract detail is needed without full audit payloads, and `full` mode only for audit/debug. Source maps intentionally omit legacy `AI*` and `FileVersion` attributes; do not remove those attributes from source merely for token cleanup.
 
+## Skill Card Loading (Interim)
+
+The MCP tool `get_staging_guide` is the intended on-demand server for the skill cards (`SystemMonitorStaging.md`, `SessionOverlayValidation.md`, and the rest of `Docs/Skills/`). The tool is implemented in source but the running MCP server binary does not yet expose it. Until the server is rebuilt and `tools/list` includes `get_staging_guide`, there is no live server-side card-serving path. Read cards directly from `Docs/Skills/` (canonical) or `Docs/ClaudeMinimalReviewPack/Skills/` (export snapshot). Remove this section once the rebuilt server exposes the tool and the test pass confirms it returns the documented payload.
+
 ## Marker And Glyph Rules
 
 Do not add process markers to source:
