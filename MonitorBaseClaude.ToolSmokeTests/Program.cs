@@ -1112,7 +1112,7 @@ internal static class Program
                     operationKind = "NoOp",
                     note = "Decision gate fixture no-op candidate."
                 }, JsonOptions),
-                ["launchDiff"] = true
+                ["launchDiff"] = false
             },
             "Verify an identical candidate is reported as no-op-staged and does not request a normal diff.");
         string noOpStatus = FindPropertyValue(JsonNode.Parse(noOpStage.ToolResult.ResponseJson), "status") ?? string.Empty;
@@ -1152,6 +1152,16 @@ internal static class Program
         bool cleanAcceptPassed = acceptSave
             && cleanAccept.Equals("accepted", StringComparison.OrdinalIgnoreCase)
             && (await File.ReadAllTextAsync(fixture.TargetSourcePath)).Contains("Decision gate smoke: clean accept.", StringComparison.Ordinal);
+
+        WriteUtf8BomCrLf(fixture.TargetSourcePath, original);
+        (ScriptedSmokeResult normalizedAcceptStage, string normalizedAcceptRecordId) = await StageCandidateAsync(
+            "Normalized Accept",
+            "            // Decision gate smoke: normalized accept.");
+        bool normalizedAcceptSave = SimulateOperatorSaveWithLfUtf8NoBom(normalizedAcceptStage.ToolResult.ResponseJson);
+        string normalizedAccept = await RecordDecisionAsync("Decision Normalized Accept", normalizedAcceptRecordId, "accepted");
+        bool normalizedAcceptPassed = normalizedAcceptSave
+            && normalizedAccept.Equals("accepted-normalized", StringComparison.OrdinalIgnoreCase)
+            && (await File.ReadAllTextAsync(fixture.TargetSourcePath)).Contains("Decision gate smoke: normalized accept.", StringComparison.Ordinal);
 
         await File.WriteAllTextAsync(fixture.TargetSourcePath, original);
         (ScriptedSmokeResult rejectStage, string rejectRecordId) = await StageCandidateAsync(
@@ -1197,6 +1207,7 @@ internal static class Program
         bool passed = noOpPassed
             && syntaxErrorRejected
             && cleanAcceptPassed
+            && normalizedAcceptPassed
             && cleanRejectPassed
             && acceptNotAppliedPassed
             && acceptNotAppliedRevoteBlocked
@@ -1215,6 +1226,7 @@ internal static class Program
         Console.WriteLine($"no-op staged: {noOpStatus} ({noOpPassed})");
         Console.WriteLine($"syntax error rejected: {syntaxErrorRejected}");
         Console.WriteLine($"clean accept: {cleanAccept} ({cleanAcceptPassed})");
+        Console.WriteLine($"normalized accept: {normalizedAccept} ({normalizedAcceptPassed})");
         Console.WriteLine($"clean reject: {cleanReject} ({cleanRejectPassed})");
         Console.WriteLine($"accept not applied: {acceptNotApplied} ({acceptNotAppliedPassed})");
         Console.WriteLine($"accept not applied re-vote blocked: {acceptNotAppliedRevoteBlocked}");
@@ -2750,6 +2762,32 @@ internal static class Program
             }
 
             File.Copy(stagedFilePath, sourceFilePath, overwrite: true);
+            return true;
+        }
+        catch (Exception)
+        {
+            return false;
+        }
+    }
+
+    private static bool SimulateOperatorSaveWithLfUtf8NoBom(string responseJson)
+    {
+        try
+        {
+            JsonNode? node = JsonNode.Parse(responseJson);
+            string? stagedFilePath = FindPropertyValue(node, "StagedFilePath") ?? FindPropertyValue(node, "stagedFilePath");
+            string? sourceFilePath = FindPropertyValue(node, "SourceFilePath") ?? FindPropertyValue(node, "sourceFilePath");
+            if (string.IsNullOrWhiteSpace(stagedFilePath)
+                || string.IsNullOrWhiteSpace(sourceFilePath)
+                || !File.Exists(stagedFilePath)
+                || !File.Exists(sourceFilePath))
+            {
+                return false;
+            }
+
+            string staged = File.ReadAllText(stagedFilePath);
+            string lf = staged.Replace("\r\n", "\n", StringComparison.Ordinal).Replace("\r", "\n", StringComparison.Ordinal);
+            File.WriteAllText(sourceFilePath, lf, new UTF8Encoding(encoderShouldEmitUTF8Identifier: false));
             return true;
         }
         catch (Exception)

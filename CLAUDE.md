@@ -79,6 +79,7 @@ The diff is a Host-owned review/save surface, not a manual merge workspace.
 Classification is vote-plus-hash gated:
 
 - `accepted`: Operator reported `accepted` and the watched hash equals the staged candidate hash.
+- `accepted-normalized`: Operator reported `accepted` and normalized watched/staged content matches after BOM and line-ending normalization.
 - `rejected`: Operator reported `rejected` and the watched hash equals the original baseline hash.
 - `dirty-unexpected`: Operator report and watched hash disagree, or the watched hash matches neither original nor staged.
 
