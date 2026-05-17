@@ -806,9 +806,9 @@ public sealed partial class MonitorWorkflowService
     private static string NormalizeSourceMapMode(string? mode)
     {
         string normalized = string.IsNullOrWhiteSpace(mode) ? "auto" : mode.Trim().ToLowerInvariant();
-        return normalized is "auto" or "navigation" or "selector" or "full"
+        return normalized is "auto" or "navigation" or "selector" or "detail" or "full"
             ? normalized
-            : throw new InvalidOperationException("Source map mode must be auto, navigation, selector, or full.");
+            : throw new InvalidOperationException("Source map mode must be auto, navigation, selector, detail, or full.");
     }
 
     private static string ResolveEffectiveSourceMapScope(string observedRoot, string? path, string scope)
@@ -858,6 +858,7 @@ public sealed partial class MonitorWorkflowService
     {
         return mode.Equals("navigation", StringComparison.OrdinalIgnoreCase) ? 20000
             : mode.Equals("selector", StringComparison.OrdinalIgnoreCase) ? 25000
+            : mode.Equals("detail", StringComparison.OrdinalIgnoreCase) ? 20000
             : 15000;
     }
 
@@ -865,6 +866,7 @@ public sealed partial class MonitorWorkflowService
     {
         return mode.Equals("navigation", StringComparison.OrdinalIgnoreCase) ? "broad-orientation"
             : mode.Equals("selector", StringComparison.OrdinalIgnoreCase) ? "stable-symbol-selection"
+            : mode.Equals("detail", StringComparison.OrdinalIgnoreCase) ? "contract-detail"
             : "audit-debug";
     }
 
@@ -1882,6 +1884,17 @@ public sealed partial class MonitorWorkflowService
             };
         }
 
+        if (mode.Equals("detail", StringComparison.OrdinalIgnoreCase))
+        {
+            return file with
+            {
+                SourceFilePath = null,
+                DiagnosticsSummary = file.DiagnosticCount > 0 ? file.DiagnosticsSummary : null,
+                Usings = NullIfEmpty(file.Usings),
+                Symbols = symbols
+            };
+        }
+
         return file with
         {
             SourceFilePath = null,
@@ -1905,10 +1918,24 @@ public sealed partial class MonitorWorkflowService
             return symbol with
             {
                 BaseTypes = NullIfEmpty(symbol.BaseTypes),
+                Attributes = NullIfEmpty(ToAttributeNamesOnly(symbol.Attributes)),
+                Modifiers = NullIfEmpty(symbol.Modifiers),
+                ParameterTypes = NullIfEmpty(symbol.ParameterTypes),
+                ParameterNames = null,
+                IsPartial = symbol.IsPartial == true ? true : null
+            };
+        }
+
+        if (mode.Equals("detail", StringComparison.OrdinalIgnoreCase))
+        {
+            return symbol with
+            {
+                BaseTypes = NullIfEmpty(symbol.BaseTypes),
                 Attributes = NullIfEmpty(symbol.Attributes),
                 Modifiers = NullIfEmpty(symbol.Modifiers),
                 ParameterTypes = NullIfEmpty(symbol.ParameterTypes),
-                ParameterNames = NullIfEmpty(symbol.ParameterNames)
+                ParameterNames = NullIfEmpty(symbol.ParameterNames),
+                IsPartial = symbol.IsPartial == true ? true : null
             };
         }
 
@@ -1917,7 +1944,7 @@ public sealed partial class MonitorWorkflowService
             StableSymbolKey = null,
             Namespace = string.IsNullOrWhiteSpace(symbol.Namespace) ? null : symbol.Namespace,
             BaseTypes = NullIfEmpty(symbol.BaseTypes),
-            Attributes = NullIfEmpty(symbol.Attributes?.Select(attribute => new MonitorSourceMapAttribute(attribute.Name, null)).ToArray()),
+            Attributes = NullIfEmpty(ToAttributeNamesOnly(symbol.Attributes)),
             HasDocumentation = null,
             HasAttributes = symbol.HasAttributes == true ? true : null,
             TextHash = null,
@@ -1930,8 +1957,14 @@ public sealed partial class MonitorWorkflowService
             IsAsync = null,
             IsOverride = null,
             IsVirtual = null,
-            SyntaxKind = null
+            SyntaxKind = null,
+            IsPartial = symbol.IsPartial == true ? true : null
         };
+    }
+
+    private static IReadOnlyList<MonitorSourceMapAttribute>? ToAttributeNamesOnly(IReadOnlyList<MonitorSourceMapAttribute>? attributes)
+    {
+        return attributes?.Select(attribute => new MonitorSourceMapAttribute(attribute.Name, null)).ToArray();
     }
 
     private static IReadOnlyList<T>? NullIfEmpty<T>(IReadOnlyList<T>? values)
@@ -2062,7 +2095,7 @@ public sealed partial class MonitorWorkflowService
             SymbolKind(member),
             SymbolName(member),
             BuildStableSymbolKey(relativeSourcePath, member),
-            BuildSignature(member),
+            BuildContractSignature(member),
             BuildNamespace(member),
             BuildContainingType(member),
             BuildBaseTypes(member),
@@ -2070,7 +2103,7 @@ public sealed partial class MonitorWorkflowService
             span.StartLinePosition.Line + 1,
             span.EndLinePosition.Line + 1,
             HasLeadingDocumentation(member),
-            HasAttributes(member),
+            HasVisibleAttributes(member),
             ComputeSha256Text(text),
             GetModifiers(member),
             GetReturnType(member),
@@ -2081,7 +2114,8 @@ public sealed partial class MonitorWorkflowService
             HasModifier(member, SyntaxKind.AsyncKeyword),
             HasModifier(member, SyntaxKind.OverrideKeyword),
             HasModifier(member, SyntaxKind.VirtualKeyword),
-            member.Kind().ToString());
+            member.Kind().ToString(),
+            IsPartialTypeDeclaration(member));
     }
 
     private static string GetParseStatus(IReadOnlyList<Diagnostic> diagnostics)
@@ -2181,19 +2215,31 @@ public sealed partial class MonitorWorkflowService
             || trivia.GetStructure() is DocumentationCommentTriviaSyntax);
     }
 
-    private static bool HasAttributes(MemberDeclarationSyntax member)
+    private static bool HasVisibleAttributes(MemberDeclarationSyntax member)
     {
-        return member.AttributeLists.Count > 0;
+        return member.AttributeLists
+            .SelectMany(list => list.Attributes)
+            .Any(attribute => !ShouldSkipSourceMapAttribute(attribute.Name.ToString()));
     }
 
     private static IReadOnlyList<MonitorSourceMapAttribute> GetAttributeSummaries(MemberDeclarationSyntax member)
     {
         return member.AttributeLists
             .SelectMany(list => list.Attributes)
+            .Where(attribute => !ShouldSkipSourceMapAttribute(attribute.Name.ToString()))
             .Select(attribute => new MonitorSourceMapAttribute(
                 attribute.Name.ToString(),
                 attribute.ArgumentList?.Arguments.ToFullString().Trim()))
             .ToArray();
+    }
+
+    private static bool ShouldSkipSourceMapAttribute(string attributeName)
+    {
+        string name = attributeName.EndsWith("Attribute", StringComparison.Ordinal)
+            ? attributeName[..^"Attribute".Length]
+            : attributeName;
+        return name.Equals("FileVersion", StringComparison.Ordinal)
+            || name.StartsWith("AI", StringComparison.Ordinal);
     }
 
     private static IReadOnlyList<string> GetModifiers(MemberDeclarationSyntax member)
@@ -2286,6 +2332,11 @@ public sealed partial class MonitorWorkflowService
             or DelegateDeclarationSyntax;
     }
 
+    private static bool IsPartialTypeDeclaration(MemberDeclarationSyntax member)
+    {
+        return member is BaseTypeDeclarationSyntax && HasModifier(member, SyntaxKind.PartialKeyword);
+    }
+
     private static MonitorSymbolOutline ToSymbolOutline(SyntaxTree tree, MemberDeclarationSyntax member)
     {
         FileLinePositionSpan span = tree.GetLineSpan(member.Span);
@@ -2354,6 +2405,54 @@ public sealed partial class MonitorWorkflowService
         };
 
         return signatureOnly.ToFullString().Replace(Environment.NewLine, " ", StringComparison.Ordinal).Trim();
+    }
+
+    private static string BuildContractSignature(MemberDeclarationSyntax member)
+    {
+        string modifiers = string.Join(" ", GetModifiers(member));
+        string prefix = string.IsNullOrWhiteSpace(modifiers) ? string.Empty : $"{modifiers} ";
+        return member switch
+        {
+            MethodDeclarationSyntax method => $"{prefix}{method.ReturnType} {method.Identifier.ValueText}({BuildParameterList(method.ParameterList.Parameters)})",
+            ConstructorDeclarationSyntax constructor => $"{prefix}{constructor.Identifier.ValueText}({BuildParameterList(constructor.ParameterList.Parameters)})",
+            PropertyDeclarationSyntax property => BuildPropertySignature(property),
+            FieldDeclarationSyntax field => $"{prefix}{field.Declaration.Type} {string.Join(", ", field.Declaration.Variables.Select(variable => variable.Identifier.ValueText))}",
+            EventFieldDeclarationSyntax eventField => $"{prefix}event {eventField.Declaration.Type} {string.Join(", ", eventField.Declaration.Variables.Select(variable => variable.Identifier.ValueText))}",
+            EventDeclarationSyntax evt => $"{prefix}event {evt.Type} {evt.Identifier.ValueText}",
+            DelegateDeclarationSyntax del => $"{prefix}delegate {del.ReturnType} {del.Identifier.ValueText}({BuildParameterList(del.ParameterList.Parameters)})",
+            BaseTypeDeclarationSyntax type => $"{prefix}{GetTypeDeclarationKeyword(type)} {type.Identifier.ValueText}{BuildBaseListSuffix(type)}",
+            _ => BuildSignature(member)
+        };
+    }
+
+    private static string BuildParameterList(SeparatedSyntaxList<ParameterSyntax> parameters)
+    {
+        return string.Join(", ", parameters.Select(parameter =>
+        {
+            string modifiers = parameter.Modifiers.ToFullString().Trim();
+            string prefix = string.IsNullOrWhiteSpace(modifiers) ? string.Empty : $"{modifiers} ";
+            string defaultValue = parameter.Default is null ? string.Empty : $" = {parameter.Default.Value}";
+            return $"{prefix}{parameter.Type} {parameter.Identifier.ValueText}{defaultValue}";
+        }));
+    }
+
+    private static string BuildBaseListSuffix(BaseTypeDeclarationSyntax type)
+    {
+        return type.BaseList is null ? string.Empty : $" {type.BaseList}";
+    }
+
+    private static string GetTypeDeclarationKeyword(BaseTypeDeclarationSyntax type)
+    {
+        return type switch
+        {
+            ClassDeclarationSyntax => "class",
+            StructDeclarationSyntax => "struct",
+            InterfaceDeclarationSyntax => "interface",
+            RecordDeclarationSyntax record => record.ClassOrStructKeyword.ValueText.Length == 0
+                ? "record"
+                : $"record {record.ClassOrStructKeyword.ValueText}",
+            _ => type.Kind().ToString()
+        };
     }
 
     private static string BuildPropertySignature(PropertyDeclarationSyntax property)
@@ -2552,7 +2651,8 @@ public sealed record MonitorSourceMapSymbol(
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] bool? IsAsync,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] bool? IsOverride,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] bool? IsVirtual,
-    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? SyntaxKind);
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? SyntaxKind,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] bool? IsPartial);
 
 public sealed record MonitorSourceMapAttribute(
     string Name,

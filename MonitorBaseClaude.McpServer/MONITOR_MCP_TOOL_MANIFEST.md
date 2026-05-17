@@ -307,7 +307,7 @@ Arguments:
 
 - `path`: optional watched source file or folder path, absolute or relative to the watched solution folder. Omit for project scope.
 - `scope`: `auto`, `file`, `folder`, or `project`.
-- `mode`: `auto`, `navigation`, `selector`, or `full`.
+- `mode`: `auto`, `navigation`, `selector`, `detail`, or `full`.
 
 Mode defaults:
 
@@ -318,14 +318,15 @@ Mode defaults:
 Mode meanings:
 
 - `navigation`: broad orientation. It returns current file/type/member shape, parse status, diagnostic counts, line spans, and lightweight type context. Use it to choose the next file/member without reading bodies.
-- `selector`: target selection. It returns stable lexical symbol keys, normalized symbol text hashes, file hashes, structured parameters, attributes, flags, and syntax kinds. Use it to build `get_symbol`, `submit_symbol`, or `remove_symbol` selectors.
+- `selector`: target selection. It returns stable lexical symbol keys, normalized symbol text hashes, file hashes, compact contract signatures, parameter types, modifiers, flags, and syntax kinds. Use it to build `get_symbol`, `submit_symbol`, or `remove_symbol` selectors.
+- `detail`: contract detail. It keeps selector identity plus usings, diagnostics when present, parameter names, and non-AI attribute argument summaries. Use it when interface/shape detail matters but full audit fidelity is unnecessary.
 - `full`: audit/debug fidelity. It keeps absolute source paths, diagnostics summaries, usings, empty arrays, and the full source-map schema. Do not use it as broad model context by default.
 
 The response includes `modePurpose`, `estimatedTokenProxy`, `budgetLimit`, `wasTruncated`, optional `suggestedNarrowing`, and ranked `suggestedNextCalls`. `suggestedNextCalls` makes the narrowing hierarchy explicit: navigation responses suggest file-level selector calls; selector responses suggest `get_symbol` calls by structured selector/stable key. Treat them as ranked affordances, not mandatory commands; choose the next call that matches the user's intent.
 
 `budgetLimit` is enforced by the Tool Server. If a shaped response would exceed budget, the Tool Server returns `wasTruncated: true`, omits source-map file payload details, and includes narrowing guidance so the client can retry with less detail.
 
-Event declarations and event fields are surfaced as `event` symbols. Signatures are stripped of leading trivia so comments and glyphs do not become accidental source-map anchors. It is a discovery tool; it does not stage or edit files.
+Event declarations and event fields are surfaced as `event` symbols. Signatures are compact contract signatures, closer to a Visual Studio tree view than a source excerpt, so comments and generated process metadata do not become accidental source-map anchors. Legacy source metadata attributes whose names are `AI*` or `FileVersion` are omitted from source-map output; they remain untouched in source files and remain visible through `get_file` / `get_symbol` / `full` source text. It is a discovery tool; it does not stage or edit files.
 
 This is a published Tier 1 tool, not a background artifact. Use it before C# edits to:
 
