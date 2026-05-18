@@ -124,3 +124,33 @@ Notes branch `claude/live-test-notes-20260517`: this dated test-result + one fin
 1. **Finding 28 fix retest**: once overlay substitution is fixed for partial classes, re-run a multi-file coupled edit that touches a partial-class file. Expect overlay clean (or real errors only — no phantoms).
 2. **Reverse-direction async**: if convenient, replace the standalone `DatabaseDomainRepositoryAsync` class with consumer routing to the new `DatabaseDomainRepository.GetByDatabaseAsync`. Currently the watched repo has two parallel async paths.
 3. **Multi-file rename via `submit_symbol`**: extend Pass 10's pattern to a rename across N files where the staged candidate's symbol replaces the original. Verify `serverDerivedMetadata.symbolsAdded/symbolsRemoved` tracks rename correctly across all files (Pass 10 verified for the repo only).
+
+## Addendum — Roslyn discovery divergence (filed 2026-05-18, post-push)
+
+The "Discovery — Roslyn vs grep cross-check" section above understates what happened. Recording it here because Operator could not reproduce the Roslyn miss against their working copy and we need a written placeholder.
+
+### What I actually did
+
+- `find_callers` and `find_references` both returned a confident-looking **non-empty** 2-result list. Neither tool surfaced a warning, ambiguity, or "enumeration may be incomplete" signal.
+- I grepped anyway. The grep surfaced a third real consumer (`SchemaStudio.Data\DatabaseDomainTypeConverter.cs:28`) in the same project as the target method.
+- Without that grep, the WriteSet would have shipped at 3 files instead of 4 and the watched build would have broken on the third call site.
+
+### What drove the grep
+
+- No compile error, no diagnostic, no empty result, no tool warning. Nothing observable in this session.
+- Pattern memory from Findings 11, 15, 21 — Roslyn returning incomplete reference/caller lists in this codebase before. Those past cases were all **empty** results; this one was non-empty. I applied the "cross-check" reflex anyway.
+- A weak post-hoc prior on the type-converter name. That was a rationalization, not the trigger; the grep was a blanket sweep, not a targeted check.
+
+### Workflow break disclosed
+
+[CLAUDE.md](../CLAUDE.md) says "Always prefer Roslyn tools over text or grep search for C# symbol discovery." Discovery Discipline mandates a cross-check only on **empty** Roslyn results. My grep on a non-empty result was an unwritten heuristic, not authorized by the current rules. The third consumer was real, but that does not retroactively make the rule break legitimate.
+
+### Operator repro attempt
+
+Operator attempted to reproduce the Roslyn miss on their side and could not — `find_callers` / `find_references` on their working copy appears to include all three consumers. Our DBV2 source states may not be byte-identical (solution load state, unsaved buffers, project filter, post-merge file content differences are all candidates). Recording the divergence rather than asserting a deterministic Roslyn bug.
+
+### Open questions for triage
+
+1. Should Discovery Discipline be tightened to "cross-check on any rename or signature-changing edit regardless of empty/non-empty"? That would make my unwritten heuristic explicit, or alternatively force me to drop it.
+2. Should the Roslyn CodeLens server surface enumeration completeness signals (projects skipped, candidates pruned) so silent partial results are visible to the caller?
+3. If a deterministic repro of the non-empty miss surfaces later, file as a separate Roslyn bug with the exact solution snapshot — not as a Pass 10 follow-up.
