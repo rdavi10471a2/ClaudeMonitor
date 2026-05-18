@@ -377,3 +377,54 @@ Format per finding: Title, Severity, File/tool, Observed, Expected, Minimal fix,
 **Evidence:** Screenshot of the .NET unhandled-exception dialog captured this pass; full path in the dialog text. Race was reproducible across the diff-review interval whenever Roslyn-codelens telemetry was actively being written.
 
 Pass 5 finding cap was 5 (17–21); this is filed at Operator direction during the retest. Severity-adjusted: the underlying bug is real but the chosen fix obsoletes the affected code path entirely, so it's a record of why the WF telemetry view is being removed rather than a fix request to land.
+
+## Pass 6 — 2026-05-18
+
+### Finding 23
+
+**Title:** `submit_symbol` does not re-indent multi-line member declarations to the insertion column
+
+**Severity:** confusing (cosmetic)
+
+**File/tool:** `monitor-base-claude` MCP — `submit_symbol`
+
+**Observed:** Submitted body `public override string ToString() =>\n    !string.IsNullOrWhiteSpace(Alias) ? ... : Expression;` (declaration unindented, continuation indented 4 spaces). Server spliced the declaration at class-member depth (8 spaces) but pasted the continuation line verbatim, producing line 64 at 8-space indent and line 65 at 4-space indent. Compiles fine but the body looks de-indented relative to its declaration.
+
+**Expected:** Multi-line submitted member declarations are re-indented as a block: each non-empty line gets the same prefix-whitespace top-up as the first line so the whole declaration sits inside the type's indentation context.
+
+**Minimal fix:** In the splice path, compute the leading-whitespace delta from the insertion column vs the submitted body's first-line column, then apply it to all subsequent non-empty lines before write.
+
+**Evidence:** Staged record `20260518_114615903_..._1f4616c8`, lines 64–65 of the staged file.
+
+### Finding 24
+
+**Title:** `add_method` / `add_property` clone `afterSymbol`'s leading-trivia comment block ahead of the new member
+
+**Severity:** confusing (cosmetic)
+
+**File/tool:** `monitor-base-claude` MCP — `add_method` (likely also `add_property` / `add_symbol`)
+
+**Observed:** `add_method(containingType: SelectItem, declaration: "public string GetEffectiveName() => ...", afterSymbol: "ToString")` against a `ToString` that carried a leading `// DISPLAY` header comment block (3-line banner). The resulting staged file has the original `// DISPLAY` banner before `ToString` AND a duplicate `// DISPLAY` banner before `GetEffectiveName`. Same shape would land for `add_property` after a member with leading trivia.
+
+**Expected:** Inserted member carries only its own leading trivia (a blank line separator at most). The `afterSymbol`'s leading comments belong to that prior symbol and should not be cloned.
+
+**Minimal fix:** In the typed insertion path, when computing leading trivia for the new node, do not copy the trailing/leading trivia of the anchor. Use a single newline-token separator instead.
+
+**Evidence:** Staged record `20260518_114615903_..._1f4616c8`, lines 66–68 vs the source-of-truth `ToString` leading trivia.
+
+### Finding 25
+
+**Title:** Finding 20 reproduces on `record_diff_decision.note` (not just `start_monitor_session.purpose`)
+
+**Severity:** stale / minor cosmetic — same root cause as F20
+
+**File/tool:** `monitor-base-claude` MCP — `record_diff_decision.note` argument; surfaced in the response and decision-record JSON
+
+**Observed:** Sent `note` containing an em-dash (`—`, U+2014). Response echoed the note with em-dash replaced by `�` (U+FFFD). Same mangle as F20's `start_monitor_session.purpose` issue, so the encoding bug is at the MCP stdio reader, not per-tool.
+
+**Expected:** All MCP tool string arguments round-trip non-ASCII Unicode. UTF-8 throughout the stdio pipeline.
+
+**Minimal fix:** The F20 fix (force `Encoding.UTF8` on the C# stdio reader and the JSON serializer's escape policy) closes this automatically. Filing here so F20 doesn't get marked "fixed for purpose only" — every string arg needs the same treatment.
+
+**Evidence:** Pass 6 `record_diff_decision` response 2026-05-18 16:49 UTC: `note` echoed with U+FFFD where U+2014 was sent.
+
