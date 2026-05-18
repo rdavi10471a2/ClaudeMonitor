@@ -3,6 +3,25 @@
 **Last commit:** `8cd8a8b` (plus this resume file, will be in next commit).
 **Branch:** `claude/live-test-notes-20260517`.
 
+## Update — 2026-05-17, after first reload attempt
+
+**Window reload alone was NOT sufficient.** Diagnosis from the post-reload pickup session:
+
+- WinForms host was not running after the reload. I (Claude) launched it from `c:\VSCodeProjects\MonitorBaseClaude\bin\Debug\net10.0-windows\MonitorBaseClaude.exe` via `Start-Process`. It ran successfully (process name `MonitorBaseClaude`, window title `MonitorBaseClaude MCP Client`). **Operator is killing it before the full VS Code restart for a clean slate, so the next session will start with no host running.** Launch path: `Start-Process -FilePath 'c:\VSCodeProjects\MonitorBaseClaude\bin\Debug\net10.0-windows\MonitorBaseClaude.exe'`. Verify `Get-Process MonitorBaseClaude` shows it up before probing MCP.
+- Even with the host up, Claude Code's MCP client never re-spawned the PowerShell launcher scripts. Proof: `%LOCALAPPDATA%\Packages\Claude_pzs8sxrjxfjjc\LocalCache\Roaming\Claude\logs\mcp-server-monitor-base-claude.log` and `...mcp-server-roslyn-codelens.log` had **zero new entries** since the prior session's `Server transport closed` events on 2026-05-16T22:11Z and 2026-05-17T03:48Z respectively. The launchers were never invoked this session.
+- `/mcp` slash command is **not available** in this Claude Code VS Code-native environment. The Operator's chosen recovery: full VS Code restart (not just window reload).
+- Spawn chain otherwise verified healthy: `.mcp.json` references the launcher scripts; `Tools\McpHubBridge\bin\Debug\net10.0\McpHubBridge.exe` exists (built today 17:55); `Schema Studio.sln` resolves at `C:\Schema Studio - DBV2\Schema Studio.sln`.
+
+**After the full VS Code restart, the next session should:**
+
+1. Verify `MonitorBaseClaude` process is still running. Skip starting a new one.
+2. Probe MCP via `ToolSearch select:mcp__monitor-base-claude__get_workflow_status` etc. — if tools register, pre-flight can proceed normally per the section below.
+3. If tools still don't register, tail the two log files for new entries — that tells us whether Claude Code attempted to spawn at all.
+4. **File a finding** (Severity: confusing) once tools are up: "Window reload does not respawn MCP servers; full VS Code restart required." This is the same friction noted in the original "Latent issue worth a finding after resume" section, now with concrete evidence (the log gaps).
+5. Resume tasks per the unchanged list below — start with Strategy C deep dive on DBV2.
+
+---
+
 ## What was happening when the window got reloaded
 
 VS Code was holding stale MCP bindings to servers (`monitor-base-claude`, `roslyn-codelens`) that were no longer running. Window reload releases those bindings so the MCP bridge (`McpHubBridge.exe`) can be respawned cleanly against a freshly-restarted WinForms host.
