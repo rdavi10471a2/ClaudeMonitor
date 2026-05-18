@@ -461,3 +461,81 @@ The WinForms host (PID 48724) stayed up through the full staging + diff + accept
 
 - `C:\Schema Studio - DBV2`: still the two modified files from Pass 6 (`SourceTable.cs`, `SelectItem.cs`). No new staged edits this pass.
 - Notes branch `claude/live-test-notes-20260517`: merge commit `dbb3f4f`, updated `CLAUDE.md` (new Working-candidate section), main-canonical `CLAUDE_Live_Tests/README.md`, this STATUS Pass 7 entry, and a new date-stamped restart-note.
+
+## Pass 8 — 2026-05-18 ~20:17 UTC — Working-candidate composition flow end-to-end + supersession + recovery
+
+### Pre-flight
+
+- Notes branch `claude/live-test-notes-20260517` at `3c43336` (Pass 7 commit), 0 ahead / 19 behind only because origin/main was pulled to dbb3f4f; the 19-ahead count is the cumulative notes branch.
+- WinForms host UP (PID 22112). 2 `McpHubBridge.exe` PIDs alive. Monitor MCP tool surface visible at session start — Finding 14 / Pass 7 rebind blocker did NOT recur; tools loaded cleanly.
+- `get_workflow_status` returns `winMergePath: C:\Program Files\WinMerge\WinMergeU.exe`. `get_monitor_status`, `get_tool_manifest`, `get_staging_guide` all non-error. `get_staging_guide` exposes the post-Finding-13 "Choose The Staging Mode" + multi-file flow + Discovery Discipline sections.
+- Roslyn `list_solutions` shows `Schema Studio.sln` active, status `ready`. `get_diagnostics(severity=error)` returned `[]`.
+- Re-read `origin/codexNotes:CODEX_NOTES/CLAUDE_TESTING_AGENT_PROMPT.md`. Role unchanged.
+
+### Target
+
+`SchemaStudio.SematicModel\Model\ColumnBinding.cs` (355 bytes, 5 string auto-properties, 1 type-position consumer via `SelectItem.Binding`). Then `ExportMappers.cs` for multi-op + supersession test.
+
+### Step 1 — V1 single-file walk (ColumnBinding)
+
+Session `monitor-20260518201734-0fd9ef4e65cf4327a`.
+
+- `add_method(ColumnBinding, GetQualifiedColumn => $"{Database}.{Schema}.{Table}.{Column}")` → `status: candidate-updated`, op count 1, baseline `58cb0ce`, candidate `aa172ed1`. Working candidate at `Working\<observedRootKey>\<rel>\ColumnBinding.cs` exists. State JSON at `Working\.state\Candidates\...\ColumnBinding.cs.candidate.json` records baseline + operation count.
+- `list_session_staged_records` returned `count: 0` — V1 design verified: no staged record before `stage_candidate_for_review`.
+- `stage_candidate_for_review(ColumnBinding)` → staged record `20260518_151823037_..._d947656a`, `symbolsAdded: [GetQualifiedColumn(method, line 15)]`, overlay + syntax clean.
+- `launch_staged_diff` → WinMerge PID 21556. Operator accepted. `record_diff_decision(accepted)` → **`classification: accepted`** (exact byte match), `currentHash == stagedHash == aa172ed1`.
+
+### Step 2/3 — Multi-op composition (ExportMappers, fresh session)
+
+Session `monitor-20260518202213-8d14c1fe83594d74a`.
+
+- Op 1 `add_method(Probe => 1)` → op count 1, candidate `f41c94a`.
+- Op 2 `add_field(ProbeTag = "p")` → **op count 2**, candidate advanced to `40e8221f`, baseline unchanged. Composition verified: candidate file contains BOTH `Probe` AND `ProbeTag`.
+- `stage_candidate_for_review` → staged record S1 `..._19146557`, `symbolsAdded: [Probe(method), ProbeTag(field)]`.
+- Op 3 `add_method(ProbeTwo => 2, afterSymbol: Probe)` → op count 3, candidate `8d598efe`. Composes against staged file from S1's snapshot.
+- `stage_candidate_for_review` again → staged record S2 `..._9237a36e`, `symbolsAdded: [Probe, ProbeTwo, ProbeTag]` — full cumulative state.
+
+### Step 4 — Supersession verified
+
+- `list_session_staged_records` after S2: S1 `queueStatus: superseded-by-later-same-file-candidate`, S2 `queueStatus: staged`.
+- S1 `stagedFilePath` rewritten to `Working\Staged\Superseded\20260518\<recordId>\...`; physical move confirmed via filesystem.
+- `launch_staged_diff(S1)` → **`status: staged-record-superseded`** with clean recovery message pointing at `list_session_staged_records`. Documented refusal works.
+
+### Step 5 — `candidate-baseline-stale` observed (post-accept transition)
+
+Implicit observation: after step 1 accept landed in watched, the Working candidate state JSON for ColumnBinding was **not** cleared and still recorded `BaselineHash: 58cb0ce` (the pre-accept hash, now stale; watched moved to `aa172ed1`). Subsequent V1 ops on that path opaquely crashed (see Finding 26). The stale-baseline transition is real and detectable — the refusal path is just unimplemented.
+
+Did NOT explicitly mutate watched out-of-band between two ops in a single candidate session, because the post-accept case already exercised the same baseline-mismatch path. If the structured refusal is implemented in a future build, an explicit external-mutation test should re-run.
+
+### Step 6 — Recovery via remove_symbol (Operator accepted S2 in WinMerge unintentionally)
+
+Operator accepted S2's probe code in WinMerge instead of rejecting. Watched `ExportMappers.cs` carried `Probe`, `ProbeTwo`, `ProbeTag`. Recovered via legacy direct-staged path:
+
+- Session `monitor-20260518202753-51e42b71c07844bda`. Three sequential `remove_symbol` calls (`Probe`, `ProbeTwo`, `ProbeTag`) composed correctly on the legacy path: each new same-file record reads from the prior staged file, so R3's `symbolsRemoved` lists all three. Confirms commit `ce8e500`'s same-file composition extends to `remove_symbol`, not just V1 add ops.
+- `launch_staged_diff(R3)` → Operator accept → `classification: accepted-normalized`, `currentHash: 76a5dd6...` (the original pre-Pass-8 baseline). Exact recovery.
+
+### Findings filed this pass
+
+- Finding 26: V1 `add_method`/`add_field` crash opaquely when candidate state JSON exists with a stale baseline (e.g. post-accept). No structured `candidate-baseline-stale` payload; bridge-level wire error. **Blocker** for any multi-pass workflow on the same path within a session.
+- Finding 27: `record_diff_decision` on a superseded staged record crashes opaquely instead of returning the documented `staged-record-superseded` refusal. `launch_staged_diff` handles it correctly — sibling-tool inconsistency.
+
+### Notable positives (no finding needed)
+
+- V1 composition works as designed when state is clean: Working candidate accumulates, baseline preserved, op count increments, overlay validates the cumulative file every call.
+- `serverDerivedMetadata.symbolsAdded` / `symbolsRemoved` correctly enumerate cumulative deltas on every staged record, including across composition.
+- Legacy `remove_symbol` path inherits the post-`ce8e500` composition behavior.
+- `launch_staged_diff` refusal on superseded records includes a clean human-readable recovery hint.
+- WinForms host stayed up through the full pass; Finding 22 (telemetry FileShare race) did not reproduce.
+
+### Watched repo state at end of pass
+
+- `C:\Schema Studio - DBV2`: three modified files at pass end — `ColumnBinding.cs` (new `GetQualifiedColumn`), `SelectItem.cs` (Pass 6 leftovers), `SourceTable.cs` (Pass 5 leftovers). `ExportMappers.cs` returned to the original baseline via the remove_symbol recovery — no longer in `git status`. Several `.bak` files appeared in `SourceBakups/` (Host-generated pre-accept snapshots; not part of the commit).
+- Notes branch `claude/live-test-notes-20260517`: this STATUS Pass 8 entry, two new FINDINGS entries.
+
+### Next pass suggestion
+
+1. After Finding 26 fix: explicit external-mutation `candidate-baseline-stale` test. Mutate watched between two V1 ops, expect a structured refusal payload, not a crash.
+2. Test the V1 `submit_file` whole-file path against a new file (i.e. file creation through the candidate flow rather than member-level composition).
+3. Test V1 composition across mixed tool kinds (`submit_file` baseline followed by `add_method` composition on the same path).
+4. Test `start_monitor_session(purpose: "...")` with non-ASCII Unicode in `purpose` again to confirm F20/F25 status post any encoding fix.
+5. Optionally: explore the Operator workflow for the Working candidate state JSON lifecycle — should it be cleared on accept? Cleared on session end? Stay until rebaselined? The expected behavior is undocumented and the current behavior is the crash-source for Finding 26.

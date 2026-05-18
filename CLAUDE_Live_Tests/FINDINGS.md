@@ -428,3 +428,43 @@ Pass 5 finding cap was 5 (17–21); this is filed at Operator direction during t
 
 **Evidence:** Pass 6 `record_diff_decision` response 2026-05-18 16:49 UTC: `note` echoed with U+FFFD where U+2014 was sent.
 
+---
+
+## Pass 8 — 2026-05-18
+
+### Finding 26
+
+**Title:** V1 staging tools crash with no payload after the first accept on the same path (single-session reproducer, not stale environment)
+
+**Severity:** blocker
+
+**File/tool:** `monitor-base-claude` MCP — `add_method`, `add_field` (and presumably `add_symbol`, `submit_file`) on the V1 Working-candidate path
+
+**Background:** Commit `b0d071e` made these four tools compose into a Working candidate file plus a state JSON at `Working\.state\Candidates\<observedRootKey>\<rel>.candidate.json`. The state JSON records `BaselineHash` of watched source at the time the first op ran. Subsequent ops on the same path compose against the same baseline. If watched source moves underneath, the documented "candidate-baseline-stale" precondition is supposed to fire.
+
+**Observed:** Happy flow `add_method → stage_candidate_for_review → launch_staged_diff → record_diff_decision(accepted)` succeeds. After the accept, watched source has moved, but the state JSON is **left in place** with its pre-accept `BaselineHash`. The very next V1 op on that path detects the mismatch — and instead of returning a structured refusal, the server throws and the MCP wire layer surfaces only `An error occurred invoking 'add_method'.` No payload, no recovery hint, no `errors.jsonl` entry (`responses.jsonl` shows `isError=true`, 138 bytes, ~5 ms).
+
+**Why blocker:** the canonical next-pass workflow is "add a member, accept; add another member, accept." The second call now crashes with no diagnosable signal. My in-pass recovery was to start a fresh session AND switch to a path with no prior state JSON — that's avoidance, not workflow.
+
+**Expected:** Either (a) clear the state JSON on accept so the next op rebaselines naturally, OR (b) return a structured `{"status":"candidate-baseline-stale","recovery":...}` payload that tells the agent how to proceed.
+
+**Minimal fix:** Option (a) is a one-liner — on `accepted`/`accepted-normalized` in `record_diff_decision`, delete the matching candidate state JSON. Option (b) is the more general fix: wrap the baseline check in the V1 staging tools so it returns a typed result instead of throwing.
+
+**Evidence:** Pass 8 step 1 accept at 2026-05-18T20:19:05Z (baseline `58cb0ce` → watched `aa172ed1`). State JSON at `Working\.state\Candidates\Schema Studio - DBV2_6c4e124c9922\SchemaStudio.SematicModel\Model\ColumnBinding.cs.candidate.json` still recorded `BaselineHash: 58cb0ce` at 20:19:43Z. Four subsequent V1 op calls on stale-state paths failed identically (jsonRpcIds 15, 17, plus retries). A fresh-session call on a path with no prior state JSON (ExportMappers.cs) succeeded — confirming the trigger is the stale state file, not the session or the tool.
+
+### Finding 27
+
+**Title:** `record_diff_decision` on a superseded staged record crashes opaquely; `launch_staged_diff` refuses cleanly
+
+**Severity:** confusing
+
+**File/tool:** `monitor-base-claude` MCP — `record_diff_decision` on a record with `QueueStatus: superseded-by-later-same-file-candidate`
+
+**Observed:** Calling `record_diff_decision(supersededRecordId, rejected)` returns `An error occurred invoking 'record_diff_decision.'` — bridge-level wire error, no payload. The sibling tool `launch_staged_diff` on the same record returns `status: staged-record-superseded` with a clean recovery message ("Use list_session_staged_records to locate and review the current staged record.").
+
+**Expected:** Per `CLAUDE.md` line 450: "launch_staged_diff and record_diff_decision refuse them with `staged-record-superseded` / clear error." `record_diff_decision` should return the same structured refusal as `launch_staged_diff`, not crash at the wire layer.
+
+**Minimal fix:** Wrap the superseded-record check in `record_diff_decision` in the same typed-result path that `launch_staged_diff` uses. Likely a single shared helper.
+
+**Evidence:** Pass 8 step 4. `launch_staged_diff(20260518_152353788_..._19146557)` returned `staged-record-superseded` at 20:24:18Z. Immediately after, `record_diff_decision(same id, rejected)` returned the opaque bridge error at 20:24:24Z. Same superseded record, two sibling tools, two different error surfaces.
+
