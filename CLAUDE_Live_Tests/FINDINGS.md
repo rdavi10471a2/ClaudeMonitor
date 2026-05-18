@@ -258,6 +258,22 @@ Format per finding: Title, Severity, File/tool, Observed, Expected, Minimal fix,
 - Stage repository AND every consumer fix via `submit_symbol(sessionId)` under one session before the first `launch_staged_diff`.
 - Overlay validation then sees the union and reports diagnostics across the whole change.
 
-**Minimal fix:** (a) Updated `CLAUDE.md` "Reason In Cloud, Compose Locally" to drop the dead WriteSet/anchor-step language and reference `get_staging_guide` as canonical (this pass). (b) Add a "Discovery Discipline" note that empty Roslyn discovery results are not absence-of-consumers; cross-check before sizing the WriteSet. (c) Consumer updates for Pass 2/3 left to Codex per Operator direction — Operator's preferred shape is sync bridge methods on the repositories (re-add `GetByDatabase`, `GetBySource`, `Insert`, `Update`, `SaveAll` as thin sync-over-async wrappers), preserving consumer call sites and keeping async as the primary path.
+**Minimal fix:** (a) Updated `CLAUDE.md` "Reason In Cloud, Compose Locally" to drop the dead WriteSet/anchor-step language and reference `get_staging_guide` as canonical (this pass). (b) Add a "Discovery Discipline" note that empty Roslyn discovery results are not absence-of-consumers; cross-check before sizing the WriteSet. (c) Operator will apply consumer fixes manually (sync bridge methods on the repositories — `GetByDatabase`, `GetBySource`, `Insert`, `Update`, `SaveAll` as thin sync-over-async wrappers), preserving consumer call sites and keeping async as the primary path. Not a Codex or Monitor task.
 
 **Evidence:** `get_diagnostics(severity=error)` results captured in this pass's STATUS entry. Watched repo state: `M SchemaStudio.Data/DatabaseDomainRepository.cs`, `M SchemaStudio.Data/DatabaseDomainTypeConverter.cs`, `M SchemaStudio.Data/SchemaObjectRepository.cs` — all uncommitted in `C:\Schema Studio - DBV2` after Pass 2/3 accepts.
+
+### Finding 16
+
+**Title:** `get_type_overview` returns the full inherited metadata interface stack for WinForms types, costing ~10× POCO call size
+
+**Severity:** suggestion (performance / token efficiency)
+
+**File/tool:** `mcp__roslyn-codelens__get_type_overview`
+
+**Observed:** On a Strategy C deep dive against DBV2 (UI-heavy WinForms solution), `get_type_overview` on POCO/DTO/parser classes returned ~2,000–3,000 chars per call. On `UserControl`-derived UI classes (`IntegrationsViewParserControl`, `IntegrationsViewImportControl`) the same tool returned **~30,000–35,000 chars** — almost entirely the inherited `System.Windows.Forms` interface stack enumerated under `hierarchy.interfaces` (IOleControl, IOleObject, IOleInPlaceObject, IPersistStreamInit, ISynchronizeInvoke, IBindableComponent, IKeyboardToolTip, IDropTarget, IPersist, and ~15 others) plus the base chain `ContainerControl → ScrollableControl → Control → Component → MarshalByRefObject`. This metadata is identical on every UI type, repeats per call, and is rarely relevant to the question the caller is asking (which is typically "what does THIS class declare and override?").
+
+**Expected:** A flag to suppress the inherited metadata interface stack — e.g. `includeInheritedInterfaces: false` (default could remain `true` for compat) or `excludeMetadataInterfaces: true`. With this flag, UI-type calls would drop from ~30K chars to ~3–5K chars (just the declared interfaces and members), matching POCO cost.
+
+**Minimal fix:** Add an opt-in skip flag on `get_type_overview` that filters `hierarchy.interfaces` to interfaces declared on the type itself, excluding those inherited from metadata assemblies. Same flag could apply to `hierarchy.bases` once the chain crosses an assembly boundary.
+
+**Evidence:** Measured per-call sizes captured in `TokenAnalysis_GenericOverview.md` Pass 4 measurement table. On this solution, the bloat accounts for ~25% of a Strategy C pass's total tokens; on a non-WinForms backend solution it would be zero, so the issue is UI-stack specific. Operator framing: "we can tweak interface stuff and get better performance b/c roslyn is giving way more than we need."
