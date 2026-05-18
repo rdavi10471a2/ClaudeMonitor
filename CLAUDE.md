@@ -71,25 +71,36 @@ For member-level edits prefer the symbol-level staging tools:
 
 Reserve `submit_file` for legitimately whole-file cases: new file creation, generated-code regeneration, or true whole-file replacement.
 
-For each target file, at the start of the working session do **one** `get_file(sessionId)`. This:
+### Multi-File Coupled Edits — Canonical Protocol
 
-- Anchors my reasoning with full structural awareness of the file.
-- Records the file's baseline hash on the server side — the session "teeth" that subsequent operations check against.
+Authoritative source for the per-session protocol is `get_staging_guide`. The shape, distilled:
 
-Sessions are multi-file aware: a single `sessionId` can anchor N files via N `get_file(sessionId)` calls, each tracking its own baseline hash independently. For coupled multi-file edits, anchor every target file in the same session **before** the first staging call, so the session's hash set covers the whole intended WriteSet at the moment work begins. This is the same "stage every coupled candidate under one session before first review launch" rule from the Stage And Review section, applied at the read layer too.
+```text
+Roslyn discovery (search_symbols, get_type_overview, find_callers, find_references)
+  -> identifies every file that must change for the edit to compile.
+start_monitor_session
+stage file A with sessionId   (submit_symbol / add_method / etc.)
+stage file B with sessionId   (submit_symbol / add_method / etc.)
+stage file N with sessionId
+  -> overlay compile validates {A, B, ..., N} together against the project graph.
+launch_staged_diff for file A
+record_diff_decision for file A
+launch_staged_diff for file B
+record_diff_decision for file B
+...
+```
 
-The workflow ordering, in practice:
+The session bag is populated **by the staging calls themselves**. There is no pre-declared WriteSet, no `declare_writeset()` step, and no `get_file(sessionId)` anchor-pass. A file is "in the session" iff a staging tool has been called against it with that sessionId.
 
-1. **Roslyn discovery first** — `search_symbols`, `get_type_overview`, `find_callers`, `find_references` identify the WriteSet (which files the change will touch). The WriteSet is the *output* of discovery, not an input.
-2. `start_monitor_session`.
-3. `get_file(sessionId)` for each file in the identified WriteSet.
-4. Stage edits across the session.
+Failure mode this prevents: making N independent single-file sessions for what is one coupled change. The overlay validator then sees each file in isolation, reports clean, and the watched build breaks post-accept because consumer call sites were never updated. Pass 2 rerun and Pass 3 (filed as Finding 15) are the canonical example — the rename was staged single-file, overlay reported clean against just the repo, and consumer files were left at the old method names. The fix is "stage every consumer fix under the same sessionId before the first `launch_staged_diff`," not "anchor every file first."
 
-**Open question for Codex review:** earlier discussion of this section used "WriteSet" / "ReadSet" terminology implying the Monitor MCP server tracks structured intent (which files a session plans to read vs write). That tracking is **not currently implemented** — the session is a bag of `(file path → hash)` entries populated lazily by whatever I call `get_file` and the staging tools against. The server has no list saying "this session intends to write A/B/C" to validate against.
+`get_file` (with or without `sessionId`) remains useful for reading context, but it is not the coupling gate. The coupling gate is the staging call.
 
-Question: do we need a declarative step (e.g. `declare_writeset(sessionId, files[])` at session start, with the server refusing later staging against files not in the declared set), or is the current "anchor what you need, server hashes what you anchored, overlay compile catches consumer breakage" model sufficient? My take: current model is sufficient *if* the Roslyn-discover → anchor → stage workflow is followed honestly. A declarative WriteSet would add structural enforcement at the cost of one extra step and a new failure mode (forgetting to declare a file). Not blocking; flagging for the architecture review.
+### Discovery Discipline
 
-After the initial anchor, do **not** re-call `get_file` on the same file in the same session. Per-edit semantic queries go through Roslyn (`search_symbols` → `get_type_overview` → `find_callers` / `find_references`); they're small and compact, and they don't duplicate content I already have in context. Use `get_source_map` only when I need stable selector keys that Roslyn's name-based fallback can't disambiguate — not for re-reading content.
+Roslyn discovery negative results (empty `find_callers`, empty `find_references`) must be treated as **"discovery may be incomplete"**, not as **"no consumers exist."** Cross-check via a second method (`search_symbols` for the type or method name, grep on the symbol if Roslyn is suspect, or visual inspection of likely consumer projects) before sizing a single-file rename WriteSet. Finding 11 documents a concrete case where `find_references` returned empty for a field that demonstrably had a usage in another file; Finding 15 documents the downstream cost.
+
+For each target file, one `get_file(sessionId)` early in the session is fine if I want full structural awareness, and it records the file's baseline hash on the server. It is not required; the staging call records the same hash. After that initial read, per-edit semantic queries go through Roslyn — small, compact, no duplicate content. Use `get_source_map` only when stable selector keys are needed that Roslyn's name-based fallback can't disambiguate.
 
 Staging payloads then go through the symbol-level tools above. The surrounding code stays in my reasoning context but **never enters a staging payload** — the server splices through Roslyn AST manipulation, so bytes outside my deliberate selector remain byte-for-byte unchanged across the session. This is the structural property that prevents the original failure mode this architecture is designed to solve: an AI silently destroying neighboring work while editing one method.
 

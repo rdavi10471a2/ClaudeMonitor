@@ -86,3 +86,26 @@ Detail in `Pass3_SchemaObjectRepository_Async.md`. Summary:
 - Staged record `20260517_183111241_submit_file_SchemaObjectRepository_03226b7b`. Overlay validation: 82 syntax trees, **2 overlay files** (wider consumer slice), 0 diagnostics. Confirmed the consumer field doesn't invoke any renamed methods.
 - Operator accepted in WinMerge. `record_diff_decision` → **`accepted-normalized`**, decisionMatchesClassification true, normalized hashes match (`05318b53...`).
 - Findings filed: 10 (Claude Roslyn-first inconsistency), 11 (`find_references` empty where `search_symbols` shows a real type usage), 12 (token waste calling both source_map and get_file for whole-file rewrites).
+
+## Pass 4 — 2026-05-17 — Session Resume After Full VS Code Restart
+
+### Pre-flight
+
+- VS Code window reload (prior session) did **not** respawn the MCP server launchers — log gap evidence captured in `SESSION_RESUME.md`. Full VS Code restart was required.
+- Post-restart MCP probe: both servers up. `MonitorBaseClaude.exe` PID 174204, `MonitorBaseClaude.McpServ` PID 132324. `get_workflow_status`, `get_monitor_status`, `get_staging_guide`, `get_tool_manifest` all returned non-error payloads. Roslyn `list_solutions` shows `Schema Studio.sln` active with 6 projects, status `ready`.
+- Roslyn `get_diagnostics(severity=error)` returned **8 compile errors** in the watched solution: 1 in `SchemaStudio.Data\DatabaseDomainTypeConverter.cs` (CS0411 type-arg inference on `ImmutableArrayExtensions.Select` — `GetByDatabaseAsync` returns `Task<T>` not `IEnumerable<T>`), and 7 CS1061 errors across `UI\DatabaseDomainManagerForm.cs`, `UI\MergedEditorSurface\IntegrationsViewImportControl.Loading.cs`, and `IntegrationsViewImportControl.Persistence.cs`. Pattern: consumers call pre-rename method names (`SaveAll`, `GetByDatabase`, `GetBySource`, `Insert`, `Update`).
+- Watched repo (`C:\Schema Studio - DBV2`) shows 3 files modified uncommitted: the two repos Pass 2/3 edited, plus `DatabaseDomainTypeConverter.cs` (partial migration — calls new `GetByDatabaseAsync` but treats `Task<T>` as `IEnumerable<T>`).
+- **Operator framing (refined twice across this pass):** "write set is dead — you should have been using the new protocol for multi file edits." The canonical multi-file protocol is the one already in `get_staging_guide`: there is no pre-declared WriteSet, no `declare_writeset()` step, and no `get_file(sessionId)` anchor pass. The session bag is populated **by the staging calls themselves** — N `submit_symbol(sessionId)` calls populate N entries. A coupled rename must stage the repository AND every consumer fix under the same `sessionId` before the first `launch_staged_diff`; overlay validation then sees the union. CLAUDE.md "Reason In Cloud, Compose Locally" previously described the abandoned anchor-step model and was updated this pass to reference `get_staging_guide` as canonical and drop the WriteSet language.
+- **Two root causes for Pass 2/3 build break:** (1) Discovery false-negative — `find_references` returned empty for `_schemaObjectRepository` in Pass 3, and I read empty as "no consumers" rather than "discovery may be incomplete." (2) Stale protocol — even with the right WriteSet from discovery, I staged single-file, accepted, ended the session. Both passes did this.
+- **Operator direction:** do not stage the consumer fixes this pass. File Findings 14 + 15, update CLAUDE.md, end the test pass. Operator's preferred shape for the eventual fix is sync bridge methods on the repositories (re-add `GetByDatabase`, `GetBySource`, `Insert`, `Update`, `SaveAll` as thin sync-over-async wrappers) — preserves consumer call sites, async stays primary. That fix is Codex's to merge.
+
+### Findings This Pass
+
+- Finding 14: VS Code window reload does not respawn MCP server launchers; full window restart required.
+- Finding 15: empty `find_references` produced an undersized single-file WriteSet for a coupled rename; CLAUDE.md "anchor every file" protocol was the dead version of the rule.
+
+### Work This Pass
+
+- CLAUDE.md "Reason In Cloud, Compose Locally" rewritten: dropped WriteSet/anchor-step language and the open-question paragraph; added "Multi-File Coupled Edits — Canonical Protocol" pointing at `get_staging_guide` as authority; added "Discovery Discipline" subsection codifying the empty-result cross-check rule.
+- STATUS + FINDINGS updated.
+- Strategy C deep dive deferred — Operator scoped this pass to "just file the lesson."

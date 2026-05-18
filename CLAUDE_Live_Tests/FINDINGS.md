@@ -221,3 +221,43 @@ Format per finding: Title, Severity, File/tool, Observed, Expected, Minimal fix,
 **Minimal fix:** Saved as feedback memory `feedback_reason_in_cloud_edit_locally.md`. Suggest adding a "Choose your staging mode" section to `Docs/Skills/SystemMonitorStaging.md` listing intent → tool mapping, and a corrective example showing the same async conversion done two ways (submit_file vs N submit_symbol calls) with a payload-size comparison.
 
 **Evidence:** Operator: "submit file is more for a full new file edit" and "you need to use the ROSLNN to edit the local copy and never send a full file." Pass 2 rerun and Pass 3 are the violating cases. Both accepted-normalized — the *change* was correct, the *tool choice* was the issue.
+
+## Pass 4 — 2026-05-17 — Session resume after VS Code restart
+
+### Finding 14
+
+**Title:** VS Code window reload does not respawn MCP server launchers; full window restart is required
+
+**Severity:** confusing
+
+**File/tool:** Claude Code MCP client behavior in the VS Code native extension; setup docs imply window reload should suffice
+
+**Observed:** After killing the WinForms host and restarting it, executing a VS Code window reload (Ctrl+Shift+P → "Developer: Reload Window") did **not** cause Claude Code to respawn the `monitor-base-claude` or `roslyn-codelens` MCP server launcher scripts. Evidence: log files `%LOCALAPPDATA%\Packages\Claude_*\LocalCache\Roaming\Claude\logs\mcp-server-monitor-base-claude.log` and `...mcp-server-roslyn-codelens.log` had **zero new entries** after the reload — last events were `Server transport closed` from the prior session. The launchers were never invoked. `/mcp` slash command is not available in this environment for an explicit reconnect.
+
+**Expected:** Either window reload triggers MCP client re-init (respawning the launchers), or the docs state that a full VS Code window restart is required after host restart.
+
+**Minimal fix:** Document the requirement in `MCP_CLIENT_TESTING.md` and `SESSION_RESUME.md` template: "After restarting the WinForms host, do a full VS Code window restart (close the window entirely, reopen the workspace). Window reload alone is not sufficient." Longer-term consideration: have the WinForms host advertise its MCP endpoint via a known IPC mechanism so the bridge can poll liveness and auto-reconnect on next tool call.
+
+**Evidence:** Two diagnosis sessions of `SESSION_RESUME.md` (commits `4f0de26` and `44db1d8`) captured the reload-then-restart sequence with concrete log gaps. After the full restart, pre-flight passed on first try.
+
+### Finding 15
+
+**Title:** Empty `find_references` led to undersized single-file WriteSet for what was a coupled multi-file rename — Pass 2/3 left consumers un-updated and watched build broke post-accept
+
+**Severity:** blocker (workflow-level — produced a non-compiling watched-source state that overlay validation could not catch because the consumer files were never staged into the session)
+
+**File/tool:** Pass 2 rerun (`DatabaseDomainRepository` async rename) and Pass 3 (`SchemaObjectRepository` async rename); Roslyn `find_references` discovery; `CLAUDE.md` "Reason In Cloud, Compose Locally" section as written before this pass
+
+**Observed:** Both passes staged the repository file alone via `submit_file(sessionId)`, accepted the rename, then ended the session. Roslyn `get_diagnostics` next session surfaced 8 compile errors: 7 CS1061 ("method does not exist") at consumer call sites in `UI\DatabaseDomainManagerForm.cs`, `UI\MergedEditorSurface\IntegrationsViewImportControl.{Loading,Persistence}.cs`, plus 1 CS0411 in `SchemaStudio.Data\DatabaseDomainTypeConverter.cs` (consumer partially adapted to `GetByDatabaseAsync` but treats the `Task<T>` return as `IEnumerable<T>`). Operator framing: "you should have been using the new protocol for multi file edits — write set is dead." The session bag is populated by staging calls themselves; consumer fixes had to be staged under the **same sessionId** before the first `launch_staged_diff`. Two interacting root causes:
+
+1. **Discovery false-negative**: `find_references` returned empty for `_schemaObjectRepository` field in Pass 3 (Finding 11). I read empty as "no consumers exist" instead of "discovery is incomplete; cross-check." That undersized the WriteSet.
+2. **Stale protocol in CLAUDE.md**: the "anchor every target file via `get_file(sessionId)` before staging" rule treated session membership as a separate read-time concern. The canonical protocol in `get_staging_guide` has no anchor step — the staging call itself populates the session.
+
+**Expected:** Coupled multi-file rename should:
+- Use Roslyn discovery to identify every consumer file. Treat empty `find_references` as "verify another way," not as "no consumers."
+- Stage repository AND every consumer fix via `submit_symbol(sessionId)` under one session before the first `launch_staged_diff`.
+- Overlay validation then sees the union and reports diagnostics across the whole change.
+
+**Minimal fix:** (a) Updated `CLAUDE.md` "Reason In Cloud, Compose Locally" to drop the dead WriteSet/anchor-step language and reference `get_staging_guide` as canonical (this pass). (b) Add a "Discovery Discipline" note that empty Roslyn discovery results are not absence-of-consumers; cross-check before sizing the WriteSet. (c) Consumer updates for Pass 2/3 left to Codex per Operator direction — Operator's preferred shape is sync bridge methods on the repositories (re-add `GetByDatabase`, `GetBySource`, `Insert`, `Update`, `SaveAll` as thin sync-over-async wrappers), preserving consumer call sites and keeping async as the primary path.
+
+**Evidence:** `get_diagnostics(severity=error)` results captured in this pass's STATUS entry. Watched repo state: `M SchemaStudio.Data/DatabaseDomainRepository.cs`, `M SchemaStudio.Data/DatabaseDomainTypeConverter.cs`, `M SchemaStudio.Data/SchemaObjectRepository.cs` — all uncommitted in `C:\Schema Studio - DBV2` after Pass 2/3 accepts.
