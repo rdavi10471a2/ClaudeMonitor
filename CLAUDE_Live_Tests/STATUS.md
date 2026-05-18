@@ -487,13 +487,11 @@ Session `monitor-20260518201734-0fd9ef4e65cf4327a`.
 
 ### Step 2/3 — Multi-op composition (ExportMappers, fresh session)
 
-Session `monitor-20260518202213-8d14c1fe83594d74a`.
+Session `monitor-20260518202213-8d14c1fe83594d74a`. **Note on workflow shape:** V1 ideal is N changes → 1 stage → 1 merge. I deliberately staged twice here to also exercise step 4's supersession; a normal 3-change V1 workflow would be one `stage_candidate_for_review` after all three ops.
 
-- Op 1 `add_method(Probe => 1)` → op count 1, candidate `f41c94a`.
-- Op 2 `add_field(ProbeTag = "p")` → **op count 2**, candidate advanced to `40e8221f`, baseline unchanged. Composition verified: candidate file contains BOTH `Probe` AND `ProbeTag`.
-- `stage_candidate_for_review` → staged record S1 `..._19146557`, `symbolsAdded: [Probe(method), ProbeTag(field)]`.
-- Op 3 `add_method(ProbeTwo => 2, afterSymbol: Probe)` → op count 3, candidate `8d598efe`. Composes against staged file from S1's snapshot.
-- `stage_candidate_for_review` again → staged record S2 `..._9237a36e`, `symbolsAdded: [Probe, ProbeTwo, ProbeTag]` — full cumulative state.
+- Op 1 `add_method(Probe)`, op 2 `add_field(ProbeTag)`, op 3 `add_method(ProbeTwo)` — op count 1→2→3, baseline preserved, candidate advances `f41c94a → 40e8221f → 8d598efe`.
+- `stage_candidate_for_review` after op 2 → S1 `..._19146557` with `symbolsAdded: [Probe, ProbeTag]`.
+- `stage_candidate_for_review` after op 3 → S2 `..._9237a36e` with `symbolsAdded: [Probe, ProbeTwo, ProbeTag]` — cumulative state.
 
 ### Step 4 — Supersession verified
 
@@ -511,8 +509,9 @@ Did NOT explicitly mutate watched out-of-band between two ops in a single candid
 
 Operator accepted S2's probe code in WinMerge instead of rejecting. Watched `ExportMappers.cs` carried `Probe`, `ProbeTwo`, `ProbeTag`. Recovered via legacy direct-staged path:
 
-- Session `monitor-20260518202753-51e42b71c07844bda`. Three sequential `remove_symbol` calls (`Probe`, `ProbeTwo`, `ProbeTag`) composed correctly on the legacy path: each new same-file record reads from the prior staged file, so R3's `symbolsRemoved` lists all three. Confirms commit `ce8e500`'s same-file composition extends to `remove_symbol`, not just V1 add ops.
-- `launch_staged_diff(R3)` → Operator accept → `classification: accepted-normalized`, `currentHash: 76a5dd6...` (the original pre-Pass-8 baseline). Exact recovery.
+- Session `monitor-20260518202753-51e42b71c07844bda`. Three sequential `remove_symbol` calls composed correctly on the legacy path (each reads the prior staged file). R3's `symbolsRemoved` lists all three.
+- `launch_staged_diff(R3)` → Operator accept → `classification: accepted-normalized`, `currentHash: 76a5dd6...` (original pre-Pass-8 baseline). Exact recovery.
+- **Workflow-cost asymmetry to flag:** 3 adds via V1 = 1 stage / 1 merge. 3 removes via legacy `remove_symbol` = 3 stages / 1 merge (R1+R2 auto-superseded, only R3 reviewed). Expected per CLAUDE.md transitional list, but worth seeing the cost in numbers. Once `remove_symbol` is V1-promoted, removes will collapse to 1 stage too.
 
 ### Findings filed this pass
 
