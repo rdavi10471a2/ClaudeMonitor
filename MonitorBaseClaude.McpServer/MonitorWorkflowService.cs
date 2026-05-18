@@ -1929,11 +1929,6 @@ public sealed partial class MonitorWorkflowService
         {
             foreach (StagedEditRecord record in ReadSessionStagedRecords(sessionId))
             {
-                if (record.Operation != "submit_file")
-                {
-                    continue;
-                }
-
                 string? recordStagedPath = record.ServerDerivedMetadata.StagedFilePath;
                 if (!File.Exists(recordStagedPath))
                 {
