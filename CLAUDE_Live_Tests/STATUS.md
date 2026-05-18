@@ -320,3 +320,89 @@ I won't touch the script in this pass (already-flagged as out-of-lane in Pass 4)
 
 - `C:\Schema Studio - DBV2`: one new modified file, `SchemaStudio.SematicModel\Model\SourceTable.cs`, carrying the three accepted Pass 5 changes. Other uncommitted state from Pass 2/3 sync-bridge fix preserved.
 - Notes branch `claude/live-test-notes-20260517`: merged `origin/main` (commit `ce8e500` pulled in); this STATUS update is the only further new change.
+
+## Pass 6 — 2026-05-18 ~16:45 UTC — Composition + post-c95c313 verifications on SelectItem.cs
+
+Plan in [Pass6_Plan_SelectItem.md](Pass6_Plan_SelectItem.md). Target was a new file (`SelectItem.cs` in same project as Pass 5's `SourceTable.cs`) to give the composition fix a fresh substrate.
+
+### Pre-flight
+
+- Branch `claude/live-test-notes-20260517` at `5c83324` (Pass 5 retest merge of `origin/main`), no commits ahead/behind `origin/main` aside from notes branch. `git fetch origin` confirmed no upstream movement.
+- WinForms host UP: `MonitorBaseClaude.exe` PID 48724 (started 11:24:39 local).
+- McpHubBridge: 4 instances running (2 per server is current architecture).
+- Monitor MCP: all 4 status tools clean. `get_staging_guide` returns the post-Finding-13 "Choose The Staging Mode" + "Discovery Discipline" payload.
+- Roslyn: `Schema Studio.sln` active with 6 projects, status `ready`. `get_diagnostics(severity=error)` returned `[]`.
+
+### Roslyn-first discovery
+
+- `search_symbols("HasAlias")` and `search_symbols("GetEffectiveName")` both `[]` (new symbols, as expected).
+- `find_references("SchemaStudio.SemanticModel.Model.SelectItem")` returned **17 usages** — populated, not empty. This breaks the Findings 11/15/21 pattern (`find_references` empty on `_repository` / `SourceTable`). Not filed as a new finding; documented here as a counter-example. The bug is selective, not universal — possibly tied to type properties accessed inside method bodies (which `SelectItem` has plenty of via `query.SelectItems`) vs collection generic-args / parameter types (which `SourceTable` has many of).
+- `get_source_map(SelectItem.cs, scope: file, mode: selector)`: 22 symbols, 5078 estimatedTokenProxy, parseStatus ok, 0 diagnostics.
+
+### Finding 19 verified fixed
+
+Source map signature for `Binding` property: `"... internal ColumnBinding Binding { get; set; } = new();"` — initializer present. Pass 5 reproduction is now closed; Codex fix landed between Pass 5 retest and Pass 6.
+
+### Staging — three ops, one session, one file
+
+Session `monitor-20260518164521-1419765fc0a340799`.
+
+1. `submit_symbol(ToString)` — ternary rewrite of the 2-branch `ToString` body (verified behaviourally identical via `get_symbol` before staging). Record `20260518_114544188_..._39d72901`. Syntax + overlay clean, `overlayFileCount: 1`. `list_session_staged_records` returned count=1, op 1 `staged`. ✓
+2. `add_property(HasAlias, afterSymbol: Alias)` — `=> !string.IsNullOrWhiteSpace(Alias)`. Record `20260518_114554893_..._e870a6d8`. `symbolsAdded.startLine: 14`. `list_session_staged_records` returned count=2, op 1 `superseded-by-later-same-file-candidate`, op 2 `staged`. ✓ Composition pairing visible from the new tool.
+3. `add_method(GetEffectiveName, afterSymbol: ToString)` — `=> string.IsNullOrWhiteSpace(Alias) ? Expression : Alias`. Record `20260518_114615903_..._1f4616c8`. `symbolsAdded` listed BOTH `HasAlias` (line 14) AND `GetEffectiveName` (line 69) — server doing baseline-vs-staged delta against watched source and seeing both new members. `list_session_staged_records` returned count=3, ops 1+2 `superseded-by-later-same-file-candidate`, op 3 `staged`. ✓ Full Finding 17+18 verification.
+
+### Composition verification (Finding 17)
+
+Direct read of op 3's staged file (`...\20260518_114615903_..._1f4616c8.cs`) confirmed all three changes co-present:
+- Line 14: `public bool HasAlias => !string.IsNullOrWhiteSpace(Alias);`
+- Lines 64–65: ternary `ToString` rewrite
+- Line 69: `public string GetEffectiveName() => string.IsNullOrWhiteSpace(Alias) ? Expression : Alias;`
+
+### Two cosmetic issues spotted before review launch
+
+- **Line 65 indentation**: ToString lambda continuation pasted at 4-space indent vs the surrounding 8-space class-member context. The whole declaration sits visually mis-aligned. Filed as **Finding 23**.
+- **Lines 66–68 duplicated `// DISPLAY` banner**: `add_method(afterSymbol: ToString)` apparently cloned ToString's leading-trivia comment block ahead of the new method. Original banner before `ToString` still present (correct), but a second identical banner now sits before `GetEffectiveName`. Filed as **Finding 24**.
+
+Both are C#-syntactically valid (overlay validation clean), so I disclosed them to Operator and launched the diff anyway.
+
+### Review and decision
+
+`launch_staged_diff(op 3)` returned `winmerge-launched` PID 35560. Operator accepted in WinMerge. `record_diff_decision(accepted)` returned:
+
+- `classification: accepted` (exact byte match — NOT `accepted-normalized`)
+- `decisionMatchesClassification: true`
+- `currentHash == stagedHash == 0b389f79b989cfaf87f575dc52a474adb825ad8c7fe423672046b37da2c6a937`
+- `originalHash: 6486ebf414ee...` (baseline differs from current — change actually landed)
+
+Post-accept `get_diagnostics(severity=error)` returned `[]`. DBV2 still compiles clean.
+
+### Bonus reproduction — Finding 20 expands
+
+The decision-record `note` I sent contained an em-dash. The response echoed the note with `�` (U+FFFD) where the em-dash was. F20's encoding bug is on the MCP stdio reader, not on a specific tool argument — every string arg has the same exposure. Filed as **Finding 25** so F20 doesn't get marked fixed for `purpose` only.
+
+### Finding 22 — telemetry FileShare race did NOT reproduce
+
+The WinForms host (PID 48724) stayed up through the full staging + diff + accept cycle. No unhandled-exception dialog. F22's Operator resolution (strip the tail-reader entirely, c95c313) is verified end-to-end through the Claude Code MCP path.
+
+### Pass 6 success scorecard
+
+| Goal | Result |
+|------|--------|
+| F17 composition still works post-c95c313 | ✓ verified |
+| F18 `list_session_staged_records` surfaces session records correctly | ✓ verified |
+| F19 source-map signature includes property initializers | ✓ verified (`Binding` shows `= new();`) |
+| F22 telemetry FileShare race gone | ✓ verified (no crash through full cycle) |
+| Watched repo compiles clean post-accept | ✓ verified |
+
+### New findings this pass
+
+- Finding 23: `submit_symbol` doesn't re-indent multi-line member declarations.
+- Finding 24: `add_method` / `add_property` clone `afterSymbol`'s leading-trivia comment block.
+- Finding 25: F20 reproduces on `record_diff_decision.note` — same root cause, broader scope.
+
+3 findings, well under the 5-per-pass cap.
+
+### Watched repo state at end of pass
+
+- `C:\Schema Studio - DBV2`: two modified files now — Pass 5 retest's `SourceTable.cs` plus this pass's `SelectItem.cs` carrying the three Pass 6 changes.
+- Notes branch `claude/live-test-notes-20260517`: this STATUS update, the three Pass 6 findings in FINDINGS.md, and `Pass6_Plan_SelectItem.md` are the new changes since Pass 5 retest commit.
