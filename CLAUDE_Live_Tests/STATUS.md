@@ -406,3 +406,58 @@ The WinForms host (PID 48724) stayed up through the full staging + diff + accept
 
 - `C:\Schema Studio - DBV2`: two modified files now — Pass 5 retest's `SourceTable.cs` plus this pass's `SelectItem.cs` carrying the three Pass 6 changes.
 - Notes branch `claude/live-test-notes-20260517`: this STATUS update, the three Pass 6 findings in FINDINGS.md, and `Pass6_Plan_SelectItem.md` are the new changes since Pass 5 retest commit.
+
+## Pass 7 — 2026-05-18 — Working-candidate composition mode landed on main; pre-flight + setup
+
+### Role recap
+
+- Re-read `origin/codexNotes:CODEX_NOTES/CLAUDE_TESTING_AGENT_PROMPT.md`. Role unchanged: tester/config-helper. Writable lane: `CLAUDE.md` plus `CLAUDE_Live_Tests/**/*.md`. Off-limits: product source, `Docs/Skills/**`, manifest, README, MCP_CLIENT_TESTING, AGENTS.
+- Findings still capped at 5 per pass, 150 words each.
+
+### Branch state
+
+- Was on `claude/live-test-notes-20260517` at branch tip `b8811f1` (Pass 6 notes).
+- `git fetch origin codexNotes main` — picked up three new commits on `origin/main` since the last merge base `c95c313`:
+  - `ede0a47` "Organize Claude report lanes and archive stale docs" (new `CLAUDE_Live_Tests/README.md` lane spec; archived stale `Docs/`).
+  - `694e076` "Block superseded staged candidates" (physical archive of superseded staged files under `Working/Staged/Superseded/<yyyyMMdd>/<recordId>/…`; `launch_staged_diff` and `record_diff_decision` reject `superseded-*` records).
+  - `b0d071e` "Promote Working candidate composition flow" — the new single-file edit mode.
+- Merged `origin/main` into `claude/live-test-notes-20260517` (`dbb3f4f`). Conflicts in `CLAUDE.md` and `CLAUDE_Live_Tests/README.md` resolved:
+  - `CLAUDE.md`: kept my Agent-Role/Pre-flight/Coupled-Edits sections AND added main's Report-And-Memory-Lanes section. Added a new Working Candidate Composition Flow section documenting the V1 path.
+  - `CLAUDE_Live_Tests/README.md`: took main's new date-stamped per-report lane spec. Legacy in-folder files (STATUS.md, FINDINGS.md, etc.) noted as preserved as-is.
+
+### Build
+
+- McpHubBridge and MonitorBaseClaude both not running at start — clean to rebuild.
+- `Tools\Rebuild-MonitorMcp.ps1 -Config Debug -ProjectOnly` — succeeded in 6.25 s. Output `MonitorBaseClaude.McpServer.dll` at `bin\Debug\net10.0\`.
+- `dotnet build MonitorBaseClaude.csproj --configuration Debug` (WinForms host) — succeeded in 2.78 s.
+- WinForms host started, PID 22112, MainWindowTitle "MonitorBaseClaude MCP Client".
+
+### MCP rebind — PRE-FLIGHT BLOCKER for this session
+
+- Session-start system-reminder listed `monitor-base-claude` and `roslyn-codelens` as "still connecting — tools will appear shortly".
+- After rebuild + host start, Operator started the MCP launchers (two `McpHubBridge.exe` PIDs 24800 + 27368 live).
+- `ToolSearch` for `mcp__monitor-base-claude__*` and `mcp__roslyn-codelens__*` still returns "No matching deferred tools found". Keyword searches surface only unrelated tools.
+- Conclusion: Claude Code's MCP client doesn't dynamically rebind to MCP servers that come up mid-session. The "tools will appear shortly" promise from the system reminder did not resolve even after the bridges came up.
+- Tested flow validation **cannot proceed in this session**. Deferred to next Claude Code session (which should pick up the new tool surface at start time).
+- Filing a separate restart-note: `20260518-claude-code-mid-session-mcp-rebind.md`.
+
+### New flow summary — for next session
+
+- `submit_file`, `add_symbol`, `add_field`, `add_method` now compose into `Working\<observedRootKey>\<relative path>`. Multiple ops accumulate; no staged record created until `stage_candidate_for_review`.
+- Baseline rule: first op snapshots watched-source hash/length/timestamp. Later ops refuse with `candidate-baseline-stale` if watched source changed.
+- Legacy escape hatches retained as `submit_file_old`, `add_symbol_old`, `add_field_old`, `add_method_old`.
+- Not yet promoted to the candidate path: `add_property`, `add_constructor`, `add_nested_type`, `submit_symbol`, `remove_symbol`, `set_type_partial`, `add_using`, `remove_using` — still create staged records directly.
+- Superseded staged records physically move to `Working\Staged\Superseded\…`; `launch_staged_diff` / `record_diff_decision` reject them with explicit messages.
+
+### Next Claude pass — when MCP tools are bound at session start
+
+1. Confirm `tools/list` exposes `submit_file`, `add_symbol`, `add_field`, `add_method`, `stage_candidate_for_review`, plus the `_old` variants.
+2. Walk a single-file member edit through the Working-candidate path on a small DBV2 file: `submit_file` or `add_method`, verify `Working\<observedRootKey>\<path>` contains the candidate, no staged record yet, then `stage_candidate_for_review`, `launch_staged_diff`, `record_diff_decision`.
+3. Walk a multi-op same-file edit through the Working candidate (e.g. `add_field` then `add_method` against one path) and confirm the second op composes against the first, not a fresh baseline.
+4. Verify `candidate-baseline-stale` behavior by mutating the watched file out-of-band between two candidate ops.
+5. Verify superseded behavior: stage a candidate, immediately stage a corrected candidate, confirm the first record's QueueStatus reads `superseded-by-later-same-file-candidate` and its staged file is moved under `Working\Staged\Superseded\…`. Try `launch_staged_diff` against the superseded id and confirm the `staged-record-superseded` error.
+
+### Watched repo state at end of pass
+
+- `C:\Schema Studio - DBV2`: still the two modified files from Pass 6 (`SourceTable.cs`, `SelectItem.cs`). No new staged edits this pass.
+- Notes branch `claude/live-test-notes-20260517`: merge commit `dbb3f4f`, updated `CLAUDE.md` (new Working-candidate section), main-canonical `CLAUDE_Live_Tests/README.md`, this STATUS Pass 7 entry, and a new date-stamped restart-note.
