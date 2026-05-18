@@ -76,6 +76,8 @@ For each target file, at the start of the working session do **one** `get_file(s
 - Anchors my reasoning with full structural awareness of the file.
 - Records the file's baseline hash on the server side — the session "teeth" that subsequent operations check against.
 
+Sessions are multi-file aware: a single `sessionId` can anchor N files via N `get_file(sessionId)` calls, each tracking its own baseline hash independently. For coupled multi-file edits, anchor every target file in the same session **before** the first staging call, so the session's hash set covers the whole intended WriteSet at the moment work begins. This is the same "stage every coupled candidate under one session before first review launch" rule from the Stage And Review section, applied at the read layer too.
+
 After the initial anchor, do **not** re-call `get_file` on the same file in the same session. Per-edit semantic queries go through Roslyn (`search_symbols` → `get_type_overview` → `find_callers` / `find_references`); they're small and compact, and they don't duplicate content I already have in context. Use `get_source_map` only when I need stable selector keys that Roslyn's name-based fallback can't disambiguate — not for re-reading content.
 
 Staging payloads then go through the symbol-level tools above. The surrounding code stays in my reasoning context but **never enters a staging payload** — the server splices through Roslyn AST manipulation, so bytes outside my deliberate selector remain byte-for-byte unchanged across the session. This is the structural property that prevents the original failure mode this architecture is designed to solve: an AI silently destroying neighboring work while editing one method.
