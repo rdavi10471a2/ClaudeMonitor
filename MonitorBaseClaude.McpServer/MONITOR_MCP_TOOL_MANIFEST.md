@@ -330,7 +330,7 @@ The response includes `modePurpose`, `estimatedTokenProxy`, `budgetLimit`, `wasT
 
 `budgetLimit` is enforced by the Tool Server. If a shaped response would exceed budget, the Tool Server returns `wasTruncated: true`, omits source-map file payload details, and includes narrowing guidance so the client can retry with less detail.
 
-Event declarations and event fields are surfaced as `event` symbols. Signatures are compact contract signatures, closer to a Visual Studio tree view than a source excerpt, so comments and generated process metadata do not become accidental source-map anchors. Legacy source metadata attributes whose names are `AI*` or `FileVersion` are omitted from source-map output; they remain untouched in source files and remain visible through `get_file` / `get_symbol` / `full` source text. It is a discovery tool; it does not stage or edit files.
+Event declarations and event fields are surfaced as `event` symbols. Signatures are compact contract signatures, closer to a Visual Studio tree view than a source excerpt, so comments and generated process metadata do not become accidental source-map anchors. Durable file-header metadata such as `AIFileContext` and `FileVersion` remains visible in source-map output; legacy workflow-history attributes such as `AIChange`, `AIHistory`, `AIInstructions`, and `UserHistory` are omitted. All attributes remain untouched in source files and remain visible through `get_file` / `get_symbol` / `full` source text. It is a discovery tool; it does not stage or edit files.
 
 This is a published Tier 1 tool, not a background artifact. Use it before C# edits to:
 

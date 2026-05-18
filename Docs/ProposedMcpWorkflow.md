@@ -93,13 +93,13 @@ Purpose: prove operator workflow mechanics without cluttering the WinForms UI.
 Project:
 
 ```text
-C:\VSCodeProjects\MonitorBaseClaude\MonitorBaseClaude.ToolSmokeTests
+C:\VSCodeProjects\MonitorBaseClaude\LocalSmokeTests\LegacyToolSmokeTests
 ```
 
 Current staged-edit smoke command:
 
 ```powershell
-dotnet run --project C:\VSCodeProjects\MonitorBaseClaude\MonitorBaseClaude.ToolSmokeTests\MonitorBaseClaude.ToolSmokeTests.csproj -- --stage-comment-diff
+dotnet run --project C:\VSCodeProjects\MonitorBaseClaude\LocalSmokeTests\LegacyToolSmokeTests\LegacyToolSmokeTests.csproj -- --stage-comment-diff
 ```
 
 Flow:

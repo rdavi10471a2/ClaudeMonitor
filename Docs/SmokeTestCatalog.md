@@ -1,13 +1,13 @@
 # Smoke Test Catalog
 
-This is a debug/maintainer catalog. It lists the current runnable smoke-test modes in `MonitorBaseClaude.ToolSmokeTests`.
+This archived debug/maintainer catalog describes the legacy smoke-test modes that were moved out of the pushed source tree into the ignored `LocalSmokeTests\LegacyToolSmokeTests` workspace.
 
 Normal Claude review and edit planning should use `tools/list`, `get_tool_manifest`, and the staging guide instead. Smoke tests are for reproducing failures, proving fixes, and extending regression coverage.
 
 Run from the repository root:
 
 ```powershell
-dotnet run --project MonitorBaseClaude.ToolSmokeTests/MonitorBaseClaude.ToolSmokeTests.csproj -- <mode>
+dotnet run --project LocalSmokeTests/LegacyToolSmokeTests/LegacyToolSmokeTests.csproj -- <mode>
 ```
 
 Smoke logs are written under:

@@ -1,5 +1,6 @@
 {
   "ServerCommand": "",
   "LogRoot": "",
-  "CapturePayloadPreviewChars": 0
+  "CapturePayloadPreviewChars": 0,
+  "TrimFrameworkMetadataInterfaces": true
 }

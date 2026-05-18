@@ -25,7 +25,7 @@ The current target runtime client is Claude using MCP tools. The current impleme
 - `MonitorBaseClaude.McpServer`
   - MCP Tool Server that exposes the controlled read, source-map, staging, and decision tools.
 
-- `MonitorBaseClaude.ToolSmokeTests`
+- `LocalSmokeTests` is a local-only ignored workspace for smoke probes and legacy smoke harnesses.
   - Console smoke harness for deterministic workflow and fixture testing.
 
 ## Core Workflow
@@ -77,25 +77,25 @@ Use `Docs/ClaudeDesktopAndCodeSetup.md` for the workstation-local direct-exe con
 Decision gate, syntax rejection, dirty blocking, and recovery:
 
 ```powershell
-dotnet run --project .\MonitorBaseClaude.ToolSmokeTests\MonitorBaseClaude.ToolSmokeTests.csproj -- --fixture-decision-gate-smoke
+Legacy smoke harnesses were moved to the ignored `LocalSmokeTests` workspace. New smoke work should use class-per-test structure there first.
 ```
 
 Roslyn source-map and symbol surgery path:
 
 ```powershell
-dotnet run --project .\MonitorBaseClaude.ToolSmokeTests\MonitorBaseClaude.ToolSmokeTests.csproj -- --fixture-roslyn-surgery-smoke
+Use `LocalSmokeTests\LegacyToolSmokeTests` only for local debugging while the smoke suite is being broken into test classes.
 ```
 
 Razor safe-mode path:
 
 ```powershell
-dotnet run --project .\MonitorBaseClaude.ToolSmokeTests\MonitorBaseClaude.ToolSmokeTests.csproj -- --fixture-razor-smoke
+Do not add new modes to the old legacy harness.
 ```
 
 Real watched-project source-map navigation:
 
 ```powershell
-dotnet run --project .\MonitorBaseClaude.ToolSmokeTests\MonitorBaseClaude.ToolSmokeTests.csproj -- --source-map-smoke EditorSurface --scope folder --mode navigation
+New smoke probes should be implemented as one class per test behind a small runner, with separate executables only when process isolation is required.
 ```
 
 ## Current Verification Snapshot

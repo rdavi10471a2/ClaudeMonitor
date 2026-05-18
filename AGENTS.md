@@ -58,13 +58,13 @@ dotnet build .\MonitorBaseClaude.slnx
 Use focused smokes based on the touched surface:
 
 ```powershell
-dotnet run --project .\MonitorBaseClaude.ToolSmokeTests\MonitorBaseClaude.ToolSmokeTests.csproj -- --fixture-decision-gate-smoke
+Legacy smoke tests are local-only under `LocalSmokeTests\LegacyToolSmokeTests` and are not part of normal source pushes.
 
-dotnet run --project .\MonitorBaseClaude.ToolSmokeTests\MonitorBaseClaude.ToolSmokeTests.csproj -- --fixture-roslyn-surgery-smoke
+For new smoke work, prefer one class per test behind a small runner. Use separate executables only for process/bridge/proxy lifecycle probes.
 
-dotnet run --project .\MonitorBaseClaude.ToolSmokeTests\MonitorBaseClaude.ToolSmokeTests.csproj -- --source-map-smoke EditorSurface --scope folder --mode navigation
+Do not add more flags to the old monolithic smoke harness unless explicitly requested.
 
-dotnet run --project .\MonitorBaseClaude.ToolSmokeTests\MonitorBaseClaude.ToolSmokeTests.csproj -- --source-map-corpus-smoke
+Keep local smoke output under `Working\History\ToolSmokeTests` or the ignored `LocalSmokeTests` workspace.
 ```
 
 Use Ollama smokes as harness/model-behavior probes only. Do not treat small local Ollama failures as Monitor correctness failures.

@@ -1,7 +1,6 @@
 <Solution>
   <Project Path="MonitorBaseClaude.csproj" />
   <Project Path="MonitorBaseClaude.McpServer/MonitorBaseClaude.McpServer.csproj" />
-  <Project Path="MonitorBaseClaude.ToolSmokeTests/MonitorBaseClaude.ToolSmokeTests.csproj" />
   <Project Path="Tools/CodeLensTelemetryProxy/CodeLensTelemetryProxy.csproj" />
   <Project Path="Tools/McpHubBridge/McpHubBridge.csproj" />
 </Solution>

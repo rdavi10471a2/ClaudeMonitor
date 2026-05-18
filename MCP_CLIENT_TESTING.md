@@ -4,7 +4,7 @@ This workspace has a project-scoped Claude Code MCP configuration in `.mcp.json`
 
 Claude-facing project rules live in `CLAUDE.md`. Codex/build-agent implementation rules live in `AGENTS.md`. Claude Desktop tests should paste or attach `CLAUDE.md` if Desktop does not read the file automatically.
 
-For a compact Claude workflow sheet, use `Docs\ClaudeRoslynSystemMonitorSkill.md`. It is written like a skill definition: first calls, golden rules, semantic read flow, protected edit flow, and async-change flow.
+For compact Claude workflow guidance, start with `get_staging_guide` or `Docs\Skills\SkillRouter.md`.
 
 ## Server
 
@@ -17,6 +17,26 @@ Build it before opening Claude Code:
 ```powershell
 dotnet build C:\VSCodeProjects\MonitorBaseClaude\MonitorBaseClaude.McpServer\MonitorBaseClaude.McpServer.csproj
 ```
+
+For the Claude Code for VS Code bridge path, also build the hub bridge and Roslyn telemetry proxy:
+
+```powershell
+dotnet build C:\VSCodeProjects\MonitorBaseClaude\Tools\McpHubBridge\McpHubBridge.csproj
+dotnet build C:\VSCodeProjects\MonitorBaseClaude\Tools\CodeLensTelemetryProxy\CodeLensTelemetryProxy.csproj
+```
+
+## Pre-flight
+
+Before live MCP testing:
+
+1. Build the solution or at least the MCP server, hub bridge, and Roslyn telemetry proxy.
+2. Start `MonitorBaseClaude.exe` so the WinForms Host owns the MCP hub pipe.
+3. Fully restart the VS Code window that owns Claude Code. `Developer: Reload Window` may not respawn MCP launchers or refresh tool bindings.
+4. Confirm `monitor-base-claude` and `roslyn-codelens` reconnect.
+5. Call `get_monitor_status`, `get_tool_manifest`, `get_staging_guide`, and `get_workflow_status`.
+6. Confirm Roslyn `list_solutions` and `get_diagnostics` work before staging C# changes.
+
+If the bridge reports that the WinForms hub stream closed or the pipe cannot be reached, restart `MonitorBaseClaude.exe` and then fully restart the VS Code window.
 
 ## Claude Code / VS Code Test
 
@@ -72,9 +92,7 @@ Do not add source process markers or glyph/emoji anchors. Routine workflow state
 
 Use this when you want DBV2-wide source-map coverage and token-pressure proxy analysis:
 
-```powershell
-dotnet run --project .\MonitorBaseClaude.ToolSmokeTests\MonitorBaseClaude.ToolSmokeTests.csproj -- --source-map-corpus-smoke
-```
+The old source-map corpus smoke harness has moved to the ignored `LocalSmokeTests\LegacyToolSmokeTests` workspace. It is local debug tooling, not part of the normal pushed project surface.
 
 The command writes per-file source maps and corpus analysis under `Working\History\ToolSmokeTests\<timestamp>\source-map-corpus`.
 
@@ -164,9 +182,7 @@ Expected behavior:
 
 Use a disposable fixture before allowing real DBV2 staging:
 
-```powershell
-dotnet run --project C:\VSCodeProjects\MonitorBaseClaude\MonitorBaseClaude.ToolSmokeTests\MonitorBaseClaude.ToolSmokeTests.csproj -- --fixture-roslyn-surgery-smoke
-```
+Use local-only smoke tests under `LocalSmokeTests` for fixture staging drills. New tests should be one class per test behind a small runner; use separate executables only for process/bridge/proxy lifecycle probes.
 
 Then ask Claude to review the summary and explain:
 

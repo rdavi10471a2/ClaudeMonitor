@@ -23,6 +23,9 @@ Docs/ClaudeMinimalReviewPack.zip
 # Repo-local MCP tool installs
 Tools/RoslynCodeLens/
 
+# Local-only experimental smoke test projects
+LocalSmokeTests/
+
 # Logs / temporary files
 *.log
 *.tmp

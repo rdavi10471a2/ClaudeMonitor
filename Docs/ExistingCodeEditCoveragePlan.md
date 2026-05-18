@@ -31,7 +31,7 @@ Monitor Tool Server
   MCP server that owns workflow, file staging, sessions, hashes, ledgers, history, and future safe edit tools.
 
 Sidecar Test Runner
-  C:\VSCodeProjects\MonitorBaseClaude\MonitorBaseClaude.ToolSmokeTests\MonitorBaseClaude.ToolSmokeTests.csproj
+  C:\VSCodeProjects\MonitorBaseClaude\LocalSmokeTests\LegacyToolSmokeTests\LegacyToolSmokeTests.csproj
   Console harness that calls real MCP tools and can launch WinMerge as a Host-like process.
 
 Source implementation being ported from
@@ -181,13 +181,13 @@ dotnet build C:\VSCodeProjects\MonitorBaseClaude\MonitorBaseClaude.slnx
 Current scripted smoke command:
 
 ```powershell
-dotnet run --project C:\VSCodeProjects\MonitorBaseClaude\MonitorBaseClaude.ToolSmokeTests\MonitorBaseClaude.ToolSmokeTests.csproj -- --scripted
+dotnet run --project C:\VSCodeProjects\MonitorBaseClaude\LocalSmokeTests\LegacyToolSmokeTests\LegacyToolSmokeTests.csproj -- --scripted
 ```
 
 Current disposable fixture accept smoke command:
 
 ```powershell
-dotnet run --project C:\VSCodeProjects\MonitorBaseClaude\MonitorBaseClaude.ToolSmokeTests\MonitorBaseClaude.ToolSmokeTests.csproj -- --fixture-accept-smoke
+dotnet run --project C:\VSCodeProjects\MonitorBaseClaude\LocalSmokeTests\LegacyToolSmokeTests\LegacyToolSmokeTests.csproj -- --fixture-accept-smoke
 ```
 
 This creates a DBV2-shaped watched fixture under `Working\Fixtures`, writes a fixture-specific config file, starts the real Monitor Tool Server against that config, stages a candidate, records `accepted`, and verifies the fixture source hash equals the staged candidate hash.
@@ -195,7 +195,7 @@ This creates a DBV2-shaped watched fixture under `Working\Fixtures`, writes a fi
 Current disposable decision-gate smoke command:
 
 ```powershell
-dotnet run --project C:\VSCodeProjects\MonitorBaseClaude\MonitorBaseClaude.ToolSmokeTests\MonitorBaseClaude.ToolSmokeTests.csproj -- --fixture-decision-gate-smoke
+dotnet run --project C:\VSCodeProjects\MonitorBaseClaude\LocalSmokeTests\LegacyToolSmokeTests\LegacyToolSmokeTests.csproj -- --fixture-decision-gate-smoke
 ```
 
 This uses the DBV2-shaped fixture to test the strict decision classifications directly:
@@ -209,11 +209,11 @@ This uses the DBV2-shaped fixture to test the strict decision classifications di
 Current real-watched source-map artifact commands:
 
 ```powershell
-dotnet run --project C:\VSCodeProjects\MonitorBaseClaude\MonitorBaseClaude.ToolSmokeTests\MonitorBaseClaude.ToolSmokeTests.csproj -- --source-map-smoke "Data\BaseTableRepository.cs" --scope file --mode selector
+dotnet run --project C:\VSCodeProjects\MonitorBaseClaude\LocalSmokeTests\LegacyToolSmokeTests\LegacyToolSmokeTests.csproj -- --source-map-smoke "Data\BaseTableRepository.cs" --scope file --mode selector
 
-dotnet run --project C:\VSCodeProjects\MonitorBaseClaude\MonitorBaseClaude.ToolSmokeTests\MonitorBaseClaude.ToolSmokeTests.csproj -- --source-map-smoke Data --scope folder --mode navigation
+dotnet run --project C:\VSCodeProjects\MonitorBaseClaude\LocalSmokeTests\LegacyToolSmokeTests\LegacyToolSmokeTests.csproj -- --source-map-smoke Data --scope folder --mode navigation
 
-dotnet run --project C:\VSCodeProjects\MonitorBaseClaude\MonitorBaseClaude.ToolSmokeTests\MonitorBaseClaude.ToolSmokeTests.csproj -- --source-map-corpus-smoke
+dotnet run --project C:\VSCodeProjects\MonitorBaseClaude\LocalSmokeTests\LegacyToolSmokeTests\LegacyToolSmokeTests.csproj -- --source-map-corpus-smoke
 ```
 
 The focused commands call the real `get_source_map` tool against the configured DBV2 watched solution and emit:
@@ -236,7 +236,7 @@ Use raw per-file maps for smoke review and schema debugging. Use the navigation 
 Current disposable Roslyn surgery smoke command:
 
 ```powershell
-dotnet run --project C:\VSCodeProjects\MonitorBaseClaude\MonitorBaseClaude.ToolSmokeTests\MonitorBaseClaude.ToolSmokeTests.csproj -- --fixture-roslyn-surgery-smoke
+dotnet run --project C:\VSCodeProjects\MonitorBaseClaude\LocalSmokeTests\LegacyToolSmokeTests\LegacyToolSmokeTests.csproj -- --fixture-roslyn-surgery-smoke
 ```
 
 This uses the same DBV2-shaped fixture and real Tool Server path to stage and accept `add_using`, `submit_symbol`, `add_symbol`, `remove_symbol`, and `remove_using`.
@@ -244,7 +244,7 @@ This uses the same DBV2-shaped fixture and real Tool Server path to stage and ac
 Current disposable Razor smoke command:
 
 ```powershell
-dotnet run --project C:\VSCodeProjects\MonitorBaseClaude\MonitorBaseClaude.ToolSmokeTests\MonitorBaseClaude.ToolSmokeTests.csproj -- --fixture-razor-smoke
+dotnet run --project C:\VSCodeProjects\MonitorBaseClaude\LocalSmokeTests\LegacyToolSmokeTests\LegacyToolSmokeTests.csproj -- --fixture-razor-smoke
 ```
 
 This uses a separate Razor-shaped fixture to verify current safe Razor behavior: discover/read `.razor`, return an empty C# outline, stage a full-file Razor candidate, report `razor-validation-pending`, and accept all-or-none by hash.
@@ -252,7 +252,7 @@ This uses a separate Razor-shaped fixture to verify current safe Razor behavior:
 Current operator diff smoke command:
 
 ```powershell
-dotnet run --project C:\VSCodeProjects\MonitorBaseClaude\MonitorBaseClaude.ToolSmokeTests\MonitorBaseClaude.ToolSmokeTests.csproj -- --stage-comment-diff
+dotnet run --project C:\VSCodeProjects\MonitorBaseClaude\LocalSmokeTests\LegacyToolSmokeTests\LegacyToolSmokeTests.csproj -- --stage-comment-diff
 ```
 
 Current next coding step:
@@ -896,11 +896,11 @@ The response envelope should not include file content. Return hashes, classifica
 Current:
 
 ```powershell
-dotnet run --project C:\VSCodeProjects\MonitorBaseClaude\MonitorBaseClaude.ToolSmokeTests\MonitorBaseClaude.ToolSmokeTests.csproj -- --stage-comment-diff
+dotnet run --project C:\VSCodeProjects\MonitorBaseClaude\LocalSmokeTests\LegacyToolSmokeTests\LegacyToolSmokeTests.csproj -- --stage-comment-diff
 
-dotnet run --project C:\VSCodeProjects\MonitorBaseClaude\MonitorBaseClaude.ToolSmokeTests\MonitorBaseClaude.ToolSmokeTests.csproj -- --record-decision <stagedRecordId> <accepted|rejected>
+dotnet run --project C:\VSCodeProjects\MonitorBaseClaude\LocalSmokeTests\LegacyToolSmokeTests\LegacyToolSmokeTests.csproj -- --record-decision <stagedRecordId> <accepted|rejected>
 
-dotnet run --project C:\VSCodeProjects\MonitorBaseClaude\MonitorBaseClaude.ToolSmokeTests\MonitorBaseClaude.ToolSmokeTests.csproj -- --fixture-decision-gate-smoke
+dotnet run --project C:\VSCodeProjects\MonitorBaseClaude\LocalSmokeTests\LegacyToolSmokeTests\LegacyToolSmokeTests.csproj -- --fixture-decision-gate-smoke
 ```
 
 Add:

@@ -118,7 +118,7 @@ Overlay compile validation is also a Host-owned gate. If `launch_staged_diff` de
 Operator workflow tests may live in the sidecar console harness instead of the WinForms UI:
 
 ```text
-C:\VSCodeProjects\MonitorBaseClaude\MonitorBaseClaude.ToolSmokeTests
+C:\VSCodeProjects\MonitorBaseClaude\LocalSmokeTests\LegacyToolSmokeTests
 ```
 
 The sidecar runner can call real MCP tools and launch WinMerge directly. This is allowed because the sidecar is a Host-like process, not the stdio Monitor Tool Server. Use it for repeatable smoke tests such as staged edit, diff launch, and `record_diff_decision`.
@@ -128,13 +128,13 @@ The sidecar must not infer acceptance from WinMerge closing. After Operator revi
 Current sidecar decision command:
 
 ```powershell
-dotnet run --project C:\VSCodeProjects\MonitorBaseClaude\MonitorBaseClaude.ToolSmokeTests\MonitorBaseClaude.ToolSmokeTests.csproj -- --record-decision <stagedRecordId> <accepted|rejected>
+dotnet run --project C:\VSCodeProjects\MonitorBaseClaude\LocalSmokeTests\LegacyToolSmokeTests\LegacyToolSmokeTests.csproj -- --record-decision <stagedRecordId> <accepted|rejected>
 ```
 
 Current disposable accept-path smoke command:
 
 ```powershell
-dotnet run --project C:\VSCodeProjects\MonitorBaseClaude\MonitorBaseClaude.ToolSmokeTests\MonitorBaseClaude.ToolSmokeTests.csproj -- --fixture-accept-smoke
+dotnet run --project C:\VSCodeProjects\MonitorBaseClaude\LocalSmokeTests\LegacyToolSmokeTests\LegacyToolSmokeTests.csproj -- --fixture-accept-smoke
 ```
 
 This command uses a generated config file and DBV2-shaped fixture under `Working\Fixtures` so accepted-path mutation can be stress-tested without touching the real watched project.
@@ -142,7 +142,7 @@ This command uses a generated config file and DBV2-shaped fixture under `Working
 Current disposable Roslyn surgery smoke command:
 
 ```powershell
-dotnet run --project C:\VSCodeProjects\MonitorBaseClaude\MonitorBaseClaude.ToolSmokeTests\MonitorBaseClaude.ToolSmokeTests.csproj -- --fixture-roslyn-surgery-smoke
+dotnet run --project C:\VSCodeProjects\MonitorBaseClaude\LocalSmokeTests\LegacyToolSmokeTests\LegacyToolSmokeTests.csproj -- --fixture-roslyn-surgery-smoke
 ```
 
 This command uses the same generated fixture/config path to test `add_using`, `submit_symbol`, `add_symbol`, `remove_symbol`, and `remove_using`.
@@ -150,7 +150,7 @@ This command uses the same generated fixture/config path to test `add_using`, `s
 Current disposable Razor smoke command:
 
 ```powershell
-dotnet run --project C:\VSCodeProjects\MonitorBaseClaude\MonitorBaseClaude.ToolSmokeTests\MonitorBaseClaude.ToolSmokeTests.csproj -- --fixture-razor-smoke
+dotnet run --project C:\VSCodeProjects\MonitorBaseClaude\LocalSmokeTests\LegacyToolSmokeTests\LegacyToolSmokeTests.csproj -- --fixture-razor-smoke
 ```
 
 This command uses a separate Razor-shaped fixture to test current safe Razor behavior: discover, read, stage a full `.razor` candidate, return `razor-validation-pending`, and accept by strict vote-plus-hash gate.

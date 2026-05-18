@@ -57,7 +57,7 @@ Complete candidate prepared
 -> obey the returned classification
 ```
 
-For coupled multi-file C# edits, use one monitor session and stage the whole intended WriteSet before the first `launch_staged_diff`. Overlay compilation must see the proposed files together; WinMerge review is still serial, one file at a time.
+For coupled multi-file C# edits, use one monitor session and stage all affected files before the first `launch_staged_diff`. Overlay compilation must see the proposed files together; WinMerge review is still serial, one file at a time.
 
 ### Unsafe Or Ambiguous Requests
 
@@ -111,7 +111,7 @@ Always prefer Roslyn tools over text or grep search for C# symbol discovery. Nev
 
 Do not use Roslyn CodeLens `apply_code_action` against watched source in this workflow. Treat CodeLens as read/analysis-only unless the Operator explicitly authorizes a separate non-monitor mutation path. Refactorings and fixes for watched source should be converted into a complete candidate and staged through Monitor MCP so WinMerge review and vote-plus-hash classification remain authoritative.
 
-`get_source_map` is a Monitor-owned read/discovery tool. It is expected before C# edits because it gives compact current structure and stable lexical symbol keys without loading full bodies. Treat it like a code manifest: signatures identify the contract surface (return type, name, arguments, modifiers), while bodies come from `get_symbol`. Use `navigation` mode to choose a file/member, `selector` mode to get stable keys and hashes for a chosen file, `detail` mode when contract detail is needed without full audit payloads, and `full` mode only for audit/debug. Source maps intentionally omit legacy `AI*` and `FileVersion` attributes; do not remove those attributes from source merely for token cleanup.
+`get_source_map` is a Monitor-owned read/discovery tool. It is expected before C# edits because it gives compact current structure and stable lexical symbol keys without loading full bodies. Treat it like a code manifest: signatures identify the contract surface (return type, name, arguments, modifiers), while bodies come from `get_symbol`. Use `navigation` mode to choose a file/member, `selector` mode to get stable keys and hashes for a chosen file, `detail` mode when contract detail is needed without full audit payloads, and `full` mode only for audit/debug. Source maps show durable file-header metadata such as `AIFileContext` and `FileVersion`, but omit legacy workflow-history attributes such as `AIChange`, `AIHistory`, `AIInstructions`, and `UserHistory`; do not remove those attributes from source merely for token cleanup.
 
 ## Marker And Glyph Rules
 
@@ -126,7 +126,9 @@ Routine workflow notes belong in monitor-owned staged records, sessions, ledgers
 
 Do not use emoji, glyphs, or decorative Unicode as anchors, markers, or edit instructions. They are fragile in diffs, tokenization, copy/paste, encodings, and context patches. If existing source contains glyphs, treat them as legacy human content and never as an edit anchor.
 
-Source comments are allowed only when they explain real code behavior. Domain metadata such as `AIFileContext` and `FileVersion` may be preserved or updated when it is part of the watched project's convention.
+Source comments are allowed only when they explain real code behavior. Domain metadata such as `AIFileContext` and `FileVersion` is part of the watched project's convention.
+
+When making a meaningful C# source change, preserve and update the existing `AIFileContext` file-name / purpose / notes header as required by the change, and bump that physical file's `FileVersion`. For new C# files, add both `AIFileContext` and `FileVersion("1.0")`. Do not add routine process history with `AIChange`, `AIHistory`, `AIInstructions`, or `UserHistory`; put that in monitor notes or ledgers.
 
 ## Razor Files
 
