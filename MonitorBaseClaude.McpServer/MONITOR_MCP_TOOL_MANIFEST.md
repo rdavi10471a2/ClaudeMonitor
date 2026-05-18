@@ -154,15 +154,15 @@ This prevents Accept and Reject from collapsing into the same raw hash state.
 | session file hash tracking | `check_file_hash`, `get_file.sessionId` | scaffolded |
 | token-saving outline reads | `get_file_outline`, `get_symbol` | scaffolded |
 | Working mirror full-file candidate | `submit_file` | implemented |
-| Working mirror member candidates | `add_symbol`, `add_field`, `add_method` | implemented |
+| Working mirror member candidates | `add_symbol`, `add_field`, `add_method`, `add_property`, `add_constructor`, `add_nested_type` | implemented |
 | Working candidate review snapshot | `stage_candidate_for_review` | implemented |
 | legacy immediate staged whole-file replacement | `submit_file_old` | compatibility |
-| staged symbol replacement | `submit_symbol` | scaffolded |
-| Roslyn type declaration modifier staging | `set_type_partial` | scaffolded |
-| Roslyn typed member insertion | `add_property`, `add_constructor`, `add_nested_type` | scaffolded |
-| legacy immediate staged member insertion | `add_symbol_old`, `add_field_old`, `add_method_old` | compatibility |
-| Roslyn generic symbol insertion | `add_using` | scaffolded |
-| Roslyn symbol removal | `remove_symbol`, `remove_using` | scaffolded |
+| Working mirror symbol replacement/removal | `submit_symbol`, `remove_symbol` | implemented |
+| Working mirror type declaration modifier | `set_type_partial` | implemented |
+| legacy immediate staged member insertion | `add_symbol_old`, `add_field_old`, `add_method_old`, `add_property_old`, `add_constructor_old`, `add_nested_type_old` | compatibility |
+| legacy immediate staged symbol replacement/removal | `submit_symbol_old`, `remove_symbol_old` | compatibility |
+| Working mirror using directive edits | `add_using`, `remove_using` | implemented |
+| legacy immediate staged using/type modifier edits | `add_using_old`, `remove_using_old`, `set_type_partial_old` | compatibility |
 | Roslyn class insertion/removal | `add_class`, `remove_class` | planned |
 | staged candidate WinMerge launch | `launch_staged_diff` | scaffolded |
 | diff outcome classification | `record_diff_decision` | scaffolded |
@@ -439,7 +439,7 @@ Compatibility escape hatch for the old immediate-staging behavior. Prefer `submi
 
 ### `submit_symbol`
 
-Stages replacement of one C# symbol selected by structured selector JSON. The tool generates a full staged candidate file and never overwrites watched source directly.
+Writes replacement of one C# symbol selected by structured selector JSON into the Working mirror candidate. It does not create a staged record. Call `stage_candidate_for_review` when all edits to the file are complete.
 
 Arguments:
 
@@ -451,7 +451,7 @@ Arguments:
 
 ### `add_using` / `remove_using`
 
-Stages adding or removing a using directive in a C# source file.
+Adds or removes a using directive in the Working mirror candidate. These tools do not create staged records. Call `stage_candidate_for_review` when all edits to the file are complete.
 
 Arguments:
 
@@ -462,7 +462,7 @@ Arguments:
 
 ### `set_type_partial`
 
-Stages adding or removing the `partial` modifier on one C# type declaration. Use this before adding a companion partial file/member when the original type is not already partial. This produces a full staged candidate and does not overwrite watched source.
+Adds or removes the `partial` modifier on one C# type declaration in the Working mirror candidate. Use this before adding a companion partial file/member when the original type is not already partial. It does not create a staged record.
 
 Arguments:
 
@@ -474,7 +474,7 @@ Arguments:
 
 ### `add_symbol` / `remove_symbol`
 
-`add_symbol` adds one C# member to the Working mirror candidate. It does not create a staged record. `remove_symbol` still uses the old staged-candidate path and should be treated as legacy until the candidate path covers removals.
+`add_symbol` adds one C# member to the Working mirror candidate. `remove_symbol` removes one selected C# symbol from the Working mirror candidate. Neither tool creates a staged record.
 
 Arguments:
 
@@ -497,7 +497,7 @@ Prefer these narrow tools over generic `add_symbol` when the member kind is know
 - `add_constructor`
 - `add_nested_type`
 
-`add_field` and `add_method` write to the Working mirror candidate and do not create staged records. `add_property`, `add_constructor`, and `add_nested_type` still use the old immediate-staged path until their candidate wrappers are promoted.
+These tools write to the Working mirror candidate and do not create staged records. Use `stage_candidate_for_review` after composing all same-file edits.
 
 Common arguments:
 
@@ -516,7 +516,7 @@ Classifies the completed WinMerge review for a staged edit and enforces the stri
 
 Arguments:
 
-- `stagedRecordId`: staged edit record id returned by a staging tool such as `submit_file`, `submit_symbol`, `set_type_partial`, `add_symbol`, `remove_symbol`, `add_using`, or `remove_using`.
+- `stagedRecordId`: staged edit record id returned by `stage_candidate_for_review` or a legacy `_old` immediate-staging tool.
 - `decision`: Operator-reported outcome, `accepted` or `rejected`.
 - `note`: optional Operator note.
 - `sessionId`: optional durable session handle. Defaults to the staged record session when present.
@@ -546,7 +546,7 @@ Launches WinMerge for an existing staged edit record and returns review paths pl
 
 Arguments:
 
-- `stagedRecordId`: staged edit record id returned by `submit_file`, `submit_symbol`, `add_symbol`, `remove_symbol`, `add_using`, or `remove_using`.
+- `stagedRecordId`: staged edit record id returned by `stage_candidate_for_review` or a legacy `_old` immediate-staging tool.
 - `forceReviewOnOverlayErrors`: optional boolean. Leave `false` unless the Operator explicitly asked to review a compile-failed staged candidate.
 
 Behavior:

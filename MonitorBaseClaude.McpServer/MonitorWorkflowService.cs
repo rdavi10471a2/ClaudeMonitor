@@ -349,9 +349,9 @@ public sealed partial class MonitorWorkflowService
         return StageFileReplacement("submit_file_old", context, content, sessionId, manifestJson, launchDiff);
     }
 
-    public MonitorFileSubmitResult SubmitSymbol(string sourceFilePath, string symbolSelectorJson, string code, string? sessionId = null, string? manifestJson = null)
+    public MonitorFileSubmitResult SubmitSymbolOld(string sourceFilePath, string symbolSelectorJson, string code, string? sessionId = null, string? manifestJson = null)
     {
-        MonitorFileContext context = ResolveCSharpFileContext(sourceFilePath, "submit_symbol");
+        MonitorFileContext context = ResolveCSharpFileContext(sourceFilePath, "submit_symbol_old");
         string editBasePath = ResolveEditBasePath(context, sessionId);
         CompilationUnitSyntax root = ParseCompilationUnit(context, editBasePath);
         MonitorSymbolSelector selector = ParseSymbolSelector(symbolSelectorJson);
@@ -362,12 +362,12 @@ public sealed partial class MonitorWorkflowService
             .WithAdditionalAnnotations(FormatAnnotation);
         CompilationUnitSyntax newRoot = root.ReplaceNode(target, replacement);
         newRoot = FormatAnnotatedNodes(newRoot);
-        return StageFileReplacement("submit_symbol", context, newRoot.ToFullString(), sessionId, manifestJson, launchDiff: false);
+        return StageFileReplacement("submit_symbol_old", context, newRoot.ToFullString(), sessionId, manifestJson, launchDiff: false);
     }
 
-    public MonitorFileSubmitResult AddUsing(string sourceFilePath, string @namespace, string? sessionId = null, string? manifestJson = null)
+    public MonitorFileSubmitResult AddUsingOld(string sourceFilePath, string @namespace, string? sessionId = null, string? manifestJson = null)
     {
-        MonitorFileContext context = ResolveCSharpFileContext(sourceFilePath, "add_using");
+        MonitorFileContext context = ResolveCSharpFileContext(sourceFilePath, "add_using_old");
         string editBasePath = ResolveEditBasePath(context, sessionId);
         CompilationUnitSyntax root = ParseCompilationUnit(context, editBasePath);
         if (root.Usings.Any(usingDirective => string.Equals(usingDirective.Name?.ToString(), @namespace, StringComparison.Ordinal)))
@@ -383,31 +383,31 @@ public sealed partial class MonitorWorkflowService
             .OrderBy(usingDirective => usingDirective.Name?.ToString(), StringComparer.Ordinal)
             .ToArray();
         CompilationUnitSyntax newRoot = root.WithUsings(SyntaxFactory.List(usings));
-        return StageFileReplacement("add_using", context, newRoot.ToFullString(), sessionId, manifestJson, launchDiff: false);
+        return StageFileReplacement("add_using_old", context, newRoot.ToFullString(), sessionId, manifestJson, launchDiff: false);
     }
 
-    public MonitorFileSubmitResult RemoveUsing(string sourceFilePath, string @namespace, string? sessionId = null, string? manifestJson = null)
+    public MonitorFileSubmitResult RemoveUsingOld(string sourceFilePath, string @namespace, string? sessionId = null, string? manifestJson = null)
     {
-        MonitorFileContext context = ResolveCSharpFileContext(sourceFilePath, "remove_using");
+        MonitorFileContext context = ResolveCSharpFileContext(sourceFilePath, "remove_using_old");
         string editBasePath = ResolveEditBasePath(context, sessionId);
         CompilationUnitSyntax root = ParseCompilationUnit(context, editBasePath);
         UsingDirectiveSyntax? target = root.Usings.FirstOrDefault(usingDirective => string.Equals(usingDirective.Name?.ToString(), @namespace, StringComparison.Ordinal))
             ?? throw new InvalidOperationException($"Using '{@namespace}' was not found in {context.RelativeSourcePath}.");
         CompilationUnitSyntax newRoot = root.RemoveNode(target, SyntaxRemoveOptions.KeepNoTrivia)
             ?? throw new InvalidOperationException($"Using '{@namespace}' could not be removed from {context.RelativeSourcePath}.");
-        return StageFileReplacement("remove_using", context, newRoot.ToFullString(), sessionId, manifestJson, launchDiff: false);
+        return StageFileReplacement("remove_using_old", context, newRoot.ToFullString(), sessionId, manifestJson, launchDiff: false);
     }
 
-    public MonitorFileSubmitResult SetTypePartial(string sourceFilePath, string containingType, bool isPartial = true, string? sessionId = null, string? manifestJson = null)
+    public MonitorFileSubmitResult SetTypePartialOld(string sourceFilePath, string containingType, bool isPartial = true, string? sessionId = null, string? manifestJson = null)
     {
-        MonitorFileContext context = ResolveCSharpFileContext(sourceFilePath, "set_type_partial");
+        MonitorFileContext context = ResolveCSharpFileContext(sourceFilePath, "set_type_partial_old");
         string editBasePath = ResolveEditBasePath(context, sessionId);
         CompilationUnitSyntax root = ParseCompilationUnit(context, editBasePath);
         TypeDeclarationSyntax type = ResolveSingleType(root, containingType);
         bool currentlyPartial = type.Modifiers.Any(modifier => modifier.IsKind(SyntaxKind.PartialKeyword));
         if (currentlyPartial == isPartial)
         {
-            return StageFileReplacement("set_type_partial", context, root.ToFullString(), sessionId, manifestJson, launchDiff: false);
+            return StageFileReplacement("set_type_partial_old", context, root.ToFullString(), sessionId, manifestJson, launchDiff: false);
         }
 
         TypeDeclarationSyntax newType = isPartial
@@ -416,7 +416,7 @@ public sealed partial class MonitorWorkflowService
         newType = newType.WithAdditionalAnnotations(FormatAnnotation);
         CompilationUnitSyntax newRoot = root.ReplaceNode(type, newType);
         newRoot = FormatAnnotatedNodes(newRoot);
-        return StageFileReplacement("set_type_partial", context, newRoot.ToFullString(), sessionId, manifestJson, launchDiff: false);
+        return StageFileReplacement("set_type_partial_old", context, newRoot.ToFullString(), sessionId, manifestJson, launchDiff: false);
     }
 
     public MonitorFileSubmitResult AddSymbolOld(
@@ -505,6 +505,76 @@ public sealed partial class MonitorWorkflowService
         return WriteCandidateFile("add_symbol", context, newRoot.ToFullString(), sessionId, manifestJson);
     }
 
+    public MonitorCandidateEditResult SubmitSymbol(string sourceFilePath, string symbolSelectorJson, string code, string? sessionId = null, string? manifestJson = null)
+    {
+        MonitorFileContext context = ResolveCSharpFileContext(sourceFilePath, "submit_symbol");
+        string editBasePath = ResolveCandidateEditBasePath(context, sessionId);
+        CompilationUnitSyntax root = ParseCompilationUnit(context, editBasePath);
+        MonitorSymbolSelector selector = ParseSymbolSelector(symbolSelectorJson);
+        MemberDeclarationSyntax target = ResolveSingleMember(root, selector, context.RelativeSourcePath);
+        MemberDeclarationSyntax replacement = ParseMemberDeclaration(code, "replacement symbol")
+            .WithLeadingTrivia(target.GetLeadingTrivia())
+            .WithTrailingTrivia(target.GetTrailingTrivia())
+            .WithAdditionalAnnotations(FormatAnnotation);
+        CompilationUnitSyntax newRoot = root.ReplaceNode(target, replacement);
+        newRoot = FormatAnnotatedNodes(newRoot);
+        return WriteCandidateFile("submit_symbol", context, newRoot.ToFullString(), sessionId, manifestJson);
+    }
+
+    public MonitorCandidateEditResult AddUsing(string sourceFilePath, string @namespace, string? sessionId = null, string? manifestJson = null)
+    {
+        MonitorFileContext context = ResolveCSharpFileContext(sourceFilePath, "add_using");
+        string editBasePath = ResolveCandidateEditBasePath(context, sessionId);
+        CompilationUnitSyntax root = ParseCompilationUnit(context, editBasePath);
+        if (root.Usings.Any(usingDirective => string.Equals(usingDirective.Name?.ToString(), @namespace, StringComparison.Ordinal)))
+        {
+            throw new InvalidOperationException($"Using '{@namespace}' already exists in {context.RelativeSourcePath}.");
+        }
+
+        UsingDirectiveSyntax newUsing = SyntaxFactory.ParseCompilationUnit($"using {@namespace};{Environment.NewLine}")
+            .Usings
+            .Single();
+        UsingDirectiveSyntax[] usings = root.Usings
+            .Add(newUsing)
+            .OrderBy(usingDirective => usingDirective.Name?.ToString(), StringComparer.Ordinal)
+            .ToArray();
+        CompilationUnitSyntax newRoot = root.WithUsings(SyntaxFactory.List(usings));
+        return WriteCandidateFile("add_using", context, newRoot.ToFullString(), sessionId, manifestJson);
+    }
+
+    public MonitorCandidateEditResult RemoveUsing(string sourceFilePath, string @namespace, string? sessionId = null, string? manifestJson = null)
+    {
+        MonitorFileContext context = ResolveCSharpFileContext(sourceFilePath, "remove_using");
+        string editBasePath = ResolveCandidateEditBasePath(context, sessionId);
+        CompilationUnitSyntax root = ParseCompilationUnit(context, editBasePath);
+        UsingDirectiveSyntax? target = root.Usings.FirstOrDefault(usingDirective => string.Equals(usingDirective.Name?.ToString(), @namespace, StringComparison.Ordinal))
+            ?? throw new InvalidOperationException($"Using '{@namespace}' was not found in {context.RelativeSourcePath}.");
+        CompilationUnitSyntax newRoot = root.RemoveNode(target, SyntaxRemoveOptions.KeepNoTrivia)
+            ?? throw new InvalidOperationException($"Using '{@namespace}' could not be removed from {context.RelativeSourcePath}.");
+        return WriteCandidateFile("remove_using", context, newRoot.ToFullString(), sessionId, manifestJson);
+    }
+
+    public MonitorCandidateEditResult SetTypePartial(string sourceFilePath, string containingType, bool isPartial = true, string? sessionId = null, string? manifestJson = null)
+    {
+        MonitorFileContext context = ResolveCSharpFileContext(sourceFilePath, "set_type_partial");
+        string editBasePath = ResolveCandidateEditBasePath(context, sessionId);
+        CompilationUnitSyntax root = ParseCompilationUnit(context, editBasePath);
+        TypeDeclarationSyntax type = ResolveSingleType(root, containingType);
+        bool currentlyPartial = type.Modifiers.Any(modifier => modifier.IsKind(SyntaxKind.PartialKeyword));
+        if (currentlyPartial == isPartial)
+        {
+            return WriteCandidateFile("set_type_partial", context, root.ToFullString(), sessionId, manifestJson);
+        }
+
+        TypeDeclarationSyntax newType = isPartial
+            ? type.WithModifiers(type.Modifiers.Add(SyntaxFactory.Token(SyntaxKind.PartialKeyword).WithTrailingTrivia(SyntaxFactory.Space)))
+            : type.WithModifiers(SyntaxFactory.TokenList(type.Modifiers.Where(modifier => !modifier.IsKind(SyntaxKind.PartialKeyword))));
+        newType = newType.WithAdditionalAnnotations(FormatAnnotation);
+        CompilationUnitSyntax newRoot = root.ReplaceNode(type, newType);
+        newRoot = FormatAnnotatedNodes(newRoot);
+        return WriteCandidateFile("set_type_partial", context, newRoot.ToFullString(), sessionId, manifestJson);
+    }
+
     public MonitorCandidateEditResult AddField(string sourceFilePath, string containingType, string declaration, string? afterSymbol = null, string? sessionId = null, string? manifestJson = null)
     {
         return AddSymbol(sourceFilePath, containingType, "field", declaration, afterSymbol, sessionId, manifestJson);
@@ -535,9 +605,9 @@ public sealed partial class MonitorWorkflowService
         return AddSymbolOld(sourceFilePath, containingType, "field", declaration, afterSymbol, sessionId, manifestJson);
     }
 
-    public MonitorFileSubmitResult AddProperty(string sourceFilePath, string containingType, string declaration, string? afterSymbol = null, string? sessionId = null, string? manifestJson = null)
+    public MonitorCandidateEditResult AddProperty(string sourceFilePath, string containingType, string declaration, string? afterSymbol = null, string? sessionId = null, string? manifestJson = null)
     {
-        return AddSymbolOld(sourceFilePath, containingType, "property", declaration, afterSymbol, sessionId, manifestJson);
+        return AddSymbol(sourceFilePath, containingType, "property", declaration, afterSymbol, sessionId, manifestJson);
     }
 
     public MonitorFileSubmitResult AddMethodOld(string sourceFilePath, string containingType, string declaration, string? afterSymbol = null, string? sessionId = null, string? manifestJson = null)
@@ -545,12 +615,34 @@ public sealed partial class MonitorWorkflowService
         return AddSymbolOld(sourceFilePath, containingType, "method", declaration, afterSymbol, sessionId, manifestJson);
     }
 
-    public MonitorFileSubmitResult AddConstructor(string sourceFilePath, string containingType, string declaration, string? afterSymbol = null, string? sessionId = null, string? manifestJson = null)
+    public MonitorCandidateEditResult AddConstructor(string sourceFilePath, string containingType, string declaration, string? afterSymbol = null, string? sessionId = null, string? manifestJson = null)
+    {
+        return AddSymbol(sourceFilePath, containingType, "constructor", declaration, afterSymbol, sessionId, manifestJson);
+    }
+
+    public MonitorCandidateEditResult AddNestedType(string sourceFilePath, string containingType, string declaration, string? afterSymbol = null, string? sessionId = null, string? manifestJson = null)
+    {
+        MemberDeclarationSyntax member = ParseMemberDeclaration(declaration, "new nested type");
+        string kind = SymbolKind(member);
+        if (kind is not ("class" or "struct" or "interface" or "record" or "enum"))
+        {
+            throw new InvalidOperationException($"Nested type declaration must be class, struct, interface, record, or enum. Actual kind: '{kind}'.");
+        }
+
+        return AddSymbol(sourceFilePath, containingType, kind, declaration, afterSymbol, sessionId, manifestJson);
+    }
+
+    public MonitorFileSubmitResult AddPropertyOld(string sourceFilePath, string containingType, string declaration, string? afterSymbol = null, string? sessionId = null, string? manifestJson = null)
+    {
+        return AddSymbolOld(sourceFilePath, containingType, "property", declaration, afterSymbol, sessionId, manifestJson);
+    }
+
+    public MonitorFileSubmitResult AddConstructorOld(string sourceFilePath, string containingType, string declaration, string? afterSymbol = null, string? sessionId = null, string? manifestJson = null)
     {
         return AddSymbolOld(sourceFilePath, containingType, "constructor", declaration, afterSymbol, sessionId, manifestJson);
     }
 
-    public MonitorFileSubmitResult AddNestedType(string sourceFilePath, string containingType, string declaration, string? afterSymbol = null, string? sessionId = null, string? manifestJson = null)
+    public MonitorFileSubmitResult AddNestedTypeOld(string sourceFilePath, string containingType, string declaration, string? afterSymbol = null, string? sessionId = null, string? manifestJson = null)
     {
         MemberDeclarationSyntax member = ParseMemberDeclaration(declaration, "new nested type");
         string kind = SymbolKind(member);
@@ -562,16 +654,28 @@ public sealed partial class MonitorWorkflowService
         return AddSymbolOld(sourceFilePath, containingType, kind, declaration, afterSymbol, sessionId, manifestJson);
     }
 
-    public MonitorFileSubmitResult RemoveSymbol(string sourceFilePath, string symbolSelectorJson, string? sessionId = null, string? manifestJson = null)
+    public MonitorCandidateEditResult RemoveSymbol(string sourceFilePath, string symbolSelectorJson, string? sessionId = null, string? manifestJson = null)
     {
         MonitorFileContext context = ResolveCSharpFileContext(sourceFilePath, "remove_symbol");
+        string editBasePath = ResolveCandidateEditBasePath(context, sessionId);
+        CompilationUnitSyntax root = ParseCompilationUnit(context, editBasePath);
+        MonitorSymbolSelector selector = ParseSymbolSelector(symbolSelectorJson);
+        MemberDeclarationSyntax target = ResolveSingleMember(root, selector, context.RelativeSourcePath);
+        CompilationUnitSyntax newRoot = root.RemoveNode(target, SyntaxRemoveOptions.KeepNoTrivia)
+            ?? throw new InvalidOperationException($"Symbol '{selector.Name}' could not be removed from {context.RelativeSourcePath}.");
+        return WriteCandidateFile("remove_symbol", context, newRoot.ToFullString(), sessionId, manifestJson);
+    }
+
+    public MonitorFileSubmitResult RemoveSymbolOld(string sourceFilePath, string symbolSelectorJson, string? sessionId = null, string? manifestJson = null)
+    {
+        MonitorFileContext context = ResolveCSharpFileContext(sourceFilePath, "remove_symbol_old");
         string editBasePath = ResolveEditBasePath(context, sessionId);
         CompilationUnitSyntax root = ParseCompilationUnit(context, editBasePath);
         MonitorSymbolSelector selector = ParseSymbolSelector(symbolSelectorJson);
         MemberDeclarationSyntax target = ResolveSingleMember(root, selector, context.RelativeSourcePath);
         CompilationUnitSyntax newRoot = root.RemoveNode(target, SyntaxRemoveOptions.KeepNoTrivia)
             ?? throw new InvalidOperationException($"Symbol '{selector.Name}' could not be removed from {context.RelativeSourcePath}.");
-        return StageFileReplacement("remove_symbol", context, newRoot.ToFullString(), sessionId, manifestJson, launchDiff: false);
+        return StageFileReplacement("remove_symbol_old", context, newRoot.ToFullString(), sessionId, manifestJson, launchDiff: false);
     }
 
     private MonitorFileSubmitResult StageFileReplacement(
@@ -863,8 +967,28 @@ public sealed partial class MonitorWorkflowService
 
         if (IsSupersededRecord(record))
         {
-            throw new InvalidOperationException(
-                $"Staged record {record.RecordId} is superseded by a later candidate and cannot be classified. Use list_session_staged_records to locate the current staged record for this session.");
+            string currentHash = File.Exists(record.SourceFilePath)
+                ? ComputeSha256(record.SourceFilePath)
+                : NewFileOriginalHash;
+            MonitorDiffDecisionResult supersededResult = new(
+                record.RecordId,
+                string.IsNullOrWhiteSpace(sessionId) ? record.SessionId : sessionId,
+                record.SourceFilePath,
+                record.RelativeSourcePath,
+                recordPath,
+                record.ServerDerivedMetadata.StagedFilePath,
+                normalizedDecision,
+                "staged-record-superseded",
+                false,
+                false,
+                record.OriginalHash,
+                record.StagedHash,
+                currentHash,
+                record.QueueStatus,
+                "This staged record was superseded by a later same-file candidate. Use list_session_staged_records to locate the current staged record for this session.",
+                DateTimeOffset.UtcNow);
+            string supersededDecisionRecordPath = WriteDiffDecisionRecord(supersededResult);
+            return supersededResult with { DecisionRecordPath = supersededDecisionRecordPath };
         }
 
         string effectiveSessionId = string.IsNullOrWhiteSpace(sessionId) ? record.SessionId ?? string.Empty : sessionId;
@@ -903,7 +1027,28 @@ public sealed partial class MonitorWorkflowService
         };
 
         string decisionRecordPath = WriteDiffDecisionRecord(result);
+        ClearCandidateStateAfterCompletedDecision(record, classificationResult.Classification);
         return result with { DecisionRecordPath = decisionRecordPath };
+    }
+
+    private void ClearCandidateStateAfterCompletedDecision(StagedEditRecord record, string classification)
+    {
+        if (!record.Operation.Equals("stage_candidate_for_review", StringComparison.OrdinalIgnoreCase))
+        {
+            return;
+        }
+
+        if (classification.Equals("dirty-unexpected", StringComparison.OrdinalIgnoreCase))
+        {
+            return;
+        }
+
+        MonitorFileContext context = ResolveFileContext(record.SourceFilePath, allowMissing: true);
+        string statePath = GetCandidateStatePath(context);
+        if (File.Exists(statePath))
+        {
+            File.Delete(statePath);
+        }
     }
 
     public MonitorStagedDiffLaunchResult LaunchStagedDiff(string stagedRecordId, bool forceReviewOnOverlayErrors = false)
@@ -1311,10 +1456,12 @@ public sealed partial class MonitorWorkflowService
 
     private static TypeDeclarationSyntax ResolveSingleType(CompilationUnitSyntax root, string containingType)
     {
+        bool expectsQualifiedName = containingType.Contains('.', StringComparison.Ordinal);
         TypeDeclarationSyntax[] matches = root.DescendantNodes()
             .OfType<TypeDeclarationSyntax>()
-            .Where(type => type.Identifier.ValueText.Equals(containingType, StringComparison.Ordinal)
-                || BuildContainingType(type)?.EndsWith(containingType, StringComparison.Ordinal) == true)
+            .Where(type => expectsQualifiedName
+                ? string.Equals(BuildContainingType(type), containingType, StringComparison.Ordinal)
+                : type.Identifier.ValueText.Equals(containingType, StringComparison.Ordinal))
             .ToArray();
 
         return matches.Length switch

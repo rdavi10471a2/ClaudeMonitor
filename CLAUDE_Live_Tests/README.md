@@ -11,6 +11,36 @@ Claude may write findings, bug reports, and doc suggestions here when live MCP t
 - Do not put product source changes here.
 - Do not edit official docs from this lane unless the operator explicitly asks.
 - Do not treat old reports here as current workflow instructions.
+- Do not append new findings to legacy rollup files such as `STATUS.md`, `FINDINGS.md`, `SCRATCH.md`, or `SESSION_RESUME.md`. Treat them as historical.
+- Move any current local restart notes or scratch findings that need Codex/operator review into new dated files in this folder, then clear or archive the local copies yourself.
+
+## Required Cleanup Pass
+
+At the start of a live-test reporting session, inspect local scratch/restart notes and publish only the useful current items into dated report files here.
+
+Run from the repository root:
+
+```powershell
+git status --short --branch
+Get-ChildItem .\CLAUDE_Live_Tests
+Get-ChildItem .\.claude-local -Recurse -File -ErrorAction SilentlyContinue
+```
+
+For each local note that still matters, create one dated report:
+
+```powershell
+New-Item -ItemType File .\CLAUDE_Live_Tests\YYYYMMDD-short-topic.md
+notepad .\CLAUDE_Live_Tests\YYYYMMDD-short-topic.md
+```
+
+After the useful content has been moved, remove or locally archive the stale scratch copy:
+
+```powershell
+Remove-Item .\.claude-local\scratch-file-name.md
+git status --short
+```
+
+Only commit reports that should be reviewed. Do not preserve old historical noise just because it exists.
 
 ## Naming
 
