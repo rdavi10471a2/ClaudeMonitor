@@ -42,7 +42,7 @@ When editing this repo, do not weaken these invariants:
 - Do not change public tool contracts unless the task explicitly requires it.
 - Preserve existing `AIFileContext`, `FileVersion`, and meaningful `AIChange` attributes.
 - Do not add routine process comments to watched source.
-- Do not add glyphs, emoji, or decorative Unicode as anchors or workflow markers.
+- Do not add glyphs, emoji, decorative Unicode, or non-ASCII process text as anchors, workflow markers, session purposes, or generated source strings.
 - Keep generated monitor state under `Working`, not inside the watched project.
 - Use disposable fixtures for mutation-path tests when possible.
 - Use real DBV2 source-map smokes for read/discovery artifacts, not mutation.

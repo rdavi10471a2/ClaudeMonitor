@@ -99,6 +99,14 @@ public sealed class MonitorTools
     }
 
     [McpServerTool]
+    [Description("List staged edit records linked to a durable monitor session, including queue status, staged paths, and validation status.")]
+    public MonitorSessionStagedRecordsResult ListSessionStagedRecords(
+        [Description("Session handle returned by start_monitor_session.")] string sessionId)
+    {
+        return Track(nameof(ListSessionStagedRecords), new { sessionId }, () => workflowService.ListSessionStagedRecords(sessionId));
+    }
+
+    [McpServerTool]
     [Description("Append an event to a durable monitor session. Use this to record tool decisions, tool results, and final answers.")]
     public MonitorSessionState RecordMonitorSessionEvent(
         [Description("Session handle returned by start_monitor_session.")] string sessionId,

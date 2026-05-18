@@ -135,6 +135,7 @@ This prevents Accept and Reject from collapsing into the same raw hash state.
 | source file read | `get_file` | scaffolded |
 | source file discovery | `find_file` | scaffolded |
 | explicit durable state handle | `start_monitor_session`, `get_monitor_session`, `record_monitor_session_event`, `list_monitor_sessions` | scaffolded |
+| session staged edit visibility | `list_session_staged_records` | scaffolded |
 | session file hash tracking | `check_file_hash`, `get_file.sessionId` | scaffolded |
 | token-saving outline reads | `get_file_outline`, `get_symbol` | scaffolded |
 | staged whole-file replacement | `submit_file` | scaffolded |
@@ -180,6 +181,7 @@ MCP clients should not assume implicit per-connection state. The monitor server 
 - `start_monitor_session(purpose?)`: creates a server-side session handle under `Working\Sessions`.
 - `list_monitor_sessions()`: lists known session handles.
 - `get_monitor_session(sessionId)`: reads one durable session.
+- `list_session_staged_records(sessionId)`: lists staged edit records linked to one session, including queue status, staged paths, and validation status.
 - `record_monitor_session_event(sessionId, eventType, summary, payloadJson?)`: appends an event.
 - `check_file_hash(sessionId, sourceFilePath)`: checks whether a watched file has changed since it was last fetched in the session.
 
@@ -261,6 +263,25 @@ Returns:
 - current hash, length, and timestamp
 - previously recorded session hash, length, timestamp, and fetch count
 
+### `list_session_staged_records`
+
+Lists staged edit records linked to a durable monitor session.
+
+Arguments:
+
+- `sessionId`: durable session handle returned by `start_monitor_session`.
+
+Returns compact record summaries:
+
+- staged record id and queue status
+- source and staged file paths
+- operation and creation time
+- original/staged hashes
+- syntax and overlay validation status
+- manifest JSON when the client supplied it
+
+Use this when a client needs to confirm what is staged for the session before launching or recording diff decisions. It is read-only and does not change queue state.
+
 ### `find_file`
 
 Finds files under the watched project folder by filename or wildcard pattern.
@@ -330,7 +351,7 @@ The response includes `modePurpose`, `estimatedTokenProxy`, `budgetLimit`, `wasT
 
 `budgetLimit` is enforced by the Tool Server. If a shaped response would exceed budget, the Tool Server returns `wasTruncated: true`, omits source-map file payload details, and includes narrowing guidance so the client can retry with less detail.
 
-Event declarations and event fields are surfaced as `event` symbols. Signatures are compact contract signatures, closer to a Visual Studio tree view than a source excerpt, so comments and generated process metadata do not become accidental source-map anchors. Durable file-header metadata such as `AIFileContext` and `FileVersion` remains visible in source-map output; legacy workflow-history attributes such as `AIChange`, `AIHistory`, `AIInstructions`, and `UserHistory` are omitted. All attributes remain untouched in source files and remain visible through `get_file` / `get_symbol` / `full` source text. It is a discovery tool; it does not stage or edit files.
+Event declarations and event fields are surfaced as `event` symbols. Signatures are compact contract signatures, closer to a Visual Studio tree view than a source excerpt, so comments and generated process metadata do not become accidental source-map anchors. Property and field initializers are included because they are part of the local dependency/default-value shape. Durable file-header metadata such as `AIFileContext` and `FileVersion` remains visible in source-map output; legacy workflow-history attributes such as `AIChange`, `AIHistory`, `AIInstructions`, and `UserHistory` are omitted. All attributes remain untouched in source files and remain visible through `get_file` / `get_symbol` / `full` source text. It is a discovery tool; it does not stage or edit files.
 
 This is a published Tier 1 tool, not a background artifact. Use it before C# edits to:
 
