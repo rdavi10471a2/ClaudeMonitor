@@ -7,7 +7,7 @@ namespace MonitorBaseClaude.Controls;
 
 [DesignerCategory("Code")]
 [AIFileContext("TelemetryLogControl.cs", "Code-only telemetry viewer for proxy JSONL request, response, error, and stderr logs.")]
-[FileVersion("1.2")]
+[FileVersion("1.3")]
 public sealed class TelemetryLogControl : UserControl
 {
     private const int FriendlySplitterWidth = 12;
@@ -21,7 +21,6 @@ public sealed class TelemetryLogControl : UserControl
     private readonly Button refreshButton = new();
     private readonly Button openFolderButton = new();
     private readonly CheckBox autoRefreshCheckBox = new();
-    private readonly System.Windows.Forms.Timer refreshTimer = new();
 
     public TelemetryLogControl()
         : this(ResolveRoslynLogRoot())
@@ -39,10 +38,7 @@ public sealed class TelemetryLogControl : UserControl
         this.logRoot = logRoot;
         this.title = title;
         BuildLayout();
-        refreshTimer.Interval = 3000;
-        refreshTimer.Tick += (_, _) => RefreshLogs();
         McpProxyHubService.TelemetryRecorded += OnHubTelemetryRecorded;
-        RefreshLogs();
     }
 
     protected override void Dispose(bool disposing)
@@ -50,7 +46,6 @@ public sealed class TelemetryLogControl : UserControl
         if (disposing)
         {
             McpProxyHubService.TelemetryRecorded -= OnHubTelemetryRecorded;
-            refreshTimer.Dispose();
         }
 
         base.Dispose(disposing);
@@ -106,17 +101,9 @@ public sealed class TelemetryLogControl : UserControl
         openFolderButton.Click += (_, _) => OpenLogFolder();
         autoRefreshCheckBox.Text = "Auto";
         autoRefreshCheckBox.AutoSize = true;
-        autoRefreshCheckBox.Checked = false;
+        autoRefreshCheckBox.Checked = true;
         autoRefreshCheckBox.Dock = DockStyle.Fill;
         autoRefreshCheckBox.Margin = new Padding(8, 3, 0, 0);
-        autoRefreshCheckBox.CheckedChanged += (_, _) =>
-        {
-            refreshTimer.Enabled = autoRefreshCheckBox.Checked;
-            if (autoRefreshCheckBox.Checked)
-            {
-                RefreshLogs();
-            }
-        };
         buttons.Controls.Add(refreshButton, 0, 0);
         buttons.Controls.Add(openFolderButton, 1, 0);
         buttons.Controls.Add(autoRefreshCheckBox, 2, 0);
@@ -313,6 +300,11 @@ public sealed class TelemetryLogControl : UserControl
 
     private void OnHubTelemetryRecorded(object? sender, McpHubTelemetryRecord record)
     {
+        if (!autoRefreshCheckBox.Checked)
+        {
+            return;
+        }
+
         if (!string.Equals(Path.GetFullPath(record.LogRoot), Path.GetFullPath(logRoot), StringComparison.OrdinalIgnoreCase))
         {
             return;
@@ -415,7 +407,9 @@ public sealed class TelemetryLogControl : UserControl
     {
         foreach (string path in GetTelemetryFiles(fileName))
         {
-            foreach (string line in File.ReadLines(path))
+            using FileStream stream = new(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
+            using StreamReader reader = new(stream);
+            while (reader.ReadLine() is { } line)
             {
                 if (string.IsNullOrWhiteSpace(line))
                 {

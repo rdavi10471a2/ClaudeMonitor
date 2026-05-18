@@ -312,6 +312,37 @@ public sealed partial class MonitorWorkflowService
         };
     }
 
+    public MonitorSessionStagedRecordsResult ListSessionStagedRecords(string sessionId)
+    {
+        if (string.IsNullOrWhiteSpace(sessionId))
+        {
+            throw new ArgumentException("sessionId is required.", nameof(sessionId));
+        }
+
+        MonitorSessionStagedRecordSummary[] records = ReadSessionStagedRecordEntries(sessionId)
+            .Select(item => new MonitorSessionStagedRecordSummary(
+                item.Record.RecordId,
+                item.Record.SessionId,
+                item.Record.RelativeSourcePath,
+                item.Record.SourceFilePath,
+                item.Record.Operation,
+                item.Record.CreatedAt,
+                item.Record.QueueStatus,
+                item.Record.ServerDerivedMetadata.StagedFilePath,
+                item.Record.OriginalHash,
+                item.Record.StagedHash,
+                item.Record.SyntaxValidation.HasErrors,
+                item.Record.OverlayValidation.Status,
+                item.Record.OverlayValidation.HasErrors,
+                item.Record.OverlayValidation.OverlayFileCount,
+                item.RecordPath,
+                item.Record.NewFileReviewBaselinePath,
+                item.Record.ManifestJson))
+            .ToArray();
+
+        return new MonitorSessionStagedRecordsResult(sessionId, records.Length, records);
+    }
+
     public MonitorFileSubmitResult SubmitFile(string sourceFilePath, string content, string? sessionId = null, string? manifestJson = null, bool launchDiff = false)
     {
         MonitorFileContext context = ResolveFileContext(sourceFilePath, allowMissing: true);
@@ -2889,8 +2920,8 @@ public sealed partial class MonitorWorkflowService
             MethodDeclarationSyntax method => $"{prefix}{method.ReturnType} {method.Identifier.ValueText}({BuildParameterList(method.ParameterList.Parameters)})",
             ConstructorDeclarationSyntax constructor => $"{prefix}{constructor.Identifier.ValueText}({BuildParameterList(constructor.ParameterList.Parameters)})",
             PropertyDeclarationSyntax property => BuildPropertySignature(property),
-            FieldDeclarationSyntax field => $"{prefix}{field.Declaration.Type} {string.Join(", ", field.Declaration.Variables.Select(variable => variable.Identifier.ValueText))}",
-            EventFieldDeclarationSyntax eventField => $"{prefix}event {eventField.Declaration.Type} {string.Join(", ", eventField.Declaration.Variables.Select(variable => variable.Identifier.ValueText))}",
+            FieldDeclarationSyntax field => $"{prefix}{field.Declaration.Type} {BuildVariableList(field.Declaration.Variables)}",
+            EventFieldDeclarationSyntax eventField => $"{prefix}event {eventField.Declaration.Type} {BuildVariableList(eventField.Declaration.Variables)}",
             EventDeclarationSyntax evt => $"{prefix}event {evt.Type} {evt.Identifier.ValueText}",
             DelegateDeclarationSyntax del => $"{prefix}delegate {del.ReturnType} {del.Identifier.ValueText}({BuildParameterList(del.ParameterList.Parameters)})",
             BaseTypeDeclarationSyntax type => $"{prefix}{GetTypeDeclarationKeyword(type)} {type.Identifier.ValueText}{BuildBaseListSuffix(type)}",
@@ -2907,6 +2938,11 @@ public sealed partial class MonitorWorkflowService
             string defaultValue = parameter.Default is null ? string.Empty : $" = {parameter.Default.Value}";
             return $"{prefix}{parameter.Type} {parameter.Identifier.ValueText}{defaultValue}";
         }));
+    }
+
+    private static string BuildVariableList(SeparatedSyntaxList<VariableDeclaratorSyntax> variables)
+    {
+        return string.Join(", ", variables.Select(variable => variable.ToString()));
     }
 
     private static string BuildBaseListSuffix(BaseTypeDeclarationSyntax type)
@@ -2935,7 +2971,9 @@ public sealed partial class MonitorWorkflowService
         string accessors = property.AccessorList is null
             ? "get;"
             : string.Join(" ", property.AccessorList.Accessors.Select(BuildAccessorSignature));
-        return $"{prefix}{property.Type} {property.Identifier.ValueText} {{ {accessors} }}";
+        string initializer = property.Initializer is null ? string.Empty : $" {property.Initializer}";
+        string terminator = property.Initializer is null ? string.Empty : ";";
+        return $"{prefix}{property.Type} {property.Identifier.ValueText} {{ {accessors} }}{initializer}{terminator}";
     }
 
     private static string BuildAccessorSignature(AccessorDeclarationSyntax accessor)
@@ -3142,6 +3180,30 @@ public sealed record MonitorSourceMapNextCall(
     string Tool,
     string Reason,
     IReadOnlyDictionary<string, string> Arguments);
+
+public sealed record MonitorSessionStagedRecordsResult(
+    string SessionId,
+    int Count,
+    IReadOnlyList<MonitorSessionStagedRecordSummary> Records);
+
+public sealed record MonitorSessionStagedRecordSummary(
+    string RecordId,
+    string? SessionId,
+    string RelativeSourcePath,
+    string SourceFilePath,
+    string Operation,
+    DateTimeOffset CreatedAt,
+    string QueueStatus,
+    string StagedFilePath,
+    string OriginalHash,
+    string StagedHash,
+    bool SyntaxHasErrors,
+    string OverlayStatus,
+    bool OverlayHasErrors,
+    int OverlayFileCount,
+    string StagedRecordPath,
+    string? NewFileReviewBaselinePath,
+    string? ManifestJson);
 
 public sealed record MonitorSymbolSelector(
     string? ContainingNamespace = null,

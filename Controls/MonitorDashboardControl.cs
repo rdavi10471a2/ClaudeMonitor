@@ -5,7 +5,7 @@ namespace MonitorBaseClaude.Controls;
 
 [DesignerCategory("Code")]
 [AIFileContext("MonitorDashboardControl.cs", "Code-only monitor shell using deterministic split containers for tool navigation, MCP testing, and telemetry panes.")]
-[FileVersion("2.4")]
+[FileVersion("2.5")]
 public sealed class MonitorDashboardControl : UserControl
 {
     private const int FriendlySplitterWidth = 12;
@@ -119,13 +119,10 @@ public sealed class MonitorDashboardControl : UserControl
         };
 
         testBenchControl.StatusChanged += status => sessionInspectorControl?.SetStatus(status);
-        testBenchControl.ToolInvocationCompleted += telemetryLogControl.RefreshLogs;
         testBenchControl.SolutionLoaded += session =>
         {
             toolNavigatorControl.LoadTools(session.Tools);
             sessionInspectorControl?.LoadSession(session);
-            telemetryLogControl.RefreshLogs();
-            monitorMcpTelemetryLogControl.RefreshLogs();
         };
         testBenchControl.ProjectSelected += project => sessionInspectorControl?.ShowProject(project);
     }
