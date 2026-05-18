@@ -613,6 +613,12 @@ public sealed partial class MonitorWorkflowService
                 $"Staged record {record.RecordId} is blocked-dirty-unexpected and cannot be reclassified. Run refresh_file after Host/Operator inspection before staging another candidate.");
         }
 
+        if (IsSupersededRecord(record))
+        {
+            throw new InvalidOperationException(
+                $"Staged record {record.RecordId} is superseded by a later candidate and cannot be classified. Use list_session_staged_records to locate the current staged record for this session.");
+        }
+
         string effectiveSessionId = string.IsNullOrWhiteSpace(sessionId) ? record.SessionId ?? string.Empty : sessionId;
         MaterializeAcceptedNewFileReview(record, normalizedDecision);
         DiffDecisionClassification classificationResult = ClassifyStrictDiffDecision(record, normalizedDecision);
@@ -656,6 +662,17 @@ public sealed partial class MonitorWorkflowService
     {
         (StagedEditRecord record, string recordPath) = ReadStagedEditRecord(stagedRecordId);
         string stagedFilePath = record.ServerDerivedMetadata.StagedFilePath;
+        if (IsSupersededRecord(record))
+        {
+            return MonitorStagedDiffLaunchResult.NotLaunched(
+                "staged-record-superseded",
+                record,
+                recordPath,
+                stagedFilePath,
+                ResolveWinMergePath(),
+                "This staged record was superseded by a later same-file candidate. Use list_session_staged_records to locate and review the current staged record.");
+        }
+
         (StagedEditRecord BlockedRecord, string BlockedRecordPath)? blockedReview = FindBlockedReviewRecord(record);
         if (blockedReview is not null)
         {
@@ -818,7 +835,7 @@ public sealed partial class MonitorWorkflowService
                 continue;
             }
 
-            StagedEditRecord superseded = record with { QueueStatus = "superseded-by-corrected-candidate" };
+            StagedEditRecord superseded = ArchiveSupersededStagedFile(record, "superseded-by-corrected-candidate");
             File.WriteAllText(recordPath, JsonSerializer.Serialize(superseded, JsonOptions));
         }
     }
@@ -1479,6 +1496,11 @@ public sealed partial class MonitorWorkflowService
         return record.QueueStatus.Equals("blocked-dirty-unexpected", StringComparison.OrdinalIgnoreCase);
     }
 
+    private static bool IsSupersededRecord(StagedEditRecord record)
+    {
+        return record.QueueStatus.StartsWith("superseded-", StringComparison.OrdinalIgnoreCase);
+    }
+
     private (StagedEditRecord Record, string RecordPath)? FindLatestSameFileSessionRecord(string? sessionId, MonitorFileContext context)
     {
         if (string.IsNullOrWhiteSpace(sessionId))
@@ -1513,9 +1535,41 @@ public sealed partial class MonitorWorkflowService
             .Where(item => item.Record.QueueStatus.Equals("staged", StringComparison.OrdinalIgnoreCase)
                 || item.Record.QueueStatus.Equals("force-review-launched", StringComparison.OrdinalIgnoreCase)))
         {
-            StagedEditRecord superseded = record with { QueueStatus = "superseded-by-later-same-file-candidate" };
+            StagedEditRecord superseded = ArchiveSupersededStagedFile(record, "superseded-by-later-same-file-candidate");
             File.WriteAllText(recordPath, JsonSerializer.Serialize(superseded, JsonOptions));
         }
+    }
+
+    private StagedEditRecord ArchiveSupersededStagedFile(StagedEditRecord record, string queueStatus)
+    {
+        string stagedFilePath = record.ServerDerivedMetadata.StagedFilePath;
+        if (!File.Exists(stagedFilePath))
+        {
+            return record with { QueueStatus = queueStatus };
+        }
+
+        string archiveRoot = Path.Combine(
+            settings.UiRoot,
+            "Working",
+            "Staged",
+            "Superseded",
+            record.CreatedAt.ToString("yyyyMMdd"),
+            SanitizeForFileName(record.RecordId));
+        string relativeDirectory = Path.GetDirectoryName(record.RelativeSourcePath) ?? string.Empty;
+        string archiveDirectory = Path.Combine(archiveRoot, relativeDirectory);
+        Directory.CreateDirectory(archiveDirectory);
+
+        string archivePath = Path.Combine(archiveDirectory, Path.GetFileName(stagedFilePath));
+        if (!Path.GetFullPath(stagedFilePath).Equals(Path.GetFullPath(archivePath), StringComparison.OrdinalIgnoreCase))
+        {
+            File.Move(stagedFilePath, archivePath, overwrite: true);
+        }
+
+        return record with
+        {
+            QueueStatus = queueStatus,
+            ServerDerivedMetadata = record.ServerDerivedMetadata with { StagedFilePath = archivePath }
+        };
     }
 
     private IEnumerable<(StagedEditRecord Record, string RecordPath)> ReadStagedEditRecordsForSource(string sourceFilePath)
