@@ -277,3 +277,103 @@ Format per finding: Title, Severity, File/tool, Observed, Expected, Minimal fix,
 **Minimal fix:** Add an opt-in skip flag on `get_type_overview` that filters `hierarchy.interfaces` to interfaces declared on the type itself, excluding those inherited from metadata assemblies. Same flag could apply to `hierarchy.bases` once the chain crosses an assembly boundary.
 
 **Evidence:** Measured per-call sizes captured in `TokenAnalysis_GenericOverview.md` Pass 4 measurement table. On this solution, the bloat accounts for ~25% of a Strategy C pass's total tokens; on a non-WinForms backend solution it would be zero, so the issue is UI-stack specific. Operator framing: "we can tweak interface stuff and get better performance b/c roslyn is giving way more than we need."
+
+## Pass 5 — 2026-05-18 — Symbol-level staging composition gap
+
+### Finding 17
+
+**Title:** Symbol-level staging does not compose within a session — each op stages against watched baseline independently
+
+**Severity:** blocker (for the documented multi-op symbol staging protocol; isolated single-symbol staging itself works correctly)
+
+**File/tool:** `monitor-base-claude` MCP — `submit_symbol`, `add_method`, `add_property` (and presumably the other typed add/remove tools); `CLAUDE.md` "Multi-File Coupled Edits — Canonical Protocol"; `get_staging_guide` flow text
+
+**Observed:** Three sequential staging calls under one sessionId against one file each produced an independent staged candidate against the unchanged watched baseline. Identical `OriginalHash 5c4ffbe...` on all three; different `StagedHash` per op. Op 3's staged file on disk contains only `HasJoin` — the original 3-branch `ToString` is present unchanged, `GetQualifiedName` is absent. `overlayFileCount: 1` on every call. The "stage A then stage B then overlay sees A+B" model in `get_staging_guide` does not match.
+
+**Expected:** Subsequent staging ops for a file already staged in the session compose on the prior staged content. One `launch_staged_diff` against the latest record shows the union.
+
+**Minimal fix:** Server keeps a per-session per-file "current staged content" cache populated by every staging call. Each staging op for a file already in the session reads from cache rather than `File.ReadAllText(watchedPath)`, applies its mutation, writes back. The new staged file becomes baseline+op1+op2+op3. `overlayFileCount` stays 1 but the content is the composed union. Same cache should surface through `get_monitor_session.files` (Finding 18).
+
+**Evidence:** Session `monitor-20260518143852-0d6557c0eeed4f20a`; staged records `20260518_093901840_submit_symbol_SourceTable_3b4d567b`, `20260518_093909940_add_symbol_SourceTable_6e68bb9f`, `20260518_093929841_add_symbol_SourceTable_eb3615ef`. Staged files inspected directly under `Working\Staged\Schema Studio - DBV2_6c4e124c9922\...`.
+
+### Finding 18
+
+**Title:** `get_monitor_session.files` is empty after staging calls bound to that session
+
+**Severity:** confusing (likely same root cause as Finding 17)
+
+**File/tool:** `monitor-base-claude` MCP — `get_monitor_session`, `list_monitor_sessions`
+
+**Observed:** After three staging calls passing `sessionId=monitor-20260518143852-...`, `get_monitor_session` returns `"files": []` and `list_monitor_sessions` shows `fileCount: 0` for that handle. Older Pass 2/3 sessions list `fileCount: 1–6`, so the surface is wired up correctly in principle. `CLAUDE.md` "Multi-File Coupled Edits — Canonical Protocol" explicitly states a file is in the session iff a staging tool has been called against it with that sessionId.
+
+**Expected:** After N staging calls referencing one file under sessionId X, `get_monitor_session(X).files` contains one entry for that file with hash/timestamp/op-count info; `fileCount` reflects unique files staged.
+
+**Minimal fix:** When the per-session per-file content cache from Finding 17's fix is populated, surface its keys via `get_monitor_session.files`. Likely one shared fix.
+
+**Evidence:** `list_monitor_sessions` output 2026-05-18 14:40 UTC; session `monitor-20260518143852-0d6557c0eeed4f20a` shows `fileCount: 0` despite three staging calls under it.
+
+### Finding 19
+
+**Title:** `get_source_map` selector signature strips property initializers
+
+**Severity:** confusing (small)
+
+**File/tool:** `monitor-base-claude` MCP — `get_source_map` mode:selector
+
+**Observed:** `SourceTable.cs` source map returned `signature: "public List<JoinKey> JoinKeys { get; set; }"` for the `JoinKeys` property; the actual source at line 33 is `public List<JoinKey> JoinKeys { get; set; } = new();`. Same for `JoinKey.Cardinality` at line 15 (actual `= JoinCardinality.Unknown;` stripped). A model planning a `submit_symbol` body replacement from the signature alone would silently delete the initializer.
+
+**Expected:** Signature preserves trailing initializers and explicit default values — they are part of the symbol's contract surface, especially given the watched code has nullable-warnings-on properties initialized to `new()` for compile cleanliness.
+
+**Minimal fix:** In the source-map signature builder, include `EqualsValueClause` and trailing semicolon when present on `PropertyDeclarationSyntax` / `FieldDeclarationSyntax`. Likely a single missing branch in whichever `SyntaxNode` -> compact-signature visitor produces these strings.
+
+**Evidence:** Selector-mode `get_source_map` response for `SchemaStudio.SematicModel\Model\SourceTable.cs` symbols `JoinKeys` and `Cardinality`, compared against `Read` of the watched file lines 15 and 33.
+
+### Finding 20
+
+**Title:** Non-ASCII characters in `start_monitor_session.purpose` are mangled to `U+FFFD` on the wire
+
+**Severity:** stale / minor cosmetic
+
+**File/tool:** `monitor-base-claude` MCP — `start_monitor_session.purpose` argument; surfaced via `get_monitor_session` / `list_monitor_sessions` response
+
+**Observed:** Sent purpose containing em-dashes (`—`, U+2014). Both `start_monitor_session` response and `list_monitor_sessions` listing return the purpose with em-dashes replaced by `�` (Unicode replacement character). Visible at `monitor-20260518143852-...` and confirmed in older Pass 4 session `purpose` strings too.
+
+**Expected:** Round-trip non-ASCII Unicode in MCP tool string arguments. UTF-8 is the standard JSON transport encoding; em-dashes / smart quotes / non-ASCII identifiers are common in real-world purpose strings.
+
+**Minimal fix:** Confirm the C# stdio reader in the MCP server uses `Encoding.UTF8` explicitly rather than `Console.InputEncoding` (which can be CP1252 / OEM 437 on Windows). One-line change at stdio adapter setup. Outgoing JSON serializer should use `JavaScriptEncoder.UnsafeRelaxedJsonEscaping` if it currently escapes safe non-ASCII unnecessarily.
+
+**Evidence:** This session and prior session `purpose` strings in `list_monitor_sessions` output all show `�` where Unicode characters were sent.
+
+### Finding 21
+
+**Title:** `find_references` on a type returns `[]` when type-position consumers demonstrably exist — third reproduction
+
+**Severity:** confusing / persistent (Findings 11 and 15 documented this; Pass 5 is the third reproduction with different evidence)
+
+**File/tool:** `mcp__roslyn-codelens__find_references`
+
+**Observed:** `find_references("SchemaStudio.SemanticModel.Model.SourceTable")` returned `[]`. Same `search_symbols("SourceTable")` returned 8 hits including unambiguous type-position uses: `ExportMappers.ToSourceTableDtos(IEnumerable<SourceTable>? sourceTables)` (parameter type), `ParsedQuery.SourceTables` of type `List<SourceTable>` (generic-arg field type), and `ColumnBinding.SourceTable` (name collision, separate). The type-position uses are real referential dependencies the tool should see.
+
+**Expected:** `find_references` on a type returns every source position where the type appears — parameter types, generic args, fields, base lists, return types — not only member-access call sites.
+
+**Minimal fix:** Audit the Roslyn CodeLens `find_references` implementation. Compare its query against Visual Studio's "Find All References" for `SourceTable` in this solution as ground truth. Likely the adapter is iterating method/field invocations only and missing `SymbolFinder.FindReferencesAsync`'s type-position reference kind.
+
+**Evidence:** Pass 5 discovery sequence 2026-05-18 ~14:38 UTC. Note: Findings 11 and 15 are the same shape on different types — this is now a reliably reproducible pattern, not a one-off telemetry glitch.
+
+### Finding 22 — Pass 5 retest (over-cap, Operator-directed)
+
+**Title:** WinForms host crashes mid-workflow with `IOException` reading `Working\History\McpTelemetry\RoslynCodeLens\responses.jsonl` while McpHubBridge writes it
+
+**Severity:** blocker (during the retest the unhandled exception dialog modal-blocked the host mid-WinMerge review)
+
+**File/tool:** WinForms host McpTelemetry view (reader) and McpHubBridge / MCP server (writer) sharing `Working\History\McpTelemetry\<server>\responses.jsonl`
+
+**Observed:** During Pass 5 retest, between `launch_staged_diff` and `record_diff_decision`, the WinForms host raised `System.IO.IOException: The process cannot access the file 'C:\VSCodeProjects\MonitorBaseClaude\Working\History\McpTelemetry\RoslynCodeLens\responses.jsonl' because it is being used by another process.` and surfaced an unhandled-exception dialog with Continue/Quit. WinMerge (separate process) and the MCP server were unaffected; the test was still completable. The file is opened without `FileShare.ReadWrite` on at least one side, so reader and writer race.
+
+**Expected:** Concurrent read/append to telemetry jsonl is safe — either via shared file access (`FileShare.ReadWrite` on both opens) or by removing one of the contenders.
+
+**Operator resolution (chosen path, not a code fix request):** strip the WF host's telemetry tail-reader entirely. Keep telemetry writes only; the host's "current run" view lives in process memory, not from re-reading the file. Removes the contender, collapses the race. The McpTelemetry jsonl files become append-only audit logs.
+
+**Evidence:** Screenshot of the .NET unhandled-exception dialog captured this pass; full path in the dialog text. Race was reproducible across the diff-review interval whenever Roslyn-codelens telemetry was actively being written.
+
+Pass 5 finding cap was 5 (17–21); this is filed at Operator direction during the retest. Severity-adjusted: the underlying bug is real but the chosen fix obsoletes the affected code path entirely, so it's a record of why the WF telemetry view is being removed rather than a fix request to land.

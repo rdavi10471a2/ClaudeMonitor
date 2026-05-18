@@ -111,3 +111,212 @@ Detail in `Pass3_SchemaObjectRepository_Async.md`. Summary:
 - Strategy C deep dive **executed** end-to-end on DBV2 with measured token counts: `get_public_api_surface` 31.5K tokens, `get_project_health` 4.2K, 10× `get_type_overview` ~25K (2 UI types ≈ 17K of that). Total survey ~73K no-bodies / ~84K with 6 sampled file bodies. Original Strategy C estimate (37K) was ~2× understated, attributable to (a) per-WinForms-type interface bloat (Finding 16) and (b) `get_public_api_surface` being a single 31K-token call rather than the ~5K assumed.
 - `TokenAnalysis_GenericOverview.md` updated: measurement provenance, per-call measurement table, revised Strategy A/B/C/D cost sections, revised practicability and cost estimates ($0.20–$0.57 per pass range, not $0.07–$0.67), measurement caveats refreshed. Strategy B remains the only un-measured strategy.
 - `ProposedTests.md` content **nixed** at Operator direction. Framing error: prior catalog drifted toward testing DBV2's API surface rather than the Monitor workflow itself. File replaced with a short deprecation note; original content recoverable via git history. Rewrite deferred to a future pass under the correct frame (Monitor-workflow-only probes, DBV2 files as test substrate not subject).
+
+## Pass 5 — 2026-05-18 — Symbol-Level Staging Behavior (halted at pre-flight)
+
+### Intended Scope (per Codex `CLAUDE_TESTING_AGENT_PROMPT.md` "Next Pass Suggestion")
+
+- Test symbol-level staging: `submit_symbol`, `add_method`, `add_field`, `add_property`, `remove_symbol`, `set_type_partial` (only if needed).
+- Especially relevant now that `38c3db2` ("Include symbol-staged files in overlay validation") landed — Pass 5 is the first chance to exercise overlay validation across symbol-staged files.
+- Watched repo (`C:\Schema Studio - DBV2`) compiles clean (Operator applied Pass 2/3 consumer fixes manually). Roslyn `get_diagnostics(severity=error)` returned `[]` at start of pass.
+
+### Pre-flight Outcome — HALTED
+
+Pre-flight failed before any staging work. State at halt (2026-05-18, ~mid-morning):
+
+- Branch: `claude/live-test-notes-20260517` at `694fe06`, 13 commits ahead of `origin/main`, clean working tree (untracked `.claude/` and `ProjectDocs.zip` only).
+- WinForms host: UP (`MonitorBaseClaude.exe` PID 70588, started 08:59 today).
+- McpHubBridge: UP (PID 140068, started 09:00 today).
+- Roslyn-codelens MCP: connected, `list_solutions` + `get_diagnostics` working.
+- **Monitor MCP: NOT connected on the Claude Code client side.** `mcp__monitor-base-claude__*` absent from the deferred-tool list; `ToolSearch` queries for `monitor-base-claude`, `monitor staging workflow`, and `submit_symbol add_method get_source_map` all returned no matches.
+- Confirming evidence: `%LOCALAPPDATA%\Packages\Claude_pzs8sxrjxfjjc\LocalCache\Roaming\Claude\logs\mcp-server-monitor-base-claude.log` last write **2026-05-16 17:11** — Claude Code's MCP client never spawned the launcher this session.
+
+This is the same Finding 14 friction (window reload doesn't respawn MCP launchers). Operator electing **full VS Code restart**; this status line is the marker before the restart so the resumed session can pick up cleanly.
+
+### Resume Plan
+
+1. After VS Code restart, re-probe `ToolSearch` for `monitor-base-claude` tools.
+2. If present: complete pre-flight per CLAUDE.md (verify `get_staging_guide`, `get_monitor_status`, `get_tool_manifest`, `get_workflow_status` all return non-error; confirm `get_workflow_status` reports WinMerge resolution). Then proceed with symbol-level staging tests.
+3. If still absent: file as Pass 5 finding (the existing Finding 14 already documents window-reload friction; a *full restart* still failing to respawn would be a separate, worse symptom).
+4. Choose a small DBV2 target for the symbol-level staging exercise (TBD — likely a single member-level edit on a leaf class with no consumers, to keep blast radius zero while exercising the tools).
+
+### Update — 2026-05-18 ~09:20 — MCP brought up via VS Code native UI; chat tool surface stale
+
+Findings during the restart cycle, distinct from Finding 14:
+
+- Post-restart, **Claude Code 2.1.143 delegates MCP entirely to VS Code's native MCP gateway** — the extension's `package.json` mentions `mcp` only as a capability keyword, no settings/commands of its own. Log files now appear at `%APPDATA%\Code\logs\<session>\window1\mcpServer.workspace-dot-mcp.0.<server>.log`, and `mcpGateway.log` is a single `Initialized` line; the old per-server logs at `%LOCALAPPDATA%\Packages\Claude_pzs8sxrjxfjjc\...` are stale from the standalone Claude desktop app and no longer relevant.
+- VS Code native MCP **discovers `.mcp.json` but does not auto-start workspace servers** — they show as "stopped" in `MCP: List Servers`. Operator started both manually (right-click → Start Server). Logs then show `Connection state: Running`, `Discovered 38 tools` at 09:15:22 for monitor-base-claude; two `McpHubBridge.exe` processes alive (one per server).
+- The launcher chain itself is healthy: manual `powershell -File .\Tools\Start-MonitorBaseClaudeMcp.ps1` spawned `McpHubBridge.exe --server monitor` cleanly. So the path that failed earlier this session was specifically VS Code's native-MCP autostart, not the .mcp.json or launcher scripts.
+- VS Code exposes the following MCP commands (extracted from the workbench bundle): `workbench.mcp.startServer`, `stopServer`, `restartServer`, `showInstalledServers`, `showOutput`, `skipAutostart`, plus `openWorkspaceMcpJson`/`openUserMcpJson`. `code` CLI does NOT support `--command`, so a pure-PowerShell stop/start helper isn't possible from outside the VS Code process. Restart-after-rebuild requires triggering the command from inside VS Code (Command Palette or a bound key).
+- **Tool-surface lag:** even after both servers reported Running with 38 tools, this chat's deferred-tool list never refreshed — `ToolSearch select:mcp__monitor-base-claude__*` continued to return no match. Claude Code apparently does not re-poll the MCP tool surface mid-conversation for servers that come online after session start. A new chat is required.
+
+### Out-of-lane Write (Operator-granted, 2026-05-18)
+
+- `Tools\Rebuild-MonitorMcp.ps1` written under explicit Operator grant. Builds the slnx (default) or just `MonitorBaseClaude.McpServer.csproj` with `-ProjectOnly`. Guards against running with `McpHubBridge.exe` alive (would file-lock the binary). After build, instructs Operator to invoke `MCP: Start Server` / `MCP: Restart Server` from the Command Palette. Not committed; awaiting Codex review or first-use validation in the next chat.
+- This is outside the Claude testing-agent writable lane (`Tools/` is product tooling). Recording here as the audit trail.
+
+### Hand-off To Next Chat
+
+Open a new Claude Code chat in the same VS Code window. Expected state:
+
+- Branch `claude/live-test-notes-20260517` at commit `694fe06`, 13 ahead of `origin/main`. Working tree has uncommitted `Tools\Rebuild-MonitorMcp.ps1` and this STATUS update.
+- WinForms host `MonitorBaseClaude.exe` running (PID changes per session).
+- VS Code MCP servers `monitor-base-claude` and `roslyn-codelens` already started — should appear in the new chat's deferred-tool list at session start.
+- DBV2 watched repo compiles clean (Operator applied Pass 2/3 sync bridge fix manually).
+
+Then resume the Pass 5 scope: one symbol-level staging test (`submit_symbol` or `add_method`) on a DBV2 leaf with no consumers, exercising the post-`38c3db2` overlay-validation-includes-symbol-staged-files improvement.
+
+**Target picked and plan drafted:** [Pass5_Plan_SourceTable.md](Pass5_Plan_SourceTable.md). Three symbol-level staging operations (`submit_symbol` + `add_method` + `add_property`) on `SchemaStudio.SematicModel\Model\SourceTable.cs` in one session — exercises all the relevant Pass 5 tools at once AND validates the post-`38c3db2` overlay-includes-symbol-staged-files improvement under one WinMerge diff. Pre-flight checklist, Roslyn discovery, and the staging sequence are all in the plan file — new chat should hit go immediately.
+
+## Pass 5 (resumed) — 2026-05-18 ~14:38 UTC — Symbol-level staging composition gap
+
+Detail in [Pass5_Plan_SourceTable.md](Pass5_Plan_SourceTable.md) for the original plan; this section is the outcome.
+
+### Pre-flight
+
+- New chat in same VS Code window. MCP tool surface present at start: both `mcp__monitor-base-claude__*` and `mcp__roslyn-codelens__*` showed up in the deferred-tool list immediately (Operator manually started both MCP servers via VS Code's command palette before the chat opened; STATUS hand-off note was correct).
+- `get_workflow_status` / `get_monitor_status` / `get_staging_guide` / `get_tool_manifest` / Roslyn `list_solutions` + `get_diagnostics(severity=error)` all clean. Watched repo compiles with `[]` errors (Operator's sync-bridge fix from Pass 4 is in place).
+- `get_staging_guide` now exposes the "Choose The Staging Mode" intent→tool table and the "Discovery Discipline" subsection. Codex merged Finding 13 between Pass 4 and Pass 5.
+
+### Discovery
+
+- Roslyn first: `get_type_overview(SourceTable)`, `search_symbols(GetQualifiedName)` empty, `search_symbols(HasJoin)` empty, `find_references(SourceTable)` **empty** despite 8 demonstrable consumers via `search_symbols(SourceTable)` (`ExportMappers.ToSourceTableDtos(IEnumerable<SourceTable>?)`, `ParsedQuery.SourceTables` of `List<SourceTable>`, etc.). Third reproduction of the Finding 11/15 `find_references` gap — filed as Finding 21.
+- Cross-check via `search_symbols` is what Operator's "discovery discipline" rule prescribes. Empty `find_references` was treated as "verify another way," not "no consumers." That's the rule working as intended.
+- Source map (selector mode) on `SourceTable.cs`: 18 symbols, 4283 estimatedTokenProxy, parseStatus ok, 0 diagnostics on the file. Stable selector key for `ToString` obtained.
+
+### Staging — three ops, one session, one file
+
+Session `monitor-20260518143852-0d6557c0eeed4f20a`.
+
+1. `submit_symbol(ToString)` — ternary-expression rewrite of the 3-branch `ToString`, behaviourally identical. Staged record `20260518_093901840_..._3b4d567b`. Syntax + overlay clean, `overlayFileCount: 1`.
+2. `add_method(GetQualifiedName)` — read-only helper returning `$"{Database}.{Schema}.{Table}"`. Staged record `20260518_093909940_..._6e68bb9f`. `symbolsAdded: [GetQualifiedName]` at line 46. Syntax + overlay clean, `overlayFileCount: 1`.
+3. `add_property(HasJoin)` — `=> JoinKeys != null && JoinKeys.Count > 0`. Staged record `20260518_093929841_..._eb3615ef`. `symbolsAdded: [HasJoin]` at line 35. Syntax + overlay clean, `overlayFileCount: 1`.
+
+### Key observation — composition gap
+
+The three staging calls did NOT compose within the session. Direct inspection of staged files on disk:
+
+- Op 1's staged file contains the `ToString` rewrite. No `HasJoin`. No `GetQualifiedName`.
+- Op 3's staged file contains `HasJoin`. Original 3-branch `ToString` unchanged. No `GetQualifiedName`.
+- All three staged-record JSONs report identical `OriginalHash` (`5c4ffbe...` = unchanged watched baseline). Each `StagedHash` is different.
+- `get_monitor_session` returns `"files": []`; `list_monitor_sessions` shows `fileCount: 0` for the Pass 5 session despite three staging calls bound to it.
+
+Each `submit_symbol` / `add_method` / `add_property` call reads the watched-source baseline, applies its single mutation, and writes a fresh staged candidate. Subsequent ops do not see prior ops' work. The "stage A then stage B then overlay sees A+B" model from `CLAUDE.md` and `get_staging_guide` does not match observed behaviour.
+
+Operator's hypothesis "multiple sessions creating multiple files" was ruled out by reading the staged-record JSONs — all three carry `SessionId: monitor-20260518143852-0d6557c0eeed4f20a` and the same `SourceFilePath`.
+
+### Decision — stopped at staging, no diffs launched
+
+Operator direction: file the bug report and stop, no WinMerge cycles. Watched source untouched. Three staged candidates remain in `Working\Staged\` as evidence; harmless because Monitor never writes watched source directly.
+
+### Findings filed this pass
+
+- Finding 17: symbol-level staging does not compose within a session (blocker for the documented protocol).
+- Finding 18: `get_monitor_session.files` empty after staging — likely same root cause as 17.
+- Finding 19: source-map signature strips property initializers (`= new()`, `= JoinCardinality.Unknown`).
+- Finding 20: non-ASCII chars in `start_monitor_session.purpose` mangled to `U+FFFD` on the wire.
+- Finding 21: `find_references` returns `[]` for a type with demonstrable type-position consumers — third reproduction.
+
+### Fix sketch for Findings 17 + 18 (handed off to Codex)
+
+Conceptual root cause: each staging tool re-reads `watchedSourcePath` from disk at call time, rather than the most-recent staged content for that file under the active session. Composition therefore never accumulates.
+
+Suggested shape of the fix:
+
+1. Add a per-session per-file in-memory "current staged content" cache on the server.
+2. The first staging call for `(sessionId, watchedRelPath)` populates the cache from the watched file. The `OriginalHash` recorded in the staged-record JSON is the watched baseline (unchanged from today, preserves baseline-trace fidelity for vote-plus-hash).
+3. Each subsequent staging call for the same `(sessionId, watchedRelPath)` reads from the cache, applies its Roslyn mutation, writes back to the cache, AND writes the now-composed result to a fresh staged candidate file on disk.
+4. Surface the cache's keys via `get_monitor_session.files` and `list_monitor_sessions.fileCount`.
+5. Overlay validation already runs per-call against the project graph; with composition in place, op 3's overlay validates `baseline + op1 + op2 + op3`, which is the union the plan expected.
+
+`launch_staged_diff` semantics under this model: launch against the LATEST staged record for a file in a session, since that record's stagedFile is the cumulative state. Prior records become point-in-time snapshots rather than independent candidates.
+
+Edge case to think through: if op 2 fails syntax validation, op 3 should fail-safe too (the cache should not advance through invalid intermediate states). Easiest rule: only update the cache when staging produced `syntaxValidation.hasErrors: false`.
+
+### Watched repo state at end of pass
+
+- `C:\Schema Studio - DBV2`: unchanged (Operator's pre-pass clean state preserved). `git status` would show only the same uncommitted files as Pass 4 left.
+- Notes branch `claude/live-test-notes-20260517`: this STATUS update and the FINDINGS.md additions are the only new changes.
+
+## Pass 5 retest — 2026-05-18 ~15:28 UTC — Composition fix verified end-to-end
+
+### Setup
+
+- Codex shipped `ce8e500 Compose same-file staged edits within sessions` on `origin/main` after Pass 5 closed. `git merge origin/main` brought it into the notes branch (clean merge, single commit, 79 lines in `MonitorWorkflowService.cs`).
+- Rebuild via `Tools/Rebuild-MonitorMcp.ps1 -ProjectOnly -NoCheck` — dll moved from 327168 bytes / 8:56 AM (pre-fix) to 329728 bytes / 10:27 AM (post-fix). `ResolveEditBasePath` and `SupersedePriorSameFileSessionRecords` confirmed in the working tree.
+- **Workflow correction:** Operator clarified the rebuild rule. Build with the WinForms host **and** McpHubBridge running, then VS Code's `MCP: Restart Server` swaps to the new binary. `Tools/Rebuild-MonitorMcp.ps1`'s `McpHubBridge` guard had this inverted and needed `-NoCheck` to bypass. The script should drop or invert that guard.
+- **First retest attempt failed silently** because the source wasn't merged yet — `dotnet build` saw no changed input and produced a 1.25 s incremental no-op. Bridge loaded the pre-fix dll; staging produced identical hashes to the broken Pass 5 run. Diagnosed by checking the dll `LastWriteTime` against the rebuild time and grepping for `ResolveEditBasePath` in the working tree.
+
+### Codex's fix mechanism (matches commit message)
+
+- New `ResolveEditBasePath(context, sessionId)` finds the most-recent same-file staged record in the session with status `staged` or `force-review-launched` and returns its staged file path; falls back to watched source if none.
+- Every typed staging tool (`submit_symbol`, `add_*` via `add_symbol`, `add_using`, `remove_using`, `set_type_partial`, `remove_symbol`) now calls `ParseCompilationUnit(context, editBasePath)` — reading the prior staged candidate when composing, watched source otherwise.
+- `SupersedePriorSameFileSessionRecords` marks earlier same-file records in the session as `QueueStatus: superseded-by-later-same-file-candidate` after each successful new stage.
+- Overlay validation skips superseded records, so it sees the cumulative latest file once. `launch_staged_diff` against the latest record shows the union.
+- Uses the on-disk staged record as the durable "cache" — survives MCP reconnects, no separate in-memory state.
+
+### Retest run (session `monitor-20260518152843-fa42e45ca57a40ff9`)
+
+Target: `SchemaStudio.SematicModel\Model\SourceTable.cs`. Same three staging ops as the original Pass 5 plan.
+
+1. `submit_symbol(ToString)` — ternary expression-bodied rewrite. Staged record `20260518_102901240_..._953a2306`. StagedHash `0f7f228a...` (same as broken run — op 1 always reads watched baseline, no prior staged record to compose on).
+2. `add_method(GetQualifiedName)` after `ToString`. Staged record `20260518_102910450_..._7aff15fd`. StagedHash `c3fbbcad...` (**different** from broken run's `54a76628...` — proves op 2 read op 1's staged file, not the watched source). `symbolsAdded.startLine: 42`, **not 46** — because op 1's ternary `ToString` shrank the file by 4 lines.
+3. `add_property(HasJoin)` after `JoinKeys`. Staged record `20260518_102921575_..._602f8dc3`. StagedHash `c6b4ec85...`. `symbolsAdded` now lists **both** `HasJoin` (line 35) **and** `GetQualifiedName` (line 44) — the server is doing baseline-vs-staged delta against the watched source and sees both new members.
+
+### Verification of composition
+
+Direct read of op 3's staged file confirmed all three changes co-present:
+- Line 35: `public bool HasJoin => JoinKeys != null && JoinKeys.Count > 0;`
+- Lines 39–42: ternary `ToString` rewrite
+- Line 44: `public string GetQualifiedName() => $"{Database}.{Schema}.{Table}";`
+
+Record JSON statuses:
+- Op 1: `QueueStatus: superseded-by-later-same-file-candidate` ✓
+- Op 2: `QueueStatus: superseded-by-later-same-file-candidate` ✓
+- Op 3: `QueueStatus: staged` (the live record) ✓
+
+### Review and decision
+
+`launch_staged_diff` on op 3 → WinMerge PID 147604 → Operator accept. `record_diff_decision(accepted)` returned:
+
+- `classification: accepted` (not `accepted-normalized` — exact byte match)
+- `decisionMatchesClassification: true`
+- `currentHash == stagedHash == c6b4ec85b4013f97d15aadbeb187862ff42de42d3d67a7796233a3b111ca88e0`
+- `originalHash: 5c4ffbe887945e...` (the unchanged baseline, different from current — confirming the change actually landed)
+- Decision record at `Working\Staged\Decisions\20260518\20260518_102921575_..._103247367_accepted.json`
+
+Post-accept `mcp__roslyn-codelens__get_diagnostics(severity=error)` returned `[]`. DBV2 still compiles clean. Watched source now carries the ternary `ToString`, `GetQualifiedName()`, and `HasJoin`.
+
+### Findings 17 + 18 status
+
+- **Finding 17 (composition gap):** fixed by `ce8e500`. Verified end-to-end through the Claude Code MCP path.
+- **Finding 18 (`get_monitor_session.files` empty):** not retested here, but the composition fix shares the same on-disk records lookup, so the symptom may persist (the fix uses `ReadSessionStagedRecordEntries` for composition, but `get_monitor_session.files` reads a different surface). Worth a Pass 6 check.
+
+### New symptom — Pass 6 candidate (FileShare contention on McpTelemetry)
+
+Mid-diff-review the WinForms host threw an unhandled exception dialog:
+
+> The process cannot access the file `'C:\VSCodeProjects\MonitorBaseClaude\Working\History\McpTelemetry\RoslynCodeLens\responses.jsonl'` because it is being used by another process.
+
+Cause: the McpTelemetry layer opens `responses.jsonl` without `FileShare.ReadWrite`. The Roslyn-codelens McpHubBridge writes the file while the WF host telemetry view tries to read it (or vice versa).
+
+Minimal fix: change both the writer and the reader to open with `FileShare.ReadWrite`:
+- writer: `new FileStream(path, FileMode.Append, FileAccess.Write, FileShare.ReadWrite)`
+- reader: `new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite)`
+
+Buffering would paper over the symptom; the structural fix is the share-flag.
+
+Filed as **Finding 22** at Operator direction during the retest (over the 5-per-pass cap; Operator-authorized). Operator's chosen resolution: strip the WF host's telemetry tail-reader, keep current-run state in process memory, leave the McpTelemetry jsonl files as write-only audit logs. That removes the contender and collapses the race; the FileShare flag fix becomes unnecessary.
+
+### Outstanding `Tools/Rebuild-MonitorMcp.ps1` issue
+
+Per Operator's clarification, the script's `McpHubBridge.exe` running-check is backwards. The correct workflow rebuilds while the bridge is up; the file lock on the dll resolves because the managed JIT releases the handle after load. Either:
+- Drop the check entirely.
+- Or invert it: warn if the bridge is **not** running, since that means the new dll won't be picked up by a subsequent `MCP: Restart Server`.
+
+I won't touch the script in this pass (already-flagged as out-of-lane in Pass 4). Note for Codex.
+
+### Watched repo state at end of retest
+
+- `C:\Schema Studio - DBV2`: one new modified file, `SchemaStudio.SematicModel\Model\SourceTable.cs`, carrying the three accepted Pass 5 changes. Other uncommitted state from Pass 2/3 sync-bridge fix preserved.
+- Notes branch `claude/live-test-notes-20260517`: merged `origin/main` (commit `ce8e500` pulled in); this STATUS update is the only further new change.
