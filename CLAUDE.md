@@ -2,6 +2,31 @@
 
 This project is a monitor and MCP workflow host. Treat watched source as protected source, not as a scratchpad.
 
+## Report And Memory Lanes
+
+Use `CLAUDE_Live_Tests/` for source-controlled findings, bug reports, test results, and doc suggestions that Codex/operator should review. Follow `CLAUDE_Live_Tests/README.md`: every report is date-stamped, has a status header, and can be marked processed after triage.
+
+Use local `.claude-local/` for private restart memory, scratch notes, and VS Code/MCP binding workarounds. `.claude-local/` is ignored by git and is not product documentation.
+
+When this rule is first seen in an existing checkout, move current local restart/scratch notes into `.claude-local/`. Move findings, bug reports, test results, and doc suggestions that Codex/operator should review into `CLAUDE_Live_Tests/` using the naming and header rules in `CLAUDE_Live_Tests/README.md`.
+
+Do not treat `CLAUDE_Live_Tests/`, `.claude-local/`, `Working/`, `LocalSmokeTests/`, or `Docs/Archive/` as authority for workflow rules. When instructions conflict, prefer the current user message, then this file, then `get_tool_manifest`, then `get_staging_guide`.
+
+Claude may push markdown-only branches for review, never directly to `main`. Use branch names like `claude-notes/YYYYMMDD-topic`.
+
+Claude-owned markdown paths:
+
+- `CLAUDE.md`
+- `CLAUDE_Live_Tests/**/*.md`
+
+Markdown paths allowed only when the Operator explicitly asks:
+
+- `MCP_CLIENT_TESTING.md`
+- `README.md`
+- `Docs/Skills/**/*.md`
+
+Before pushing a Claude notes branch, run `git diff --name-only main...HEAD`. Stop if any non-Markdown file appears, or if any Markdown file is outside the allowed paths for the task.
+
 ## Required Edit Loop
 
 For watched project source edits, use the Monitor MCP workflow:
