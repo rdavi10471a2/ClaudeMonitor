@@ -508,7 +508,20 @@ public sealed partial class MonitorWorkflowService
             diffToolPath = ResolveWinMergePath();
             if (diffToolPath is not null)
             {
-                DiffLaunchResult launchResult = LaunchWinMergeDetached(diffToolPath, context.SourceFilePath, stagedPath);
+                string reviewSourcePath = context.SourceFilePath;
+                if (IsNewFileRecord(stagedRecord))
+                {
+                    reviewSourcePath = CreateNewFileReviewBaseline(stagedRecord);
+                    stagedRecord = stagedRecord with { NewFileReviewBaselinePath = reviewSourcePath };
+                    File.WriteAllText(stagedRecordPath, JsonSerializer.Serialize(stagedRecord, JsonOptions));
+                }
+
+                DiffLaunchResult launchResult = LaunchWinMergeDetached(
+                    diffToolPath,
+                    reviewSourcePath,
+                    stagedPath,
+                    context.SourceFilePath,
+                    IsNewFileRecord(stagedRecord) ? "New File Baseline (Right)" : "Existing Source (Right)");
                 processId = launchResult.ProcessId;
                 diffArguments = launchResult.Arguments;
             }
@@ -554,6 +567,7 @@ public sealed partial class MonitorWorkflowService
         }
 
         string effectiveSessionId = string.IsNullOrWhiteSpace(sessionId) ? record.SessionId ?? string.Empty : sessionId;
+        MaterializeAcceptedNewFileReview(record, normalizedDecision);
         DiffDecisionClassification classificationResult = ClassifyStrictDiffDecision(record, normalizedDecision);
         bool decisionMatchesClassification =
             normalizedDecision.Equals(classificationResult.Classification, StringComparison.OrdinalIgnoreCase)
@@ -681,7 +695,20 @@ public sealed partial class MonitorWorkflowService
         }
 
         ClearSupersededBlockedOverlayRecords(record);
-        DiffLaunchResult launchResult = LaunchWinMergeDetached(winMergePath, record.SourceFilePath, stagedFilePath);
+        string reviewSourcePath = record.SourceFilePath;
+        if (IsNewFileRecord(record))
+        {
+            reviewSourcePath = CreateNewFileReviewBaseline(record);
+            record = record with { NewFileReviewBaselinePath = reviewSourcePath };
+            File.WriteAllText(recordPath, JsonSerializer.Serialize(record, JsonOptions));
+        }
+
+        DiffLaunchResult launchResult = LaunchWinMergeDetached(
+            winMergePath,
+            reviewSourcePath,
+            stagedFilePath,
+            record.SourceFilePath,
+            IsNewFileRecord(record) ? "New File Baseline (Right)" : "Existing Source (Right)");
         return new MonitorStagedDiffLaunchResult(
             launchResult.ProcessId is null ? "launch-failed" : "winmerge-launched",
             record.RecordId,
@@ -692,7 +719,9 @@ public sealed partial class MonitorWorkflowService
             winMergePath,
             launchResult.ProcessId,
             launchResult.Arguments,
-            "After operator review, call record_diff_decision with accepted only if WinMerge saved the full staged candidate; otherwise call rejected.",
+            IsNewFileRecord(record)
+                ? "After operator review, call record_diff_decision with accepted only if WinMerge saved the full staged candidate into the blank right-side baseline; the server will then create the watched file."
+                : "After operator review, call record_diff_decision with accepted only if WinMerge saved the full staged candidate; otherwise call rejected.",
             record.OverlayValidation.HasErrors ? "completed" : null,
             record.OverlayValidation.HasErrors ? "force_review" : null,
             record.OverlayValidation.HasErrors ? "Overlay compile errors were force-reviewed before WinMerge launch." : null);
@@ -1460,6 +1489,40 @@ public sealed partial class MonitorWorkflowService
         return decisionRecordPath;
     }
 
+    private string CreateNewFileReviewBaseline(StagedEditRecord record)
+    {
+        string baselineRoot = Path.Combine(settings.UiRoot, "Working", "Staged", "NewFileBaselines", SanitizeForFileName(record.RecordId));
+        string baselinePath = Path.Combine(baselineRoot, record.RelativeSourcePath);
+        Directory.CreateDirectory(Path.GetDirectoryName(baselinePath)!);
+        if (!File.Exists(baselinePath))
+        {
+            File.WriteAllText(baselinePath, string.Empty, Encoding.UTF8);
+        }
+
+        return baselinePath;
+    }
+
+    private static void MaterializeAcceptedNewFileReview(StagedEditRecord record, string normalizedDecision)
+    {
+        if (!normalizedDecision.Equals("accepted", StringComparison.OrdinalIgnoreCase)
+            || !IsNewFileRecord(record)
+            || File.Exists(record.SourceFilePath)
+            || string.IsNullOrWhiteSpace(record.NewFileReviewBaselinePath)
+            || !File.Exists(record.NewFileReviewBaselinePath))
+        {
+            return;
+        }
+
+        string reviewBaselineHash = ComputeSha256(record.NewFileReviewBaselinePath);
+        if (!reviewBaselineHash.Equals(record.StagedHash, StringComparison.OrdinalIgnoreCase))
+        {
+            return;
+        }
+
+        Directory.CreateDirectory(Path.GetDirectoryName(record.SourceFilePath)!);
+        File.Copy(record.NewFileReviewBaselinePath, record.SourceFilePath, overwrite: false);
+    }
+
     private static string NormalizeOperatorDecision(string decision)
     {
         string normalized = decision.Trim().ToLowerInvariant();
@@ -1558,16 +1621,18 @@ public sealed partial class MonitorWorkflowService
     private static DiffLaunchResult LaunchWinMergeDetached(
         string winMergePath,
         string originalFilePath,
-        string proposedFilePath)
+        string proposedFilePath,
+        string? displayFilePath = null,
+        string originalLabelPrefix = "Existing Source (Right)")
     {
-        string displayName = BuildWinMergeDisplayName(originalFilePath);
+        string displayName = BuildWinMergeDisplayName(displayFilePath ?? originalFilePath);
         Process? existing = FindOpenWinMergeReview(displayName);
         if (existing is not null)
         {
             return new DiffLaunchResult(existing.Id, $"already-open: {existing.MainWindowTitle}");
         }
 
-        string launcherPath = WriteWinMergeLauncher(winMergePath, originalFilePath, proposedFilePath, displayName);
+        string launcherPath = WriteWinMergeLauncher(winMergePath, originalFilePath, proposedFilePath, displayName, originalLabelPrefix, displayFilePath ?? originalFilePath);
         ProcessStartInfo startInfo = BuildWinMergeStartInfo(launcherPath);
         Process? process = Process.Start(startInfo);
         return new DiffLaunchResult(process?.Id, $"{launcherPath} :: {File.ReadAllText(launcherPath)}");
@@ -1578,7 +1643,7 @@ public sealed partial class MonitorWorkflowService
         ProcessStartInfo startInfo = new()
         {
             FileName = "cmd.exe",
-            Arguments = $"/k call \"{launcherPath}\"",
+            Arguments = $"/c call \"{launcherPath}\"",
             UseShellExecute = true,
             WindowStyle = ProcessWindowStyle.Normal,
             WorkingDirectory = Path.GetDirectoryName(launcherPath) ?? Environment.CurrentDirectory
@@ -1590,11 +1655,13 @@ public sealed partial class MonitorWorkflowService
         string winMergePath,
         string originalFilePath,
         string proposedFilePath,
-        string displayName)
+        string displayName,
+        string originalLabelPrefix,
+        string displayFilePath)
     {
         string launcherRoot = Path.Combine(Path.GetTempPath(), "MonitorBaseClaude", "DiffLaunchers");
         Directory.CreateDirectory(launcherRoot);
-        string launcherPath = Path.Combine(launcherRoot, $"launch-{DateTime.Now:yyyyMMdd-HHmmssfff}-{SanitizeForFileName(Path.GetFileNameWithoutExtension(originalFilePath))}.cmd");
+        string launcherPath = Path.Combine(launcherRoot, $"launch-{DateTime.Now:yyyyMMdd-HHmmssfff}-{SanitizeForFileName(Path.GetFileNameWithoutExtension(displayFilePath))}.cmd");
 
         string winMergeCommand = string.Join(" ",
         [
@@ -1608,7 +1675,7 @@ public sealed partial class MonitorWorkflowService
             "/dl",
             QuoteCommandArgument($"New/Proposed (Working) - {displayName}"),
             "/dr",
-            QuoteCommandArgument($"Existing Source (Right) - {displayName}"),
+            QuoteCommandArgument($"{originalLabelPrefix} - {displayName}"),
             QuoteCommandArgument(proposedFilePath),
             QuoteCommandArgument(originalFilePath)
         ]);
@@ -1616,17 +1683,16 @@ public sealed partial class MonitorWorkflowService
         string content = string.Join(Environment.NewLine,
         [
             "@echo off",
-            $"title MonitorBaseClaude diff - {Path.GetFileName(originalFilePath)}",
+            $"title MonitorBaseClaude diff - {Path.GetFileName(displayFilePath)}",
             "echo MonitorBaseClaude diff review",
             $"echo Proposed: {proposedFilePath}",
-            $"echo Source:   {originalFilePath}",
+            $"echo Source:   {displayFilePath}",
+            $"echo Review baseline: {originalFilePath}",
             "echo.",
             winMergeCommand,
             "set WINMERGE_EXIT=%ERRORLEVEL%",
             "echo.",
-            "echo WinMerge exited with code %WINMERGE_EXIT%.",
-            "echo Press any key after operator review.",
-            "pause > nul"
+            "echo WinMerge exited with code %WINMERGE_EXIT%."
         ]);
         File.WriteAllText(launcherPath, content);
         return launcherPath;
@@ -1863,11 +1929,6 @@ public sealed partial class MonitorWorkflowService
         {
             foreach (StagedEditRecord record in ReadSessionStagedRecords(sessionId))
             {
-                if (record.Operation != "submit_file")
-                {
-                    continue;
-                }
-
                 string? recordStagedPath = record.ServerDerivedMetadata.StagedFilePath;
                 if (!File.Exists(recordStagedPath))
                 {
@@ -2576,7 +2637,16 @@ public sealed partial class MonitorWorkflowService
         string name = attributeName.EndsWith("Attribute", StringComparison.Ordinal)
             ? attributeName[..^"Attribute".Length]
             : attributeName;
-        return name.Equals("FileVersion", StringComparison.Ordinal)
+        if (name.Equals("AIFileContext", StringComparison.Ordinal)
+            || name.Equals("FileVersion", StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        return name.Equals("AIChange", StringComparison.Ordinal)
+            || name.Equals("AIHistory", StringComparison.Ordinal)
+            || name.Equals("AIInstructions", StringComparison.Ordinal)
+            || name.Equals("UserHistory", StringComparison.Ordinal)
             || name.StartsWith("AI", StringComparison.Ordinal);
     }
 
@@ -3122,7 +3192,8 @@ public sealed record StagedEditRecord(
     StagedEditMetadata ServerDerivedMetadata,
     MonitorSyntaxValidationResult SyntaxValidation,
     MonitorOverlayValidationResult OverlayValidation,
-    string QueueStatus);
+    string QueueStatus,
+    string? NewFileReviewBaselinePath = null);
 
 public sealed record StagedEditMetadata(
     IReadOnlyList<StagedSymbolMetadata> SymbolsAdded,

@@ -1,4 +1,4 @@
-﻿# MCP Server Planned Work
+# MCP Server Planned Work
 
 This document holds planned MCP server hardening, future tools, diff workflow design notes, and test command references that are useful to keep, but should not be mistaken for the live callable MCP tool contract.
 
@@ -123,13 +123,13 @@ Known behavior: WinMerge launched directly from the stdio Tool Server is unrelia
 Repeatable operator workflow tests may live in:
 
 ```text
-C:\VSCodeProjects\MonitorBaseClaude\MonitorBaseClaude.ToolSmokeTests
+C:\VSCodeProjects\MonitorBaseClaude\LocalSmokeTests\LegacyToolSmokeTests
 ```
 
 Current staged-edit smoke command:
 
 ```powershell
-dotnet run --project C:\VSCodeProjects\MonitorBaseClaude\MonitorBaseClaude.ToolSmokeTests\MonitorBaseClaude.ToolSmokeTests.csproj -- --stage-comment-diff
+dotnet run --project C:\VSCodeProjects\MonitorBaseClaude\LocalSmokeTests\LegacyToolSmokeTests\LegacyToolSmokeTests.csproj -- --stage-comment-diff
 ```
 
 The sidecar runner calls real MCP tools, receives staged/source paths, and launches WinMerge directly. This is allowed because it behaves as a Host. The Monitor Tool Server still does not own GUI lifetime.
@@ -201,7 +201,7 @@ The Monitor workflow treats text patches as useful but not authoritative. Contex
 Fixture accept-path testing is handled by the sidecar runner:
 
 ```powershell
-dotnet run --project C:\VSCodeProjects\MonitorBaseClaude\MonitorBaseClaude.ToolSmokeTests\MonitorBaseClaude.ToolSmokeTests.csproj -- --fixture-accept-smoke
+dotnet run --project C:\VSCodeProjects\MonitorBaseClaude\LocalSmokeTests\LegacyToolSmokeTests\LegacyToolSmokeTests.csproj -- --fixture-accept-smoke
 ```
 
 The sidecar writes a fixture-specific config file and starts the Tool Server with that config. This keeps destructive accept-path testing away from the real watched DBV2 project.
@@ -209,7 +209,7 @@ The sidecar writes a fixture-specific config file and starts the Tool Server wit
 Decision-gate testing is handled by:
 
 ```powershell
-dotnet run --project C:\VSCodeProjects\MonitorBaseClaude\MonitorBaseClaude.ToolSmokeTests\MonitorBaseClaude.ToolSmokeTests.csproj -- --fixture-decision-gate-smoke
+dotnet run --project C:\VSCodeProjects\MonitorBaseClaude\LocalSmokeTests\LegacyToolSmokeTests\LegacyToolSmokeTests.csproj -- --fixture-decision-gate-smoke
 ```
 
 This validates clean Accept, clean Reject, reported Accept without saved candidate, reported Reject after candidate landed, and unrelated dirty source edits.
@@ -217,11 +217,11 @@ This validates clean Accept, clean Reject, reported Accept without saved candida
 Source-map artifact testing is handled by:
 
 ```powershell
-dotnet run --project C:\VSCodeProjects\MonitorBaseClaude\MonitorBaseClaude.ToolSmokeTests\MonitorBaseClaude.ToolSmokeTests.csproj -- --source-map-smoke "Data\BaseTableRepository.cs" --scope file --mode selector
+dotnet run --project C:\VSCodeProjects\MonitorBaseClaude\LocalSmokeTests\LegacyToolSmokeTests\LegacyToolSmokeTests.csproj -- --source-map-smoke "Data\BaseTableRepository.cs" --scope file --mode selector
 
-dotnet run --project C:\VSCodeProjects\MonitorBaseClaude\MonitorBaseClaude.ToolSmokeTests\MonitorBaseClaude.ToolSmokeTests.csproj -- --source-map-smoke Data --scope folder --mode navigation
+dotnet run --project C:\VSCodeProjects\MonitorBaseClaude\LocalSmokeTests\LegacyToolSmokeTests\LegacyToolSmokeTests.csproj -- --source-map-smoke Data --scope folder --mode navigation
 
-dotnet run --project C:\VSCodeProjects\MonitorBaseClaude\MonitorBaseClaude.ToolSmokeTests\MonitorBaseClaude.ToolSmokeTests.csproj -- --source-map-corpus-smoke
+dotnet run --project C:\VSCodeProjects\MonitorBaseClaude\LocalSmokeTests\LegacyToolSmokeTests\LegacyToolSmokeTests.csproj -- --source-map-corpus-smoke
 ```
 
 The focused commands call the real `get_source_map` tool against the configured watched solution and write `source-map-raw.json` plus `source-map-summary.md` under `Working\History\ToolSmokeTests\<timestamp>`. Use selector mode to review stable symbol target selection and navigation mode to review broad target/related-file discovery before reading bodies.
@@ -231,7 +231,7 @@ The corpus command walks configured DBV2 C# files and writes per-file full-mode 
 Roslyn surgery testing is handled by:
 
 ```powershell
-dotnet run --project C:\VSCodeProjects\MonitorBaseClaude\MonitorBaseClaude.ToolSmokeTests\MonitorBaseClaude.ToolSmokeTests.csproj -- --fixture-roslyn-surgery-smoke
+dotnet run --project C:\VSCodeProjects\MonitorBaseClaude\LocalSmokeTests\LegacyToolSmokeTests\LegacyToolSmokeTests.csproj -- --fixture-roslyn-surgery-smoke
 ```
 
 This stages and accepts `add_using`, `submit_symbol`, `add_symbol`, `remove_symbol`, and `remove_using` against the disposable DBV2-shaped fixture.
@@ -239,7 +239,7 @@ This stages and accepts `add_using`, `submit_symbol`, `add_symbol`, `remove_symb
 Razor current-lane testing is handled by:
 
 ```powershell
-dotnet run --project C:\VSCodeProjects\MonitorBaseClaude\MonitorBaseClaude.ToolSmokeTests\MonitorBaseClaude.ToolSmokeTests.csproj -- --fixture-razor-smoke
+dotnet run --project C:\VSCodeProjects\MonitorBaseClaude\LocalSmokeTests\LegacyToolSmokeTests\LegacyToolSmokeTests.csproj -- --fixture-razor-smoke
 ```
 
 This uses a separate Razor-shaped fixture to verify `find_file`, `get_file`, empty C# outline behavior, full-file `.razor` staging, explicit `razor-validation-pending` overlay status, and strict vote-plus-hash Accept. Razor-aware syntax/build validation is still planned.

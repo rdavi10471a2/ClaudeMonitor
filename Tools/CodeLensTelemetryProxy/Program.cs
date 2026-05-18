@@ -66,7 +66,13 @@ internal static class Program
         try
         {
             Task clientToServer = PumpClientToServerAsync(server, telemetry, sessionId, pendingRequests, settings.CapturePayloadPreviewChars);
-            Task serverToClient = PumpServerToClientAsync(server, telemetry, sessionId, pendingRequests, settings.CapturePayloadPreviewChars);
+            Task serverToClient = PumpServerToClientAsync(
+                server,
+                telemetry,
+                sessionId,
+                pendingRequests,
+                settings.CapturePayloadPreviewChars,
+                settings.TrimFrameworkMetadataInterfaces != false);
             Task stderrPump = PumpServerStderrAsync(server, telemetry, sessionId);
             Task serverExit = server.WaitForExitAsync();
 
@@ -147,7 +153,8 @@ internal static class Program
         TelemetryWriter telemetry,
         string sessionId,
         ConcurrentDictionary<string, PendingRequest> pendingRequests,
-        int previewChars)
+        int previewChars,
+        bool trimFrameworkMetadataInterfaces)
     {
         while (await server.StandardOutput.ReadLineAsync() is { } line)
         {
@@ -166,10 +173,184 @@ internal static class Program
                 };
             }
 
+            line = TrimResponseForClaude(line, metadata.Tool, trimFrameworkMetadataInterfaces);
             await telemetry.WriteMessageAsync("responses", sessionId, "response", line, metadata, elapsedMs, previewChars);
             await Console.Out.WriteLineAsync(line);
             await Console.Out.FlushAsync();
         }
+    }
+
+    private static string TrimResponseForClaude(string line, string? toolName, bool trimFrameworkMetadataInterfaces)
+    {
+        if (!trimFrameworkMetadataInterfaces
+            || !string.Equals(toolName, "get_type_overview", StringComparison.Ordinal))
+        {
+            return line;
+        }
+
+        try
+        {
+            JsonNode? node = JsonNode.Parse(line);
+            if (node is not JsonObject obj)
+            {
+                return line;
+            }
+
+            int removed = TrimTypeOverviewNode(obj);
+            return removed == 0 ? line : obj.ToJsonString(JsonOptions);
+        }
+        catch
+        {
+            return line;
+        }
+    }
+
+    private static int TrimTypeOverviewNode(JsonNode? node)
+    {
+        int removed = 0;
+        if (node is JsonObject obj)
+        {
+            removed += TrimInterfacesArray(obj);
+            foreach (KeyValuePair<string, JsonNode?> property in obj.ToArray())
+            {
+                if (string.Equals(property.Key, "text", StringComparison.Ordinal)
+                    && property.Value is JsonValue textValue
+                    && textValue.TryGetValue(out string? text)
+                    && TryTrimJsonText(text, out string? trimmedText, out int textRemoved))
+                {
+                    obj[property.Key] = trimmedText;
+                    removed += textRemoved;
+                    continue;
+                }
+
+                removed += TrimTypeOverviewNode(property.Value);
+            }
+        }
+        else if (node is JsonArray array)
+        {
+            foreach (JsonNode? item in array)
+            {
+                removed += TrimTypeOverviewNode(item);
+            }
+        }
+
+        return removed;
+    }
+
+    private static bool TryTrimJsonText(string text, out string? trimmedText, out int removed)
+    {
+        trimmedText = null;
+        removed = 0;
+        string candidate = text.Trim();
+        if (!candidate.StartsWith('{') && !candidate.StartsWith('['))
+        {
+            return false;
+        }
+
+        try
+        {
+            JsonNode? parsed = JsonNode.Parse(candidate);
+            removed = TrimTypeOverviewNode(parsed);
+            if (removed == 0 || parsed is null)
+            {
+                return false;
+            }
+
+            trimmedText = parsed.ToJsonString(JsonOptions);
+            return true;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    private static int TrimInterfacesArray(JsonObject obj)
+    {
+        if (obj["interfaces"] is not JsonArray interfaces)
+        {
+            return 0;
+        }
+
+        int originalCount = interfaces.Count;
+        List<JsonNode?> kept = [];
+        foreach (JsonNode? item in interfaces)
+        {
+            if (!IsFrameworkMetadataInterface(item))
+            {
+                kept.Add(item?.DeepClone());
+            }
+        }
+
+        if (kept.Count == originalCount)
+        {
+            return 0;
+        }
+
+        JsonArray replacement = [];
+        foreach (JsonNode? item in kept)
+        {
+            replacement.Add(item);
+        }
+
+        obj["interfaces"] = replacement;
+        obj["interfacesTrimmedByProxy"] = originalCount - kept.Count;
+        obj["interfacesTrimReason"] = "framework-metadata interfaces are hidden by default by CodeLensTelemetryProxy. Set TrimFrameworkMetadataInterfaces=false in codelens-proxy.settings.json if inherited framework interfaces are needed.";
+        return originalCount - kept.Count;
+    }
+
+    private static bool IsFrameworkMetadataInterface(JsonNode? item)
+    {
+        string name = GetInterfaceProperty(item, "name", "fullName", "fullyQualifiedName", "typeName");
+        string assembly = GetInterfaceProperty(item, "assembly", "assemblyName", "containingAssembly");
+        string candidate = string.IsNullOrWhiteSpace(name) ? item?.ToJsonString(JsonOptions) ?? string.Empty : name;
+
+        return IsFrameworkAssemblyName(assembly)
+            || IsFrameworkInterfaceName(candidate);
+    }
+
+    private static string GetInterfaceProperty(JsonNode? item, params string[] names)
+    {
+        if (item is not JsonObject obj)
+        {
+            return string.Empty;
+        }
+
+        foreach (string name in names)
+        {
+            if (obj.TryGetPropertyValue(name, out JsonNode? value)
+                && value is JsonValue jsonValue
+                && jsonValue.TryGetValue(out string? text)
+                && !string.IsNullOrWhiteSpace(text))
+            {
+                return text;
+            }
+        }
+
+        return string.Empty;
+    }
+
+    private static bool IsFrameworkAssemblyName(string assembly)
+    {
+        return assembly.StartsWith("System", StringComparison.Ordinal)
+            || assembly.StartsWith("Microsoft.AspNetCore.Components", StringComparison.Ordinal)
+            || assembly.StartsWith("Microsoft.Extensions", StringComparison.Ordinal)
+            || assembly.StartsWith("Windows", StringComparison.Ordinal)
+            || assembly.StartsWith("Presentation", StringComparison.Ordinal);
+    }
+
+    private static bool IsFrameworkInterfaceName(string name)
+    {
+        return name.StartsWith("System.", StringComparison.Ordinal)
+            || name.StartsWith("Microsoft.AspNetCore.Components.", StringComparison.Ordinal)
+            || name.StartsWith("Microsoft.Extensions.", StringComparison.Ordinal)
+            || name.StartsWith("Windows.", StringComparison.Ordinal)
+            || name.Contains(".IOle", StringComparison.Ordinal)
+            || name.Contains(".IPersist", StringComparison.Ordinal)
+            || name.EndsWith(".IHandleEvent", StringComparison.Ordinal)
+            || name.EndsWith(".IHandleAfterRender", StringComparison.Ordinal)
+            || name.Equals("IHandleEvent", StringComparison.Ordinal)
+            || name.Equals("IHandleAfterRender", StringComparison.Ordinal);
     }
 
     private static async Task PumpServerStderrAsync(Process server, TelemetryWriter telemetry, string sessionId)
@@ -423,6 +604,7 @@ internal sealed class ProxySettings
     public string? ServerCommand { get; init; }
     public string? LogRoot { get; init; }
     public int CapturePayloadPreviewChars { get; init; }
+    public bool? TrimFrameworkMetadataInterfaces { get; init; }
 
     public static ProxySettings Load(string baseDirectory)
     {
@@ -437,7 +619,10 @@ internal sealed class ProxySettings
             LogRoot = FirstNonWhiteSpace(local.LogRoot, template.LogRoot),
             CapturePayloadPreviewChars = local.CapturePayloadPreviewChars > 0
                 ? local.CapturePayloadPreviewChars
-                : template.CapturePayloadPreviewChars
+                : template.CapturePayloadPreviewChars,
+            TrimFrameworkMetadataInterfaces = local.TrimFrameworkMetadataInterfaces
+                ?? template.TrimFrameworkMetadataInterfaces
+                ?? true
         };
     }
 

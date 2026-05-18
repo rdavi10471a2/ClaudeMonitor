@@ -4,7 +4,7 @@
 
 - **Host**: the WinForms operator app in `C:\VSCodeProjects\MonitorBaseClaude`.
 - **Monitor Tool Server**: the MCP server in `C:\VSCodeProjects\MonitorBaseClaude\MonitorBaseClaude.McpServer`.
-- **Sidecar Test Runner**: the console harness in `C:\VSCodeProjects\MonitorBaseClaude\MonitorBaseClaude.ToolSmokeTests`.
+- **Sidecar Test Runner**: local-only smoke probes under `C:\VSCodeProjects\MonitorBaseClaude\LocalSmokeTests`. The old monolithic harness was moved to `LocalSmokeTests\LegacyToolSmokeTests` and should be broken into class-per-test probes over time.
 - **Source implementation**: the previous monitor implementation in `C:\VSCodeProjects\ClaudeMonitor\Monitor`.
 - **Watched project**: the project under test, currently `C:\Schema Studio - DBV2`.
 - **CodeLens Tool Server**: the external Roslyn code-intelligence MCP server.
@@ -125,13 +125,13 @@ The sidecar test runner is the preferred place to automate operator workflow tes
 Current staged-edit smoke command:
 
 ```powershell
-dotnet run --project C:\VSCodeProjects\MonitorBaseClaude\MonitorBaseClaude.ToolSmokeTests\MonitorBaseClaude.ToolSmokeTests.csproj -- --stage-comment-diff
+dotnet run --project C:\VSCodeProjects\MonitorBaseClaude\LocalSmokeTests\LegacyToolSmokeTests\LegacyToolSmokeTests.csproj -- --stage-comment-diff
 ```
 
 Current disposable accept-path smoke command:
 
 ```powershell
-dotnet run --project C:\VSCodeProjects\MonitorBaseClaude\MonitorBaseClaude.ToolSmokeTests\MonitorBaseClaude.ToolSmokeTests.csproj -- --fixture-accept-smoke
+dotnet run --project C:\VSCodeProjects\MonitorBaseClaude\LocalSmokeTests\LegacyToolSmokeTests\LegacyToolSmokeTests.csproj -- --fixture-accept-smoke
 ```
 
 The fixture accept smoke creates a DBV2-shaped watched project under `Working\Fixtures`, writes a fixture-specific config file, starts the real Monitor Tool Server against that config, stages a candidate, records `accepted`, and verifies the fixture source hash equals the staged candidate hash. It does not touch the real DBV2 project.
@@ -139,7 +139,7 @@ The fixture accept smoke creates a DBV2-shaped watched project under `Working\Fi
 Current disposable Roslyn surgery smoke command:
 
 ```powershell
-dotnet run --project C:\VSCodeProjects\MonitorBaseClaude\MonitorBaseClaude.ToolSmokeTests\MonitorBaseClaude.ToolSmokeTests.csproj -- --fixture-roslyn-surgery-smoke
+dotnet run --project C:\VSCodeProjects\MonitorBaseClaude\LocalSmokeTests\LegacyToolSmokeTests\LegacyToolSmokeTests.csproj -- --fixture-roslyn-surgery-smoke
 ```
 
 The Roslyn surgery smoke uses the same generated fixture/config path to stage and accept `add_using`, `submit_symbol`, `add_symbol`, `remove_symbol`, and `remove_using` through the real Monitor Tool Server. It is the first place to stress-test C# add/remove/replace behavior without touching the real watched DBV2 project.
@@ -147,7 +147,7 @@ The Roslyn surgery smoke uses the same generated fixture/config path to stage an
 Current disposable Razor smoke command:
 
 ```powershell
-dotnet run --project C:\VSCodeProjects\MonitorBaseClaude\MonitorBaseClaude.ToolSmokeTests\MonitorBaseClaude.ToolSmokeTests.csproj -- --fixture-razor-smoke
+dotnet run --project C:\VSCodeProjects\MonitorBaseClaude\LocalSmokeTests\LegacyToolSmokeTests\LegacyToolSmokeTests.csproj -- --fixture-razor-smoke
 ```
 
 The Razor smoke uses a separate Razor-shaped fixture because raw `.razor` files are not raw C# syntax trees. It verifies `find_file`, `get_file`, empty C# outline behavior, full-file Razor staging, explicit `razor-validation-pending` overlay status, and strict vote-plus-hash Accept.

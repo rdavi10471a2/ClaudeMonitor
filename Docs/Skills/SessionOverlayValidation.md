@@ -23,6 +23,7 @@ record decision for file B
 
 - Do not review file A before staging coupled file B.
 - Do not treat a clean single-file overlay as enough when another staged file is required for the feature to compile.
+- Do not let empty reference results shrink the session by themselves; cross-check before deciding a change is single-file.
 - Do not continue to later diffs if an earlier staged item is blocked by validation or review-gate state.
 
 ## Unblock

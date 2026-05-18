@@ -8,6 +8,8 @@ Use when a C# task mentions symbols, references, callers, implementations, diagn
 - Use text search only for literal text, comments, strings, generated artifacts, non-C# files, or Roslyn failure fallback.
 - Do not guess argument names. Read `tools/list` or the live schema.
 - Start broad, then narrow: symbol search, type overview, references/callers/impact.
+- Apply this per target file or edit cycle. Do not shortcut with "I already discovered this earlier" when the target file or coupled edit set changes.
+- Treat empty `find_references` / `find_callers` as a result to verify, not proof of absence, before API renames or signature changes.
 
 ## Usual Flow
 
