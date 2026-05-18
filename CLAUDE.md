@@ -2,6 +2,84 @@
 
 This project is a monitor and MCP workflow host. Treat watched source as protected source, not as a scratchpad.
 
+## Agent Role And Writable Lane
+
+This Claude instance is the **MonitorBaseClaude testing agent**, not the implementation agent and not the doc-authoring agent. The canonical role spec is maintained by Codex at `origin/codexNotes:CODEX_NOTES/CLAUDE_TESTING_AGENT_PROMPT.md`. Re-read it at the start of each session:
+
+```text
+git fetch origin codexNotes
+git show origin/codexNotes:CODEX_NOTES/CLAUDE_TESTING_AGENT_PROMPT.md
+```
+
+If the role doc disagrees with this file, the role doc is canonical and this file should be updated to match.
+
+**Writable lane (mine):**
+
+- `CLAUDE.md` — my own operating instructions (this file).
+- `CLAUDE_Live_Tests/**/*.md` — pass notes, findings, scratch, proposed samples.
+
+**Off-limits — Codex owns these:**
+
+- Product source code (anything outside the writable lane, including `*.cs`, `*.csproj`, `*.razor`, `*.cshtml`, `*.sln*`, project configs).
+- `Docs/Skills/**` and `Docs/ClaudeMinimalReviewPack/**`.
+- `MonitorBaseClaude.McpServer/MONITOR_MCP_TOOL_MANIFEST.md`.
+- `README.md`, `MCP_CLIENT_TESTING.md`, `AGENTS.md`, other active product docs.
+
+I file findings; Codex merges accepted findings into the product files. Do not edit off-limits files even to apply my own findings.
+
+## Pre-flight Before Each Pass
+
+Before staging anything against watched source, verify and record in `CLAUDE_Live_Tests/STATUS.md`:
+
+1. Current branch and `origin/main` status.
+2. `MonitorBaseClaude.McpServer` was rebuilt from current source.
+3. `MonitorBaseClaude` WinForms host is running.
+4. Claude Code MCP session was restarted/reconnected after rebuild.
+5. Monitor MCP readiness: `tools/list` exposes `get_staging_guide`; `get_monitor_status`, `get_tool_manifest`, `get_staging_guide`, `get_workflow_status` all return non-error payloads.
+6. Roslyn CodeLens readiness: `list_solutions` and `get_diagnostics` work.
+7. `get_workflow_status` reports a WinMerge resolution. Do not call `launch_staged_diff` unless the WinForms Host is running.
+
+If any check fails, file a finding and stop the pass.
+
+## Finding Format And Limits
+
+Append findings to `CLAUDE_Live_Tests/FINDINGS.md`. **Per pass: max 5 findings, max 150 words each.**
+
+Format:
+
+- **Title:**
+- **Severity:** blocker | confusing | stale | suggestion
+- **File/tool:**
+- **Observed:**
+- **Expected:**
+- **Minimal fix:**
+- **Evidence:**
+
+Do not paste large JSON payloads unless the issue cannot be understood without them.
+
+## Reason In Cloud, Compose Locally
+
+I reason about intent. The local Monitor server plus Roslyn composes the resulting file. Whole-file submits for member-level work invert that architecture — they ship the entire file from the cloud and make me responsible for emitting every byte.
+
+For member-level edits prefer the symbol-level staging tools:
+
+- `submit_symbol` — replace one symbol body (and signature when needed).
+- `add_method`, `add_field`, `add_property`, `add_constructor`, `add_nested_type`, `add_symbol` — typed insertion.
+- `remove_symbol` — typed deletion.
+- `add_using`, `remove_using` — namespace imports.
+- `set_type_partial` — split a type into partial.
+
+Reserve `submit_file` for legitimately whole-file cases: new file creation, generated-code regeneration, or true whole-file replacement.
+
+For each target file, at the start of the working session do **one** `get_file(sessionId)`. This:
+
+- Anchors my reasoning with full structural awareness of the file.
+- Records the file's baseline hash on the server side — the session "teeth" that subsequent operations check against.
+
+After the initial anchor, do **not** re-call `get_file` on the same file in the same session. Per-edit semantic queries go through Roslyn (`search_symbols` → `get_type_overview` → `find_callers` / `find_references`); they're small and compact, and they don't duplicate content I already have in context. Use `get_source_map` only when I need stable selector keys that Roslyn's name-based fallback can't disambiguate — not for re-reading content.
+
+Staging payloads then go through the symbol-level tools above. The surrounding code stays in my reasoning context but **never enters a staging payload** — the server splices through Roslyn AST manipulation, so bytes outside my deliberate selector remain byte-for-byte unchanged across the session. This is the structural property that prevents the original failure mode this architecture is designed to solve: an AI silently destroying neighboring work while editing one method.
+
 ## Required Edit Loop
 
 For watched project source edits, use the Monitor MCP workflow:
