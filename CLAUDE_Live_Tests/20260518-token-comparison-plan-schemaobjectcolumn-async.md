@@ -112,54 +112,86 @@ Both variants share the same task prompt; neither is allowed to claim "I already
 
 ## Results — Variant B (raw Write baseline)
 
-*To be appended after run.*
-
-- Date/time:
-- Starting session-total tokens:
-- Ending session-total tokens:
-- Delta session-total tokens:
-- Outbound payload bytes:
-  - `Read(SchemaObjectColumnRepository.cs)`: result size only, no outbound payload beyond args.
-  - `Write(.claude-local/token-test-sandbox/SchemaObjectColumnRepositoryAsync.cs)`: bytes in `content` arg.
-- Total outbound payload bytes:
-- Produced-file size (bytes / lines):
-- Notes:
+**Status:** not run in this session. Operator deferred Variant B to a clean session to avoid the in-context-contamination problem flagged in the Run Order section. Expected outbound bytes for B once run: `Read` envelope (~80 bytes for path arg) + `Write` envelope (~80 bytes path arg + 7,178 bytes content) ≈ **~7,340 bytes**. Will be filled in post-run.
 
 ## Results — Variant A (Monitor + Roslyn workflow)
 
-*To be appended after run.*
+**Status:** completed 2026-05-18, ~23:13 UTC. Watched file `SchemaStudio.Data\SchemaObjectColumnRepositoryAsync.cs` created, 7,178 bytes / 212 lines, SchemaStudio.Data project compiles with 0 errors post-accept.
 
-- Date/time:
-- Starting session-total tokens:
-- Ending session-total tokens:
-- Delta session-total tokens:
-- Per-call outbound payload bytes (one row per tool call):
+### Outbound payload bytes (approximate, per tool call)
 
-  | # | Tool | Outbound bytes | Notes |
-  |---|---|---|---|
-  | 1 |  |  |  |
+Counts are JSON-encoded argument-value lengths, rounded. Pre-flight reads and the failed typed-add attempts are included in the actual-cost subtotal; an "ideal-path" subtotal excludes the failed attempts to model what a perfectly-routed agent would have spent.
 
-- Total outbound payload bytes:
-- Number of tool calls:
-- Produced-file size (bytes / lines):
+| # | Phase | Tool | Outbound bytes (approx.) | Notes |
+|---|---|---|---|---|
+| 1 | Pre-flight | `get_monitor_status` | ~2 | empty args |
+| 2 | Pre-flight | `get_workflow_status` | ~2 | empty args |
+| 3 | Pre-flight | `list_solutions` (Roslyn) | ~2 | empty args |
+| 4 | Pre-flight | `get_diagnostics` (Roslyn) | ~49 | severity + project filter |
+| 5 | Pre-flight | `find_file` | ~56 | confirm new file path is free |
+| 6 | Read | `get_source_map` (selector) | ~88 | path + mode |
+| 7 | Read | `get_symbol` × 6 (ctor + 5 methods) | ~3,000 | path + ~450-byte selectorJson per call |
+| 8 | Compose | `start_monitor_session` | ~110 | purpose string |
+| 9 | Compose (skeleton) | `submit_file` | ~480 | path + sessionId + 383-byte skeleton body |
+| F | Failed typed-add probes | `add_method` × 3 + `add_symbol` × 1 + `add_method` (new path) | ~2,670 | 4 distinct failures: 1100 + 1100 + 150 + 180 + 140 (some 5 calls, one with afterSymbol, three minimal probes) |
+| 10 | Diagnostic | `get_staging_guide` | ~2 | empty args, called to re-check the V1 protocol after typed-add failures |
+| 11 | Compose (full body) | `submit_file` | ~7,260 | path + sessionId + 7,178-byte file content |
+| 12 | Stage | `stage_candidate_for_review` | ~130 | path + sessionId |
+| 13 | Diff | `launch_staged_diff` | ~110 | stagedRecordId |
+| 14 | Decision | `record_diff_decision` | ~350 | stagedRecordId + decision + sessionId + note |
+| 15 | Post-verify | `get_diagnostics` (Roslyn) | ~49 | confirm 0 errors after accept |
+
+**Subtotals:**
+
+- Actual outbound bytes (everything I sent, including failed attempts and the diagnostic staging-guide re-read): **~14,360 bytes**
+- "Ideal path" outbound bytes (no failed typed-add probes, no after-failure staging-guide re-read): **~11,690 bytes**
+- Construction-only (rows 8-14, the actual workflow path that produced the file): **~8,440 bytes** — dominated by the row-11 `submit_file` payload (~7,260 bytes).
+
+### Number of tool calls
+
+- Actual: 18 tool calls (excluding Bash diagnostics).
+- Ideal path: 13 tool calls.
+
+### Produced-file size
+
+7,178 bytes / 212 lines / SHA-256 e65b3032...12f54.
+
+### Workflow path actually taken (vs plan)
+
+The plan assumed I could compose the new file from `submit_file` (skeleton) + N typed `add_method` calls. **That assumption was wrong**: V1 `add_method` and `add_symbol` both error opaquely against any path not already present in Roslyn's loaded solution. The Working candidate created via `submit_file` exists on disk but is not registered with Roslyn's solution model, so subsequent typed adds have no syntax tree to splice into. This was reproduced with a brand-new probe path (`SchemaStudio.Data\TokenTestProbe.cs`) that had no prior `submit_file` at all — identical failure — confirming the issue is "typed adds require a watched, Roslyn-loaded file," not "typed adds require an existing candidate." The staging guide's mode table is consistent: it maps "Create a brand-new file" exclusively to `submit_file`, never to typed adds.
+
+The realistic workflow path for a new file is therefore **one** `submit_file` carrying the entire file body, followed by stage/diff/decision. The "compose locally, save bytes by skipping unchanged regions" advantage that the symbol-level path is built for does not apply, because there is no class body to splice into yet.
+
+### Notes / observations
+
+- **Workflow-overhead bytes outside construction:** rows 1-7 + 15 (pre-flight + reads + post-verify) = ~3,200 bytes. Of these, ~3,000 are the six `get_symbol` calls, each carrying a ~450-byte structured selector JSON.
+- **`get_symbol` selector cost is significant:** each call's outbound is dominated by the `stableSymbolKey` (~150 chars) + the full structured selector object (~300 chars). Six methods costs ~3 KB of selectors alone. If the file had 20 methods, that's ~9 KB of selector overhead just to read bodies.
+- **`submit_file` is the headline cost:** ~7,260 bytes for the 7,178-byte file body + the path/sessionId envelope. There is no avoiding this for a new file under the current tool surface.
+- **Failed-attempt overhead:** ~2,670 bytes spent on 5 typed-add probes that all returned `An error occurred invoking 'add_method'.` / `'add_symbol'.` with no diagnostic detail. Server-side stack trace not visible to the agent; session log (`Working\Sessions\monitor-...json`) did not record the failures either.
+
+### Session-total tokens (secondary, mid-session readout)
+
+Not captured — single-session run; mid-session deltas would be dominated by hours of prior conversation cost. Skipped per the run-order constraint above.
 - Result-equivalence vs Variant B: pass / fail / details:
 - Notes:
 
-## Comparison
+## Comparison (Variant A complete, Variant B projected)
 
-*To be filled after both variants run.*
+Variant B has not yet been run; the row below uses the projected total from the Variant B section.
 
-|  | Variant B (raw) | Variant A (workflow) | Ratio A:B |
+|  | Variant B (raw, projected) | Variant A (workflow, actual) | Ratio A:B |
 |---|---|---|---|
-| Outbound payload bytes |  |  |  |
-| Session-total tokens |  |  |  |
-| Tool calls |  |  |  |
-| Wall-clock time |  |  |  |
+| Outbound payload bytes (ideal path) | ~7,340 | ~11,690 | **1.59x** |
+| Outbound payload bytes (actual, with failed probes) | ~7,340 | ~14,360 | **1.96x** |
+| Tool calls (ideal path) | 2 | 13 | 6.5x |
+| Tool calls (actual) | 2 | 18 | 9x |
+| Wall-clock time | <1 min (projected) | ~7 min (incl. WinMerge accept) | — |
 
-**Interpretation placeholder:**
-- If A < B on payload bytes: workflow wins even on its worst-case scenario; the per-call overhead is smaller than the once-emitted scaffolding savings.
-- If A ≈ B on payload bytes: the test is on the crossover line; payoff depends on whether session-total tokens (which include reasoning cost) tip in A's favor.
-- If A > B on payload bytes: confirms the suspicion that new-file scenarios are uneconomic for the workflow; the workflow's payoff is in incremental-edit-on-existing-large-file scenarios that this test does not cover. Recommend a Variant C follow-up.
+**Interpretation:**
+
+- On its worst-case scenario (new file from scratch), the workflow path costs ~1.6× the outbound bytes of a raw `Write` even when everything goes smoothly — and ~2× when the agent's first attempt at typed adds fails and has to fall back to whole-file submit. This **confirms** the suspicion that new-file creation is uneconomic for the workflow's per-call overhead. The workflow's intended payoff (skipping unchanged bytes on incremental edits to large existing files) does not apply here.
+- The ~3 KB of `get_symbol` selector overhead is the largest non-payload cost; on a 20-method file that overhead alone would scale to ~9 KB and could exceed the payload itself.
+- **Recommend a Variant C follow-up**: take an existing large repository file (200+ lines) and use `add_method` to append N async-sibling methods to it. That is the workflow's actual claimed strong case — incremental adds where the existing file body is preserved byte-for-byte by Roslyn AST splicing. The crossover question for Variant C is: at what method count does the workflow start beating "raw `Write` of the entire updated file"?
 
 ## Defaults Picked Without Operator Confirmation
 
