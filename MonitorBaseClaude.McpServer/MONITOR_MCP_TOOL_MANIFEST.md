@@ -43,11 +43,25 @@ The expected edit loop is:
 find related files
 read source maps for the target file/folder
 read only the needed symbols or full files
-stage a complete candidate
+compose a complete Working candidate
+stage the completed candidate for review
 Host/sidecar opens the sanity diff
 Operator either saves the full candidate in WinMerge or leaves source unchanged
 record_diff_decision classifies by vote-plus-hash agreement
 ```
+
+The V1 composition path is:
+
+```text
+get_source_map(path, scope: "file", mode: "selector")
+submit_file / add_symbol / add_field / add_method
+repeat candidate edits as needed
+stage_candidate_for_review
+launch_staged_diff or Host/sidecar WinMerge review/save
+record_diff_decision(stagedRecordId, accepted|rejected)
+```
+
+`submit_file`, `add_symbol`, `add_field`, and `add_method` write to the normal monitor-owned `Working\<observedRootKey>\<relative source path>` mirror. They do not create staged records. The session id is metadata only; it is not part of the visible Working path.
 
 Models are allowed and expected to read related files under the watched root when the change requires context. The preferred first read for C# is `get_source_map`, because it gives the real current structure without forcing a whole-file read.
 
@@ -76,7 +90,8 @@ Expected behavior:
 - Use `get_symbol` for the smallest needed body.
 - Use a structured selector or `stableSymbolKey` when available.
 - For symbol staging or removal, prefer `stableSymbolKey` or structured `symbolSelectorJson`; name-only `symbolName` is a fallback of last resort for read compatibility, not mutation authority.
-- Stage a complete candidate; do not directly mutate watched source.
+- Compose a complete Working candidate; do not directly mutate watched source.
+- Call `stage_candidate_for_review` only after the candidate is complete enough for review.
 - Use `launch_staged_diff` when the MCP client has no separate Host or sidecar available to open WinMerge.
 - Treat `record_diff_decision` as vote-plus-hash agreement.
 - Do not perform DRY cleanup or helper extraction as a side effect of a narrow change.
@@ -138,11 +153,15 @@ This prevents Accept and Reject from collapsing into the same raw hash state.
 | session staged edit visibility | `list_session_staged_records` | scaffolded |
 | session file hash tracking | `check_file_hash`, `get_file.sessionId` | scaffolded |
 | token-saving outline reads | `get_file_outline`, `get_symbol` | scaffolded |
-| staged whole-file replacement | `submit_file` | scaffolded |
+| Working mirror full-file candidate | `submit_file` | implemented |
+| Working mirror member candidates | `add_symbol`, `add_field`, `add_method` | implemented |
+| Working candidate review snapshot | `stage_candidate_for_review` | implemented |
+| legacy immediate staged whole-file replacement | `submit_file_old` | compatibility |
 | staged symbol replacement | `submit_symbol` | scaffolded |
 | Roslyn type declaration modifier staging | `set_type_partial` | scaffolded |
-| Roslyn typed member insertion | `add_field`, `add_property`, `add_method`, `add_constructor`, `add_nested_type` | scaffolded |
-| Roslyn generic symbol insertion | `add_symbol`, `add_using` | scaffolded |
+| Roslyn typed member insertion | `add_property`, `add_constructor`, `add_nested_type` | scaffolded |
+| legacy immediate staged member insertion | `add_symbol_old`, `add_field_old`, `add_method_old` | compatibility |
+| Roslyn generic symbol insertion | `add_using` | scaffolded |
 | Roslyn symbol removal | `remove_symbol`, `remove_using` | scaffolded |
 | Roslyn class insertion/removal | `add_class`, `remove_class` | planned |
 | staged candidate WinMerge launch | `launch_staged_diff` | scaffolded |
@@ -381,15 +400,42 @@ Selector behavior:
 
 ### `submit_file`
 
-Stages a complete replacement file under monitor-owned `Working\Staged`, writes a timestamped `StagedEditRecord`, derives Roslyn metadata, runs syntax validation, runs overlay compile validation, and returns staged/source paths. C# parse/syntax errors are rejected before a staged record is written. Overlay compile diagnostics are reported on staged candidates because project/reference state can produce false positives.
+Writes a complete replacement candidate into the monitor-owned Working mirror. It does not create a staged record and does not overwrite watched source. Use `stage_candidate_for_review` when the Working candidate is complete.
 
 Arguments:
 
 - `path`: watched source file path, absolute or relative to the watched solution folder.
 - `content`: complete replacement file content.
-- `sessionId`: optional durable session handle.
+- `sessionId`: optional durable session handle. The session id is metadata only and is not part of the Working path.
 - `manifestJson`: optional Model-intent manifest. It is recorded but not trusted for verification.
-- `launchDiff`: deprecated compatibility flag. Always pass `false`. GUI diff launch is the Host or sidecar's responsibility. There is no agent-side case where `true` is correct.
+
+Candidate path rule:
+
+```text
+Working\<observedRootKey>\<relative source path>
+```
+
+Baseline rule:
+
+- The first candidate operation copies the watched source into the Working mirror and records source hash, length, and timestamp.
+- Later candidate operations refuse with `candidate-baseline-stale` if the watched source changed after the candidate was initialized.
+- For new-file candidates, the baseline is `<new-file>` and staging remains a review action; watched source is not directly overwritten by candidate composition.
+
+### `stage_candidate_for_review`
+
+Snapshots the completed Working candidate into `Working\Staged`, writes one immutable `StagedEditRecord`, derives Roslyn metadata, runs syntax validation, and returns the staged record id for `launch_staged_diff` / `record_diff_decision`.
+
+Arguments:
+
+- `path`: watched source file path, absolute or relative to the watched solution folder.
+- `sessionId`: optional durable session handle.
+- `manifestJson`: optional Model-intent manifest.
+
+For new files, the staged record uses `<new-file>` as the original baseline. `launch_staged_diff` still creates a blank throwaway review baseline for WinMerge.
+
+### `submit_file_old`
+
+Compatibility escape hatch for the old immediate-staging behavior. Prefer `submit_file` followed by `stage_candidate_for_review`.
 
 ### `submit_symbol`
 
@@ -428,7 +474,7 @@ Arguments:
 
 ### `add_symbol` / `remove_symbol`
 
-Stages adding or removing one C# member. `add_symbol` takes a containing type and complete member declaration. `remove_symbol` takes structured selector JSON.
+`add_symbol` adds one C# member to the Working mirror candidate. It does not create a staged record. `remove_symbol` still uses the old staged-candidate path and should be treated as legacy until the candidate path covers removals.
 
 Arguments:
 
@@ -446,12 +492,12 @@ Arguments:
 Prefer these narrow tools over generic `add_symbol` when the member kind is known:
 
 - `add_field`
-- `add_property`
 - `add_method`
+- `add_property`
 - `add_constructor`
 - `add_nested_type`
 
-They all stage a complete candidate file, preserve local insertion trivia, run localized formatting on the inserted member, and do not overwrite watched source.
+`add_field` and `add_method` write to the Working mirror candidate and do not create staged records. `add_property`, `add_constructor`, and `add_nested_type` still use the old immediate-staged path until their candidate wrappers are promoted.
 
 Common arguments:
 

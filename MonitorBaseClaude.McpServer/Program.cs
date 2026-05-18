@@ -190,15 +190,36 @@ public sealed class MonitorTools
     }
 
     [McpServerTool]
-    [Description("Stage a full-file replacement under monitor-owned Working\\Staged. Does not overwrite the watched source file. Host-like clients should launch GUI diff tools using the returned paths.")]
-    public MonitorFileSubmitResult SubmitFile(
+    [Description("Write a full-file candidate into the monitor-owned Working mirror. Does not create a staged record; call stage_candidate_for_review when the candidate is complete.")]
+    public MonitorCandidateEditResult SubmitFile(
+        [Description("Source file path, absolute or relative to the watched solution folder.")] string path,
+        [Description("Complete replacement file content.")] string content,
+        [Description("Optional durable session handle for ownership/telemetry. The session id is metadata and is not part of the Working path.")] string? sessionId = null,
+        [Description("Optional JSON manifest expressing Model intent.")] string? manifestJson = null)
+    {
+        return Track(nameof(SubmitFile), new { path, contentLength = content.Length, sessionId, manifestLength = manifestJson?.Length ?? 0 }, () => workflowService.SubmitFile(path, content, sessionId, manifestJson));
+    }
+
+    [McpServerTool]
+    [Description("Legacy immediate-staging full-file replacement. Prefer submit_file followed by stage_candidate_for_review.")]
+    public MonitorFileSubmitResult SubmitFileOld(
         [Description("Source file path, absolute or relative to the watched solution folder.")] string path,
         [Description("Complete replacement file content.")] string content,
         [Description("Optional durable session handle to link this staged edit to a monitor workflow session.")] string? sessionId = null,
         [Description("Optional JSON manifest expressing Model intent. The Tool Server records it but verifies using Roslyn-derived metadata.")] string? manifestJson = null,
         [Description("Deprecated compatibility flag. GUI diff launch from the stdio Tool Server is unreliable; prefer false and let the Host or sidecar launch WinMerge using returned paths.")] bool launchDiff = false)
     {
-        return Track(nameof(SubmitFile), new { path, contentLength = content.Length, sessionId, manifestLength = manifestJson?.Length ?? 0, launchDiff }, () => workflowService.SubmitFile(path, content, sessionId, manifestJson, launchDiff));
+        return Track(nameof(SubmitFileOld), new { path, contentLength = content.Length, sessionId, manifestLength = manifestJson?.Length ?? 0, launchDiff }, () => workflowService.SubmitFileOld(path, content, sessionId, manifestJson, launchDiff));
+    }
+
+    [McpServerTool]
+    [Description("Stage the current Working mirror candidate for review. This creates one immutable staged record from the completed candidate.")]
+    public MonitorFileSubmitResult StageCandidateForReview(
+        [Description("Source file path, absolute or relative to the watched solution folder.")] string path,
+        [Description("Optional durable session handle for ownership/telemetry.")] string? sessionId = null,
+        [Description("Optional JSON manifest expressing Model intent.")] string? manifestJson = null)
+    {
+        return Track(nameof(StageCandidateForReview), new { path, sessionId, manifestLength = manifestJson?.Length ?? 0 }, () => workflowService.StageCandidateForReview(path, sessionId, manifestJson));
     }
 
     [McpServerTool]
@@ -248,8 +269,22 @@ public sealed class MonitorTools
     }
 
     [McpServerTool]
-    [Description("Stage adding one C# member to a containing type. Produces a full staged candidate; does not overwrite watched source.")]
-    public MonitorFileSubmitResult AddSymbol(
+    [Description("Add one C# member to the monitor-owned Working mirror candidate. Does not create a staged record; call stage_candidate_for_review when all edits are complete.")]
+    public MonitorCandidateEditResult AddSymbol(
+        [Description("Source file path, absolute or relative to the watched solution folder.")] string path,
+        [Description("Containing type name.")] string containingType,
+        [Description("Expected symbol kind, such as method, property, field, event, constructor, or class.")] string symbolType,
+        [Description("Complete C# member declaration to add.")] string code,
+        [Description("Optional existing member name after which to insert the new member.")] string? afterSymbol = null,
+        [Description("Optional durable session handle for ownership/telemetry. The session id is metadata and is not part of the Working path.")] string? sessionId = null,
+        [Description("Optional JSON manifest expressing Model intent.")] string? manifestJson = null)
+    {
+        return Track(nameof(AddSymbol), new { path, containingType, symbolType, codeLength = code.Length, afterSymbol, sessionId, manifestLength = manifestJson?.Length ?? 0 }, () => workflowService.AddSymbol(path, containingType, symbolType, code, afterSymbol, sessionId, manifestJson));
+    }
+
+    [McpServerTool]
+    [Description("Legacy immediate-staging C# member insertion. Prefer add_symbol followed by stage_candidate_for_review.")]
+    public MonitorFileSubmitResult AddSymbolOld(
         [Description("Source file path, absolute or relative to the watched solution folder.")] string path,
         [Description("Containing type name.")] string containingType,
         [Description("Expected symbol kind, such as method, property, field, event, constructor, or class.")] string symbolType,
@@ -258,12 +293,25 @@ public sealed class MonitorTools
         [Description("Optional durable session handle to link this staged edit to a monitor workflow session.")] string? sessionId = null,
         [Description("Optional JSON manifest expressing Model intent.")] string? manifestJson = null)
     {
-        return Track(nameof(AddSymbol), new { path, containingType, symbolType, codeLength = code.Length, afterSymbol, sessionId, manifestLength = manifestJson?.Length ?? 0 }, () => workflowService.AddSymbol(path, containingType, symbolType, code, afterSymbol, sessionId, manifestJson));
+        return Track(nameof(AddSymbolOld), new { path, containingType, symbolType, codeLength = code.Length, afterSymbol, sessionId, manifestLength = manifestJson?.Length ?? 0 }, () => workflowService.AddSymbolOld(path, containingType, symbolType, code, afterSymbol, sessionId, manifestJson));
     }
 
     [McpServerTool]
-    [Description("Stage adding one C# field to a containing type. Prefer this over generic add_symbol for field insertion. Produces a full staged candidate; does not overwrite watched source.")]
-    public MonitorFileSubmitResult AddField(
+    [Description("Add one C# field to the monitor-owned Working mirror candidate. Does not create a staged record; call stage_candidate_for_review when all edits to the file are complete.")]
+    public MonitorCandidateEditResult AddField(
+        [Description("Source file path, absolute or relative to the watched solution folder.")] string path,
+        [Description("Containing type name.")] string containingType,
+        [Description("Complete C# field declaration, such as private readonly IClock _clock;.")] string declaration,
+        [Description("Optional existing member name after which to insert the field, such as _logger.")] string? afterSymbol = null,
+        [Description("Optional durable session handle for ownership/telemetry. The session id is metadata and is not part of the Working path.")] string? sessionId = null,
+        [Description("Optional JSON manifest expressing Model intent.")] string? manifestJson = null)
+    {
+        return Track(nameof(AddField), new { path, containingType, declarationLength = declaration.Length, afterSymbol, sessionId, manifestLength = manifestJson?.Length ?? 0 }, () => workflowService.AddField(path, containingType, declaration, afterSymbol, sessionId, manifestJson));
+    }
+
+    [McpServerTool]
+    [Description("Legacy immediate-staging C# field insertion. Prefer add_field followed by stage_candidate_for_review.")]
+    public MonitorFileSubmitResult AddFieldOld(
         [Description("Source file path, absolute or relative to the watched solution folder.")] string path,
         [Description("Containing type name.")] string containingType,
         [Description("Complete C# field declaration, such as private readonly IClock _clock;.")] string declaration,
@@ -271,7 +319,7 @@ public sealed class MonitorTools
         [Description("Optional durable session handle to link this staged edit to a monitor workflow session.")] string? sessionId = null,
         [Description("Optional JSON manifest expressing Model intent.")] string? manifestJson = null)
     {
-        return Track(nameof(AddField), new { path, containingType, declarationLength = declaration.Length, afterSymbol, sessionId, manifestLength = manifestJson?.Length ?? 0 }, () => workflowService.AddField(path, containingType, declaration, afterSymbol, sessionId, manifestJson));
+        return Track(nameof(AddFieldOld), new { path, containingType, declarationLength = declaration.Length, afterSymbol, sessionId, manifestLength = manifestJson?.Length ?? 0 }, () => workflowService.AddFieldOld(path, containingType, declaration, afterSymbol, sessionId, manifestJson));
     }
 
     [McpServerTool]
@@ -288,8 +336,21 @@ public sealed class MonitorTools
     }
 
     [McpServerTool]
-    [Description("Stage adding one C# method to a containing type. Prefer this over generic add_symbol for method insertion. Produces a full staged candidate; does not overwrite watched source.")]
-    public MonitorFileSubmitResult AddMethod(
+    [Description("Add one C# method to the monitor-owned Working mirror candidate. Does not create a staged record; call stage_candidate_for_review when all edits to the file are complete.")]
+    public MonitorCandidateEditResult AddMethod(
+        [Description("Source file path, absolute or relative to the watched solution folder.")] string path,
+        [Description("Containing type name.")] string containingType,
+        [Description("Complete C# method declaration.")] string declaration,
+        [Description("Optional existing member name after which to insert the method.")] string? afterSymbol = null,
+        [Description("Optional durable session handle for ownership/telemetry. The session id is metadata and is not part of the Working path.")] string? sessionId = null,
+        [Description("Optional JSON manifest expressing Model intent.")] string? manifestJson = null)
+    {
+        return Track(nameof(AddMethod), new { path, containingType, declarationLength = declaration.Length, afterSymbol, sessionId, manifestLength = manifestJson?.Length ?? 0 }, () => workflowService.AddMethod(path, containingType, declaration, afterSymbol, sessionId, manifestJson));
+    }
+
+    [McpServerTool]
+    [Description("Legacy immediate-staging C# method insertion. Prefer add_method followed by stage_candidate_for_review.")]
+    public MonitorFileSubmitResult AddMethodOld(
         [Description("Source file path, absolute or relative to the watched solution folder.")] string path,
         [Description("Containing type name.")] string containingType,
         [Description("Complete C# method declaration.")] string declaration,
@@ -297,7 +358,7 @@ public sealed class MonitorTools
         [Description("Optional durable session handle to link this staged edit to a monitor workflow session.")] string? sessionId = null,
         [Description("Optional JSON manifest expressing Model intent.")] string? manifestJson = null)
     {
-        return Track(nameof(AddMethod), new { path, containingType, declarationLength = declaration.Length, afterSymbol, sessionId, manifestLength = manifestJson?.Length ?? 0 }, () => workflowService.AddMethod(path, containingType, declaration, afterSymbol, sessionId, manifestJson));
+        return Track(nameof(AddMethodOld), new { path, containingType, declarationLength = declaration.Length, afterSymbol, sessionId, manifestLength = manifestJson?.Length ?? 0 }, () => workflowService.AddMethodOld(path, containingType, declaration, afterSymbol, sessionId, manifestJson));
     }
 
     [McpServerTool]
