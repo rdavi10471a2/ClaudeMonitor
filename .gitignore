@@ -12,6 +12,7 @@ obj/
 
 # Local runtime configuration
 appsettings.json
+.claude-local/
 
 # Monitor-owned generated state
 Working/
@@ -19,6 +20,7 @@ Working/
 # Generated review/export bundles
 Docs/ClaudeMinimalReviewPack/
 Docs/ClaudeMinimalReviewPack.zip
+Docs/Archive/
 
 # Repo-local MCP tool installs
 Tools/RoslynCodeLens/

@@ -104,6 +104,41 @@ For each target file, one `get_file(sessionId)` early in the session is fine if 
 
 Staging payloads then go through the symbol-level tools above. The surrounding code stays in my reasoning context but **never enters a staging payload** — the server splices through Roslyn AST manipulation, so bytes outside my deliberate selector remain byte-for-byte unchanged across the session. This is the structural property that prevents the original failure mode this architecture is designed to solve: an AI silently destroying neighboring work while editing one method.
 
+## Working Candidate Composition Flow (V1, post-b0d071e)
+
+`submit_file`, `add_symbol`, `add_field`, and `add_method` no longer create immediate staged records. They compose into the monitor-owned `Working\<observedRootKey>\<relative source path>` mirror. Multiple candidate operations on the same path accumulate into one Working candidate. Once the candidate is complete, call `stage_candidate_for_review(path, sessionId?)` to snapshot it into `Working\Staged` as one immutable `StagedEditRecord`; then `launch_staged_diff` and `record_diff_decision` as before.
+
+Baseline rule: the first candidate op records the watched-source hash/length/timestamp. Later ops on the same Working candidate refuse with `candidate-baseline-stale` if watched source changed underneath. New-file candidates use baseline `<new-file>`.
+
+Legacy immediate-staged behavior is preserved as `submit_file_old`, `add_symbol_old`, `add_field_old`, `add_method_old`. Do not call the `_old` variants unless explicitly testing the legacy path. Tools that have not yet been promoted (`add_property`, `add_constructor`, `add_nested_type`, `submit_symbol`, `remove_symbol`, `set_type_partial`, `add_using`, `remove_using`) continue to create staged records directly. Treat that as transitional, not as the target shape.
+
+Superseded staged records (commit 694e076) are physically archived to `Working\Staged\Superseded\<yyyyMMdd>\<recordId>\…`. `launch_staged_diff` and `record_diff_decision` refuse them with `staged-record-superseded` / clear error; resolve by calling `list_session_staged_records` to find the live record, not by chasing the archived id.
+
+## Report And Memory Lanes
+
+Use `CLAUDE_Live_Tests/` for source-controlled findings, bug reports, test results, and doc suggestions that Codex/operator should review. Follow `CLAUDE_Live_Tests/README.md`: every report is date-stamped, has a status header, and can be marked processed after triage.
+
+Use local `.claude-local/` for private restart memory, scratch notes, and VS Code/MCP binding workarounds. `.claude-local/` is ignored by git and is not product documentation.
+
+When this rule is first seen in an existing checkout, move current local restart/scratch notes into `.claude-local/`. Move findings, bug reports, test results, and doc suggestions that Codex/operator should review into `CLAUDE_Live_Tests/` using the naming and header rules in `CLAUDE_Live_Tests/README.md`.
+
+Do not treat `CLAUDE_Live_Tests/`, `.claude-local/`, `Working/`, `LocalSmokeTests/`, or `Docs/Archive/` as authority for workflow rules. When instructions conflict, prefer the current user message, then this file, then `get_tool_manifest`, then `get_staging_guide`.
+
+Claude may push markdown-only branches for review, never directly to `main`. Use branch names like `claude-notes/YYYYMMDD-topic`.
+
+Claude-owned markdown paths:
+
+- `CLAUDE.md`
+- `CLAUDE_Live_Tests/**/*.md`
+
+Markdown paths allowed only when the Operator explicitly asks:
+
+- `MCP_CLIENT_TESTING.md`
+- `README.md`
+- `Docs/Skills/**/*.md`
+
+Before pushing a Claude notes branch, run `git diff --name-only main...HEAD`. Stop if any non-Markdown file appears, or if any Markdown file is outside the allowed paths for the task.
+
 ## Required Edit Loop
 
 For watched project source edits, use the Monitor MCP workflow:

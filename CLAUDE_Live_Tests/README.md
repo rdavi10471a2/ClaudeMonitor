@@ -1,47 +1,124 @@
-# CLAUDE Live Tests
+# Claude Live Test Reports
 
-Working notes from a Claude tester/config-helper pass on the MonitorBaseClaude MCP + skill workflow.
+This folder is Claude's source-controlled report lane.
 
-## Scope
+Claude may write findings, bug reports, and doc suggestions here when live MCP testing exposes a problem or ambiguity. These files are input for Codex/operator review. They are not product workflow authority by themselves.
 
-- This folder is for Claude's own running notes and compact findings during live workflow testing.
-- It is not normative for the project. Codex owns merging accepted feedback into `CLAUDE.md`, `MCP_CLIENT_TESTING.md`, the manifest, and the active skill cards.
-- Active docs are off-limits from this folder unless an Operator explicitly authorizes a change.
-- The watched testing environment (`C:\Schema Studio - DBV2\`) is MCP-only. Nothing here describes a direct edit of watched source.
+## Folder Rules
 
-## Files
+- Use this folder for reports that should be reviewed from GitHub.
+- Use local `.claude-local/` for private restart memory, scratch notes, and local VS Code/MCP binding workarounds.
+- Do not put product source changes here.
+- Do not edit official docs from this lane unless the operator explicitly asks.
+- Do not treat old reports here as current workflow instructions.
 
-- `STATUS.md`: rolling status log for the active test pass. What was done, what is next, what is blocked.
-- `FINDINGS.md`: compact bug reports and doc suggestions, one section per pass. Codex merges accepted items into the active docs.
-- `SCRATCH.md`: short-lived working notes. Safe to clear between passes.
+## Naming
 
-## Per-Pass Capture
-
-Every pass records, alongside the findings:
-
-- Wall-clock for each notable tool call (anything over 1 s or that returns budget/truncation metadata).
-- `estimatedTokenProxy` for every `get_source_map` call.
-- Build wall-clock when a rebuild is performed.
-- Process IDs of started/killed services so the next pass can verify state.
-
-## Compact Finding Format
+Every report file name must start with a local date stamp:
 
 ```text
-Title:
-Severity: blocker | confusing | stale | suggestion
-File/tool:
-Observed:
-Expected:
-Minimal fix:
-Evidence:
+YYYYMMDD-short-topic.md
 ```
 
-Max 5 findings per pass. Max 150 words per finding.
+Examples:
 
-## Workflow Rules This Folder Operates Under
+```text
+20260518-finding-21-find-references-type-position.md
+20260518-doc-suggestion-source-map-first.md
+20260518-bridge-restart-binding-notes.md
+```
 
-- Stay in tester/config-helper mode. File compact findings, do not rewrite broad docs.
-- All watched-source changes go through Monitor MCP staging plus WinMerge review plus `record_diff_decision`. Never edit watched source directly.
-- Prefer Roslyn Tooling over grep/text search for C# semantic discovery.
-- Coupled multi-file edits stage under one monitor session before the first review launch.
-- `get_smoke_test_catalog` is debug/maintainer-only and is not part of normal review or edit planning.
+Use ASCII lowercase words separated by hyphens after the date. Keep one finding or suggestion per file when possible.
+
+## Required Header
+
+Each report starts with this YAML header:
+
+```yaml
+---
+status: new
+type: finding
+created: YYYY-MM-DD
+processed: false
+processedBy:
+processedAt:
+resolution:
+resolutionCommit:
+---
+```
+
+Allowed `type` values:
+
+```text
+finding
+bug
+doc-suggestion
+test-result
+restart-note
+```
+
+Allowed `status` values:
+
+```text
+new
+needs-details
+accepted
+rejected
+fixed
+archived
+```
+
+`processed: false` means Codex/operator has not triaged it yet.
+
+When Codex/operator triages a report, update the header instead of renaming the file:
+
+```yaml
+status: fixed
+processed: true
+processedBy: Codex
+processedAt: 2026-05-18
+resolution: Implemented list_session_staged_records and source-map initializer signatures.
+resolutionCommit: c95c313
+```
+
+## Report Body Template
+
+Use this shape for bugs/findings:
+
+```markdown
+## Summary
+
+One short paragraph.
+
+## Repro
+
+1. Exact setup step.
+2. Exact tool call.
+3. Exact observed result.
+
+## Expected
+
+What should have happened.
+
+## Actual
+
+What happened instead.
+
+## Evidence
+
+- Tool name:
+- Arguments:
+- Result JSON path or pasted compact excerpt:
+- Source file path:
+- Related session id:
+
+## Notes
+
+Anything uncertain or operator-facing.
+```
+
+For Finding 21 specifically, include the exact Roslyn tool call, symbol/type name, file path, expected reference location, actual JSON, and whether `search_symbols` or `get_source_map` found what `find_references` missed.
+
+## Legacy In-Folder Files (Pre-2026-05-18)
+
+`STATUS.md`, `FINDINGS.md`, `SCRATCH.md`, `SESSION_RESUME.md`, and the `Pass*` files predate the date-stamped per-report layout. They are kept as-is for history. New findings and bug reports should use the `YYYYMMDD-short-topic.md` naming with the YAML header above.
