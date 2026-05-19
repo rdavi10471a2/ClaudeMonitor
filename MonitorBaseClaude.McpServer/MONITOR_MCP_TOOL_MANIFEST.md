@@ -156,13 +156,9 @@ This prevents Accept and Reject from collapsing into the same raw hash state.
 | Working mirror full-file candidate | `submit_file` | implemented |
 | Working mirror member candidates | `add_symbol`, `add_field`, `add_method`, `add_property`, `add_constructor`, `add_nested_type` | implemented |
 | Working candidate review snapshot | `stage_candidate_for_review` | implemented |
-| legacy immediate staged whole-file replacement | `submit_file_old` | compatibility |
 | Working mirror symbol replacement/removal | `submit_symbol`, `remove_symbol` | implemented |
 | Working mirror type declaration modifier | `set_type_partial` | implemented |
-| legacy immediate staged member insertion | `add_symbol_old`, `add_field_old`, `add_method_old`, `add_property_old`, `add_constructor_old`, `add_nested_type_old` | compatibility |
-| legacy immediate staged symbol replacement/removal | `submit_symbol_old`, `remove_symbol_old` | compatibility |
 | Working mirror using directive edits | `add_using`, `remove_using` | implemented |
-| legacy immediate staged using/type modifier edits | `add_using_old`, `remove_using_old`, `set_type_partial_old` | compatibility |
 | Roslyn class insertion/removal | `add_class`, `remove_class` | planned |
 | staged candidate WinMerge launch | `launch_staged_diff` | scaffolded |
 | diff outcome classification | `record_diff_decision` | scaffolded |
@@ -433,10 +429,6 @@ Arguments:
 
 For new files, the staged record uses `<new-file>` as the original baseline. `launch_staged_diff` still creates a blank throwaway review baseline for WinMerge.
 
-### `submit_file_old`
-
-Compatibility escape hatch for the old immediate-staging behavior. Prefer `submit_file` followed by `stage_candidate_for_review`.
-
 ### `submit_symbol`
 
 Writes replacement of one C# symbol selected by structured selector JSON into the Working mirror candidate. It does not create a staged record. Call `stage_candidate_for_review` when all edits to the file are complete.
@@ -516,7 +508,7 @@ Classifies the completed WinMerge review for a staged edit and enforces the stri
 
 Arguments:
 
-- `stagedRecordId`: staged edit record id returned by `stage_candidate_for_review` or a legacy `_old` immediate-staging tool.
+- `stagedRecordId`: staged edit record id returned by `stage_candidate_for_review`.
 - `decision`: Operator-reported outcome, `accepted` or `rejected`.
 - `note`: optional Operator note.
 - `sessionId`: optional durable session handle. Defaults to the staged record session when present.
@@ -546,7 +538,7 @@ Launches WinMerge for an existing staged edit record and returns review paths pl
 
 Arguments:
 
-- `stagedRecordId`: staged edit record id returned by `stage_candidate_for_review` or a legacy `_old` immediate-staging tool.
+- `stagedRecordId`: staged edit record id returned by `stage_candidate_for_review`.
 - `forceReviewOnOverlayErrors`: optional boolean. Leave `false` unless the Operator explicitly asked to review a compile-failed staged candidate.
 
 Behavior:

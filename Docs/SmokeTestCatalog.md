@@ -95,3 +95,4 @@ Working\History\ToolSmokeTests\<run-id>\
 - No diagnostic delta smoke exists yet for before/after staged candidates.
 - No negative argument-shape smoke exists yet for mistakes such as `symbolName` passed to `find_references`.
 - Typed insertion tools are exposed, but only generic `add_symbol` paths are strongly smoke-covered for several member kinds; direct `add_field`, `add_property`, `add_method`, `add_constructor`, and `add_nested_type` smokes should be added.
+- No standard-region retrofit smoke exists yet. If implemented, it should be an explicit cleanup/refactor smoke that proves existing C# code can be grouped into the project region layout without mixing in behavior changes.
