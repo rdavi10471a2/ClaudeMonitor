@@ -343,122 +343,6 @@ public sealed partial class MonitorWorkflowService
         return new MonitorSessionStagedRecordsResult(sessionId, records.Length, records);
     }
 
-    public MonitorFileSubmitResult SubmitFileOld(string sourceFilePath, string content, string? sessionId = null, string? manifestJson = null, bool launchDiff = false)
-    {
-        MonitorFileContext context = ResolveFileContext(sourceFilePath, allowMissing: true);
-        return StageFileReplacement("submit_file_old", context, content, sessionId, manifestJson, launchDiff);
-    }
-
-    public MonitorFileSubmitResult SubmitSymbolOld(string sourceFilePath, string symbolSelectorJson, string code, string? sessionId = null, string? manifestJson = null)
-    {
-        MonitorFileContext context = ResolveCSharpFileContext(sourceFilePath, "submit_symbol_old");
-        string editBasePath = ResolveEditBasePath(context, sessionId);
-        CompilationUnitSyntax root = ParseCompilationUnit(context, editBasePath);
-        MonitorSymbolSelector selector = ParseSymbolSelector(symbolSelectorJson);
-        MemberDeclarationSyntax target = ResolveSingleMember(root, selector, context.RelativeSourcePath);
-        MemberDeclarationSyntax replacement = ParseMemberDeclaration(code, "replacement symbol")
-            .WithLeadingTrivia(target.GetLeadingTrivia())
-            .WithTrailingTrivia(target.GetTrailingTrivia())
-            .WithAdditionalAnnotations(FormatAnnotation);
-        CompilationUnitSyntax newRoot = root.ReplaceNode(target, replacement);
-        newRoot = FormatAnnotatedNodes(newRoot);
-        return StageFileReplacement("submit_symbol_old", context, newRoot.ToFullString(), sessionId, manifestJson, launchDiff: false);
-    }
-
-    public MonitorFileSubmitResult AddUsingOld(string sourceFilePath, string @namespace, string? sessionId = null, string? manifestJson = null)
-    {
-        MonitorFileContext context = ResolveCSharpFileContext(sourceFilePath, "add_using_old");
-        string editBasePath = ResolveEditBasePath(context, sessionId);
-        CompilationUnitSyntax root = ParseCompilationUnit(context, editBasePath);
-        if (root.Usings.Any(usingDirective => string.Equals(usingDirective.Name?.ToString(), @namespace, StringComparison.Ordinal)))
-        {
-            throw new InvalidOperationException($"Using '{@namespace}' already exists in {context.RelativeSourcePath}.");
-        }
-
-        UsingDirectiveSyntax newUsing = SyntaxFactory.ParseCompilationUnit($"using {@namespace};{Environment.NewLine}")
-            .Usings
-            .Single();
-        UsingDirectiveSyntax[] usings = root.Usings
-            .Add(newUsing)
-            .OrderBy(usingDirective => usingDirective.Name?.ToString(), StringComparer.Ordinal)
-            .ToArray();
-        CompilationUnitSyntax newRoot = root.WithUsings(SyntaxFactory.List(usings));
-        return StageFileReplacement("add_using_old", context, newRoot.ToFullString(), sessionId, manifestJson, launchDiff: false);
-    }
-
-    public MonitorFileSubmitResult RemoveUsingOld(string sourceFilePath, string @namespace, string? sessionId = null, string? manifestJson = null)
-    {
-        MonitorFileContext context = ResolveCSharpFileContext(sourceFilePath, "remove_using_old");
-        string editBasePath = ResolveEditBasePath(context, sessionId);
-        CompilationUnitSyntax root = ParseCompilationUnit(context, editBasePath);
-        UsingDirectiveSyntax? target = root.Usings.FirstOrDefault(usingDirective => string.Equals(usingDirective.Name?.ToString(), @namespace, StringComparison.Ordinal))
-            ?? throw new InvalidOperationException($"Using '{@namespace}' was not found in {context.RelativeSourcePath}.");
-        CompilationUnitSyntax newRoot = root.RemoveNode(target, SyntaxRemoveOptions.KeepNoTrivia)
-            ?? throw new InvalidOperationException($"Using '{@namespace}' could not be removed from {context.RelativeSourcePath}.");
-        return StageFileReplacement("remove_using_old", context, newRoot.ToFullString(), sessionId, manifestJson, launchDiff: false);
-    }
-
-    public MonitorFileSubmitResult SetTypePartialOld(string sourceFilePath, string containingType, bool isPartial = true, string? sessionId = null, string? manifestJson = null)
-    {
-        MonitorFileContext context = ResolveCSharpFileContext(sourceFilePath, "set_type_partial_old");
-        string editBasePath = ResolveEditBasePath(context, sessionId);
-        CompilationUnitSyntax root = ParseCompilationUnit(context, editBasePath);
-        TypeDeclarationSyntax type = ResolveSingleType(root, containingType);
-        bool currentlyPartial = type.Modifiers.Any(modifier => modifier.IsKind(SyntaxKind.PartialKeyword));
-        if (currentlyPartial == isPartial)
-        {
-            return StageFileReplacement("set_type_partial_old", context, root.ToFullString(), sessionId, manifestJson, launchDiff: false);
-        }
-
-        TypeDeclarationSyntax newType = isPartial
-            ? type.WithModifiers(type.Modifiers.Add(SyntaxFactory.Token(SyntaxKind.PartialKeyword).WithTrailingTrivia(SyntaxFactory.Space)))
-            : type.WithModifiers(SyntaxFactory.TokenList(type.Modifiers.Where(modifier => !modifier.IsKind(SyntaxKind.PartialKeyword))));
-        newType = newType.WithAdditionalAnnotations(FormatAnnotation);
-        CompilationUnitSyntax newRoot = root.ReplaceNode(type, newType);
-        newRoot = FormatAnnotatedNodes(newRoot);
-        return StageFileReplacement("set_type_partial_old", context, newRoot.ToFullString(), sessionId, manifestJson, launchDiff: false);
-    }
-
-    public MonitorFileSubmitResult AddSymbolOld(
-        string sourceFilePath,
-        string containingType,
-        string symbolType,
-        string code,
-        string? afterSymbol = null,
-        string? sessionId = null,
-        string? manifestJson = null)
-    {
-        MonitorFileContext context = ResolveCSharpFileContext(sourceFilePath, "add_symbol_old");
-        string editBasePath = ResolveEditBasePath(context, sessionId);
-        CompilationUnitSyntax root = ParseCompilationUnit(context, editBasePath);
-        TypeDeclarationSyntax type = ResolveSingleType(root, containingType);
-        MemberDeclarationSyntax newMember = ParseMemberDeclaration(code, "new symbol");
-        if (!SymbolKind(newMember).Equals(symbolType, StringComparison.OrdinalIgnoreCase))
-        {
-            throw new InvalidOperationException($"New symbol kind '{SymbolKind(newMember)}' does not match requested kind '{symbolType}'.");
-        }
-
-        SyntaxList<MemberDeclarationSyntax> members = type.Members;
-        int insertIndex = members.Count;
-        if (!string.IsNullOrWhiteSpace(afterSymbol))
-        {
-            int afterIndex = IndexOfMember(members, afterSymbol);
-            if (afterIndex < 0)
-            {
-                throw new InvalidOperationException($"afterSymbol '{afterSymbol}' was not found in type '{containingType}'.");
-            }
-
-            insertIndex = afterIndex + 1;
-        }
-
-        newMember = ApplyInsertionTrivia(newMember, type, insertIndex)
-            .WithAdditionalAnnotations(FormatAnnotation);
-        TypeDeclarationSyntax newType = type.WithMembers(members.Insert(insertIndex, newMember));
-        CompilationUnitSyntax newRoot = root.ReplaceNode(type, newType);
-        newRoot = FormatAnnotatedNodes(newRoot);
-        return StageFileReplacement("add_symbol_old", context, newRoot.ToFullString(), sessionId, manifestJson, launchDiff: false);
-    }
-
     public MonitorCandidateEditResult SubmitFile(string sourceFilePath, string content, string? sessionId = null, string? manifestJson = null)
     {
         MonitorFileContext context = ResolveFileContext(sourceFilePath, allowMissing: true);
@@ -597,22 +481,12 @@ public sealed partial class MonitorWorkflowService
 
         string content = File.ReadAllText(context.WorkingFilePath);
         MonitorOverlayValidationResult overlayValidation = ValidateCandidateOverlayCompilation(context, context.WorkingFilePath);
-        return StageFileReplacement("stage_candidate_for_review", context, content, sessionId, manifestJson, launchDiff: false, overlayValidationOverride: overlayValidation);
-    }
-
-    public MonitorFileSubmitResult AddFieldOld(string sourceFilePath, string containingType, string declaration, string? afterSymbol = null, string? sessionId = null, string? manifestJson = null)
-    {
-        return AddSymbolOld(sourceFilePath, containingType, "field", declaration, afterSymbol, sessionId, manifestJson);
+        return StageFileReplacement("stage_candidate_for_review", context, content, sessionId, manifestJson, launchDiff: false, overlayValidation);
     }
 
     public MonitorCandidateEditResult AddProperty(string sourceFilePath, string containingType, string declaration, string? afterSymbol = null, string? sessionId = null, string? manifestJson = null)
     {
         return AddSymbol(sourceFilePath, containingType, "property", declaration, afterSymbol, sessionId, manifestJson);
-    }
-
-    public MonitorFileSubmitResult AddMethodOld(string sourceFilePath, string containingType, string declaration, string? afterSymbol = null, string? sessionId = null, string? manifestJson = null)
-    {
-        return AddSymbolOld(sourceFilePath, containingType, "method", declaration, afterSymbol, sessionId, manifestJson);
     }
 
     public MonitorCandidateEditResult AddConstructor(string sourceFilePath, string containingType, string declaration, string? afterSymbol = null, string? sessionId = null, string? manifestJson = null)
@@ -632,28 +506,6 @@ public sealed partial class MonitorWorkflowService
         return AddSymbol(sourceFilePath, containingType, kind, declaration, afterSymbol, sessionId, manifestJson);
     }
 
-    public MonitorFileSubmitResult AddPropertyOld(string sourceFilePath, string containingType, string declaration, string? afterSymbol = null, string? sessionId = null, string? manifestJson = null)
-    {
-        return AddSymbolOld(sourceFilePath, containingType, "property", declaration, afterSymbol, sessionId, manifestJson);
-    }
-
-    public MonitorFileSubmitResult AddConstructorOld(string sourceFilePath, string containingType, string declaration, string? afterSymbol = null, string? sessionId = null, string? manifestJson = null)
-    {
-        return AddSymbolOld(sourceFilePath, containingType, "constructor", declaration, afterSymbol, sessionId, manifestJson);
-    }
-
-    public MonitorFileSubmitResult AddNestedTypeOld(string sourceFilePath, string containingType, string declaration, string? afterSymbol = null, string? sessionId = null, string? manifestJson = null)
-    {
-        MemberDeclarationSyntax member = ParseMemberDeclaration(declaration, "new nested type");
-        string kind = SymbolKind(member);
-        if (kind is not ("class" or "struct" or "interface" or "record" or "enum"))
-        {
-            throw new InvalidOperationException($"Nested type declaration must be class, struct, interface, record, or enum. Actual kind: '{kind}'.");
-        }
-
-        return AddSymbolOld(sourceFilePath, containingType, kind, declaration, afterSymbol, sessionId, manifestJson);
-    }
-
     public MonitorCandidateEditResult RemoveSymbol(string sourceFilePath, string symbolSelectorJson, string? sessionId = null, string? manifestJson = null)
     {
         MonitorFileContext context = ResolveCSharpFileContext(sourceFilePath, "remove_symbol");
@@ -666,18 +518,6 @@ public sealed partial class MonitorWorkflowService
         return WriteCandidateFile("remove_symbol", context, newRoot.ToFullString(), sessionId, manifestJson);
     }
 
-    public MonitorFileSubmitResult RemoveSymbolOld(string sourceFilePath, string symbolSelectorJson, string? sessionId = null, string? manifestJson = null)
-    {
-        MonitorFileContext context = ResolveCSharpFileContext(sourceFilePath, "remove_symbol_old");
-        string editBasePath = ResolveEditBasePath(context, sessionId);
-        CompilationUnitSyntax root = ParseCompilationUnit(context, editBasePath);
-        MonitorSymbolSelector selector = ParseSymbolSelector(symbolSelectorJson);
-        MemberDeclarationSyntax target = ResolveSingleMember(root, selector, context.RelativeSourcePath);
-        CompilationUnitSyntax newRoot = root.RemoveNode(target, SyntaxRemoveOptions.KeepNoTrivia)
-            ?? throw new InvalidOperationException($"Symbol '{selector.Name}' could not be removed from {context.RelativeSourcePath}.");
-        return StageFileReplacement("remove_symbol_old", context, newRoot.ToFullString(), sessionId, manifestJson, launchDiff: false);
-    }
-
     private MonitorFileSubmitResult StageFileReplacement(
         string operation,
         MonitorFileContext context,
@@ -685,7 +525,7 @@ public sealed partial class MonitorWorkflowService
         string? sessionId,
         string? manifestJson,
         bool launchDiff,
-        MonitorOverlayValidationResult? overlayValidationOverride = null)
+        MonitorOverlayValidationResult overlayValidation)
     {
         EnsureFileIsNotBlockedByDirtyUnexpected(context);
         MonitorSyntaxValidationResult validation = ValidateSyntaxIfCSharp(context.SourceFilePath, content);
@@ -698,7 +538,6 @@ public sealed partial class MonitorWorkflowService
 
         string recordId = CreateStagedRecordId(operation, Path.GetFileNameWithoutExtension(context.SourceFilePath));
         string stagedPath = CreateStagedFile(context, content, recordId);
-        MonitorOverlayValidationResult overlayValidation = overlayValidationOverride ?? ValidateOverlayCompilation(context, stagedPath, sessionId);
         SupersedePriorSameFileSessionRecords(sessionId, context);
         StagedEditRecord stagedRecord = CreateStagedEditRecord(
             recordId,
@@ -2354,114 +2193,6 @@ public sealed partial class MonitorWorkflowService
         return new MonitorSyntaxValidationResult(diagnostics.Length > 0, diagnostics);
     }
 
-    private MonitorOverlayValidationResult ValidateOverlayCompilation(
-        MonitorFileContext context,
-        string stagedFilePath,
-        string? sessionId)
-    {
-        if (context.SourceFilePath.EndsWith(".razor", StringComparison.OrdinalIgnoreCase)
-            || context.SourceFilePath.EndsWith(".cshtml", StringComparison.OrdinalIgnoreCase))
-        {
-            return new MonitorOverlayValidationResult("razor-validation-pending", false, 0, 0, []);
-        }
-
-        if (!context.SourceFilePath.EndsWith(".cs", StringComparison.OrdinalIgnoreCase))
-        {
-            return new MonitorOverlayValidationResult("skipped-non-csharp", false, 0, 0, []);
-        }
-
-        try
-        {
-            string observedRoot = Path.GetFullPath(context.WatchedProjectFolder);
-            CSharpParseOptions parseOptions = new(
-                languageVersion: LanguageVersion.Latest,
-                kind: SourceCodeKind.Regular,
-                documentationMode: DocumentationMode.Parse);
-            Dictionary<string, string> overlays = BuildSessionOverlayMap(context, stagedFilePath, sessionId);
-            string[] overlayRelatives = overlays.Keys.ToArray();
-            List<SyntaxTree> trees = [];
-            int overlayFileCount = 0;
-
-            foreach (string sourcePath in EnumerateObservedSourceFiles(observedRoot))
-            {
-                string relative = NormalizePath(Path.GetRelativePath(observedRoot, sourcePath));
-                string textPath = sourcePath;
-                if (overlays.TryGetValue(relative, out string? overlayPath))
-                {
-                    textPath = overlayPath;
-                    overlayFileCount++;
-                    overlays.Remove(relative);
-                }
-
-                string treePath = Path.GetFullPath(sourcePath);
-                trees.Add(CSharpSyntaxTree.ParseText(File.ReadAllText(textPath), parseOptions, treePath));
-            }
-
-            foreach (KeyValuePair<string, string> overlay in overlays)
-            {
-                string treePath = Path.GetFullPath(Path.Combine(
-                    observedRoot,
-                    overlay.Key.Replace(Path.AltDirectorySeparatorChar, Path.DirectorySeparatorChar)));
-                trees.Add(CSharpSyntaxTree.ParseText(File.ReadAllText(overlay.Value), parseOptions, treePath));
-                overlayFileCount++;
-            }
-
-            trees.Add(BuildImplicitGlobalUsingsTree(parseOptions, observedRoot));
-            trees.Add(BuildWinFormsBootstrapTree(parseOptions));
-
-            CSharpCompilation compilation = CSharpCompilation.Create(
-                assemblyName: "MonitorBaseClaudeOverlayValidation",
-                syntaxTrees: trees,
-                references: GetMetadataReferences(observedRoot),
-                options: new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary));
-
-            string[] overlayTreePaths = BuildOverlayTreePaths(observedRoot, context, overlayRelatives)
-                .Append(Path.GetFullPath(context.SourceFilePath))
-                .ToArray();
-            HashSet<string> diagnosticPaths = overlayTreePaths
-                .Select(Path.GetFullPath)
-                .ToHashSet(StringComparer.OrdinalIgnoreCase);
-
-            MonitorOverlayDiagnostic[] diagnostics = compilation.GetDiagnostics()
-                .Where(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error)
-                .Where(diagnostic => diagnostic.Location.IsInSource)
-                .Where(diagnostic =>
-                {
-                    string path = diagnostic.Location.GetLineSpan().Path;
-                    return !string.IsNullOrWhiteSpace(path)
-                        && diagnosticPaths.Contains(Path.GetFullPath(path));
-                })
-                .Take(50)
-                .Select(diagnostic =>
-                {
-                    FileLinePositionSpan span = diagnostic.Location.GetLineSpan();
-                    return new MonitorOverlayDiagnostic(
-                        diagnostic.Id,
-                        diagnostic.GetMessage(),
-                        span.Path,
-                        span.StartLinePosition.Line + 1,
-                        span.StartLinePosition.Character + 1);
-                })
-                .ToArray();
-
-            return new MonitorOverlayValidationResult(
-                diagnostics.Length > 0 ? "compiled-with-errors" : "compiled",
-                diagnostics.Length > 0,
-                trees.Count,
-                overlayFileCount,
-                diagnostics);
-        }
-        catch (Exception ex)
-        {
-            return new MonitorOverlayValidationResult(
-                "validation-failed",
-                true,
-                0,
-                0,
-                [new MonitorOverlayDiagnostic("MONITOR_OVERLAY", ex.Message, context.SourceFilePath, 0, 0)]);
-        }
-    }
-
     private MonitorOverlayValidationResult ValidateCandidateOverlayCompilation(
         MonitorFileContext context,
         string candidateFilePath)
@@ -2627,40 +2358,6 @@ public sealed partial class MonitorWorkflowService
         return state.BaselineLength == sourceInfo.Length
             && state.BaselineLastWriteUtc == sourceInfo.LastWriteTimeUtc
             && state.BaselineHash.Equals(ComputeSha256(state.SourceFilePath), StringComparison.OrdinalIgnoreCase);
-    }
-
-    private Dictionary<string, string> BuildSessionOverlayMap(MonitorFileContext context, string stagedFilePath, string? sessionId)
-    {
-        Dictionary<string, string> overlays = new(StringComparer.OrdinalIgnoreCase);
-        if (!string.IsNullOrWhiteSpace(sessionId))
-        {
-            foreach (StagedEditRecord record in ReadSessionStagedRecords(sessionId))
-            {
-                if (record.QueueStatus.Equals("superseded-by-later-same-file-candidate", StringComparison.OrdinalIgnoreCase))
-                {
-                    continue;
-                }
-
-                string? recordStagedPath = record.ServerDerivedMetadata.StagedFilePath;
-                if (!File.Exists(recordStagedPath))
-                {
-                    continue;
-                }
-
-                overlays[NormalizePath(record.RelativeSourcePath)] = recordStagedPath;
-            }
-        }
-
-        overlays[NormalizePath(context.RelativeSourcePath)] = stagedFilePath;
-        return overlays;
-    }
-
-    private IEnumerable<StagedEditRecord> ReadSessionStagedRecords(string sessionId)
-    {
-        foreach ((StagedEditRecord record, _) in ReadSessionStagedRecordEntries(sessionId))
-        {
-            yield return record;
-        }
     }
 
     private IEnumerable<(StagedEditRecord Record, string RecordPath)> ReadSessionStagedRecordEntries(string sessionId)

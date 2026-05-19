@@ -6,9 +6,9 @@ The current target runtime client is Claude using MCP tools. The current impleme
 
 ## What It Does
 
-- Exposes a local MCP Tool Server for source discovery, source maps, symbol reads, and staged edit proposals.
+- Exposes a local MCP Tool Server for source discovery, source maps, symbol reads, Working candidate composition, staged review snapshots, and decision tools.
 - Keeps generated monitor state under `Working`, not inside the watched project.
-- Stages complete candidate files under monitor-owned paths instead of directly overwriting watched source.
+- Composes complete candidate files under monitor-owned paths instead of directly overwriting watched source.
 - Uses WinMerge or a Host-owned review surface for all-or-none human review.
 - Classifies review outcomes with vote-plus-hash agreement:
   - Operator reports `accepted` and watched hash equals staged hash -> `accepted`
@@ -36,9 +36,10 @@ Expected agent edit path:
 2. `get_source_map` in `navigation` mode for broad project/folder orientation.
 3. `get_source_map` in `selector` mode for a chosen file.
 4. `get_symbol` for the exact body that needs editing.
-5. `submit_file`, `submit_symbol`, `add_symbol`, `remove_symbol`, `add_using`, or `remove_using` to stage a complete candidate.
-6. Host/Operator reviews the staged candidate against watched source.
-7. `record_diff_decision` verifies the Operator vote against watched file hashes.
+5. `submit_file`, `submit_symbol`, `add_symbol`, `remove_symbol`, `add_using`, or `remove_using` to compose the Working candidate.
+6. `stage_candidate_for_review` snapshots the completed Working candidate.
+7. `launch_staged_diff` or a Host-owned review surface opens the staged candidate against watched source.
+8. `record_diff_decision` verifies the Operator vote against watched file hashes.
 
 The source-map hierarchy is intentional:
 
@@ -50,7 +51,7 @@ The source-map hierarchy is intentional:
 
 ## Safety Rules
 
-- The Tool Server stages candidates; it does not directly mutate watched source.
+- The Tool Server composes and stages candidates; it does not directly mutate watched source.
 - The Operator accepts all or rejects all. Partial hunk merging is outside the v1 workflow.
 - `dirty-unexpected` blocks further staged edits on that file.
 - `refresh_file` is the current v1 recovery path after Host/Operator inspection.

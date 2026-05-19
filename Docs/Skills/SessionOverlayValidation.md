@@ -4,14 +4,16 @@ Use for coupled multi-file C# edits.
 
 ## Rule
 
-Stage every coupled file into the same monitor session before the first review launch. Overlay compilation must see the proposed files together, even though WinMerge review is serial.
+Compose and stage every coupled file in the same monitor session before the first review launch. Overlay compilation must see the proposed files together, even though WinMerge review is serial.
 
 ## Flow
 
 ```text
 start_monitor_session
-stage file A with sessionId
-stage file B with sessionId
+compose Working candidate A with sessionId
+stage_candidate_for_review for file A with sessionId
+compose Working candidate B with sessionId
+stage_candidate_for_review for file B with sessionId
 review overlayValidation results
 launch/review file A
 record decision for file A
@@ -21,7 +23,7 @@ record decision for file B
 
 ## Do Not
 
-- Do not review file A before staging coupled file B.
+- Do not review file A before composing and staging coupled file B.
 - Do not treat a clean single-file overlay as enough when another staged file is required for the feature to compile.
 - Do not let empty reference results shrink the session by themselves; cross-check before deciding a change is single-file.
 - Do not continue to later diffs if an earlier staged item is blocked by validation or review-gate state.

@@ -42,6 +42,7 @@ These tools are token-saving and safety tools for later phases. They should stag
 - `add_symbol(path, symbolType, code, afterSymbol?)`: insert a new method/property/field/class. Roslyn chooses the correct insertion point; `afterSymbol` is an optional ordering hint such as `BuildTrimmedCteSql`.
 - `add_using(path, namespace)`: add a using directive if it is not already present.
 - `add_class(path, code)`: add a new class to an existing file.
+- `add_standard_regions(path, regionProfile?, scope?)`: explicit cleanup/refactor operation that groups an existing C# type into the standard region layout. This must not be used as part of normal functional edits; it is a separate staged candidate with its own review.
 
 ### Remove tools
 
@@ -57,6 +58,7 @@ These tools are token-saving and safety tools for later phases. They should stag
 - C# parse/syntax errors block staging. Overlay compile diagnostics are reported as validation metadata and do not automatically block staging.
 - `dirty-unexpected` recovery must be explicit. Internal compare refreshes may recreate missing Working copies, but they must not clear blocked staged records.
 - Model clients should prefer outline/symbol tools before requesting full file content when possible.
+- Standard-region retrofits are cleanup/refactor work only. Do not combine them with behavior changes or routine symbol edits.
 
 ### Diff workflow tools
 
@@ -242,7 +244,11 @@ Razor current-lane testing is handled by:
 dotnet run --project C:\VSCodeProjects\MonitorBaseClaude\LocalSmokeTests\LegacyToolSmokeTests\LegacyToolSmokeTests.csproj -- --fixture-razor-smoke
 ```
 
-This uses a separate Razor-shaped fixture to verify `find_file`, `get_file`, empty C# outline behavior, full-file `.razor` staging, explicit `razor-validation-pending` overlay status, and strict vote-plus-hash Accept. Razor-aware syntax/build validation is still planned.
+This uses a separate Razor-shaped fixture to verify `find_file`, `get_file`, empty C# outline behavior, full-file `.razor` staging, explicit `razor-validation-pending` overlay status, and strict vote-plus-hash Accept.
+
+Resolved V1 position: Razor follows the same practical lane as the original monitor. Raw `.razor` and `.cshtml` files are staged and reviewed as text, then validated by the watched project's real build after merge. They are not part of the C# Roslyn overlay compile gate. Razor-aware generated-C# validation is optional future research, not an active V1 backlog item.
+
+Unreproduced backlog noise: Claude reported one partial-class overlay false positive during the live async repository propagation test, but local follow-up smokes did not reproduce it. Covered checks now include a synthetic partial-class overlay, a real DBV2 WinForms designer partial pair, and a real DBV2 same-type multi-candidate partial session. Reopen only with exact candidate files, staged record, diagnostics, and session state from a failing run.
 
 Official / OpenAI references:
 
