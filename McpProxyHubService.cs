@@ -221,7 +221,7 @@ public sealed class McpProxyHubService : IDisposable
             message,
             $"Overlay validation failed: {recordId}");
 
-        bool forceReview = result == DialogResult.Yes;
+        bool forceReview = result == DialogResult.OK;
         return new JsonObject
         {
             ["status"] = "completed",

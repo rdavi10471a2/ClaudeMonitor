@@ -4,6 +4,38 @@ This folder is Claude's source-controlled report lane.
 
 Claude may write findings, bug reports, and doc suggestions here when live MCP testing exposes a problem or ambiguity. These files are input for Codex/operator review. They are not product workflow authority by themselves.
 
+## Current Assignment
+
+Pull latest `main`, rebuild MonitorBaseClaude, and confirm the live Monitor MCP tool list no longer contains any `*_old` tools.
+
+Then run a compact workflow-surface check:
+
+```text
+get_tool_manifest
+get_staging_guide
+get_workflow_status
+start_monitor_session
+get_source_map on a known C# file
+```
+
+Confirm the docs and tool descriptions teach the current workflow and current tool surface:
+
+```text
+compose Working candidate with submit_file / submit_symbol / add_* / remove_* tools
+stage_candidate_for_review
+launch_staged_diff
+record_diff_decision
+```
+
+Specific regression checks requested after Codex fixes:
+
+```text
+1. Removed overloaded constructors should appear in stage_candidate_for_review.serverDerivedMetadata.symbolsRemoved.
+2. Overlay-error launch should show the Host force-review gate. "Force WinMerge Review" should produce validationGateDecision: force_review and open WinMerge. "Cancel Review" should produce cancel_for_fix and not open WinMerge.
+```
+
+Do not edit product code for this assignment. Test with disposable or already-designated smoke-test files only. If anything is confusing or broken, file a compact dated note or bug report in this folder.
+
 ## Folder Rules
 
 - Use this folder for reports that should be reviewed from GitHub.
