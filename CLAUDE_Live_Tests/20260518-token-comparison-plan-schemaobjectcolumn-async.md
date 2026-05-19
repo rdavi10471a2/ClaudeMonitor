@@ -112,7 +112,46 @@ Both variants share the same task prompt; neither is allowed to claim "I already
 
 ## Results — Variant B (raw Write baseline)
 
-**Status:** not run in this session. Operator deferred Variant B to a clean session to avoid the in-context-contamination problem flagged in the Run Order section. Expected outbound bytes for B once run: `Read` envelope (~80 bytes for path arg) + `Write` envelope (~80 bytes path arg + 7,178 bytes content) ≈ **~7,340 bytes**. Will be filled in post-run.
+**Status:** completed 2026-05-18, fresh session (no in-context contamination from Variant A — A's output was not read before B's `Write` was issued). Sandbox file `.claude-local\token-test-sandbox\SchemaObjectColumnRepositoryAsync.cs` written, 6,963 bytes / 193 lines / SHA-256 `8ef9437a925932aa6ccc4d62ecbec1f6ca9a1b7644a549760a27b83c59684a39`.
+
+### Outbound payload bytes (approximate, per tool call)
+
+| # | Phase | Tool | Outbound bytes (approx.) | Notes |
+|---|---|---|---|---|
+| 1 | Pre-flight | `Bash` (watched-repo `git status` + log) | ~120 | confirm original sync file unchanged |
+| 2 | Pre-flight | `PowerShell` (sandbox dir + Variant A hash + original size) | ~430 | sandbox setup; confirmed A's hash matches plan record |
+| 3 | Construction | `Read` (original sync file) | ~90 | path arg only |
+| 4 | Construction | `Write` (sandbox async file) | ~7,420 | path arg + JSON-encoded 6,963-byte body (escape overhead: ~193 `\n` + ~150 `\"`) |
+| 5 | Post-verify | `PowerShell` (size + hash compare) | ~390 | record B's hash + line counts vs A |
+| 6 | Post-verify | `PowerShell` (`Compare-Object` line-diff) | ~310 | semantic equivalence check |
+
+**Subtotals:**
+
+- Actual outbound bytes (everything I sent, including pre-flight and post-verify): **~8,760 bytes**
+- Construction-only (rows 3–4, the actual workflow path that produced the file): **~7,510 bytes** — dominated by the row-4 `Write` payload (~7,420 bytes).
+
+### Number of tool calls
+
+- Actual: 6 tool calls.
+- Construction-only: 2 tool calls (`Read` + `Write`).
+
+### Produced-file size
+
+6,963 bytes (LF, no BOM) / 193 lines / SHA-256 `8ef9437a...4a39`.
+
+### Workflow path actually taken (vs plan)
+
+Matches the plan exactly. One `Read` to copy SQL strings verbatim, one `Write` of the full final file body to the sandbox. No Monitor staging, no Roslyn, no `submit_file`, no WinMerge.
+
+### Result-equivalence vs Variant A
+
+- **Semantic equivalence: PASS.** `Compare-Object` line-by-line returns no diff between A's 7,178-byte watched output and B's 6,963-byte sandbox output. Both files have 193 lines containing the same C# tokens, same async method shapes, byte-for-byte identical SQL strings, same `Async` suffixes, same `Task<...>` / `Task` return types, same classic-`using` block syntax, same block-namespace shape.
+- **Whitespace/encoding delta: 215 bytes.** Pure line-ending and BOM difference: Variant A's `submit_file` produced CRLF + UTF-8-BOM (Windows tradition through Monitor); Variant B's `Write` produced LF + no BOM. Plan allows whitespace differences explicitly.
+
+### Notes
+
+- Variant B's wire payload (~7,420 bytes for the `Write` content) is essentially the same as Variant A's `submit_file` wire payload (~7,260 bytes per plan record). Both paths transport the full file body once; the slight delta is JSON-envelope wrapper differences (Write's `file_path` key vs `submit_file`'s `path` + `sessionId`) and JSON escape inflation on the LF newlines.
+- The Variant-A "compose locally save bytes" advantage that the symbol-level staging path was built for does NOT apply to a new-file scenario. There is no existing class body to splice into; the full file must travel either way.
 
 ## Results — Variant A (Monitor + Roslyn workflow)
 
@@ -175,23 +214,27 @@ Not captured — single-session run; mid-session deltas would be dominated by ho
 - Result-equivalence vs Variant B: pass / fail / details:
 - Notes:
 
-## Comparison (Variant A complete, Variant B projected)
+## Comparison (both variants complete)
 
-Variant B has not yet been run; the row below uses the projected total from the Variant B section.
-
-|  | Variant B (raw, projected) | Variant A (workflow, actual) | Ratio A:B |
+|  | Variant B (raw Write, actual) | Variant A (workflow, actual) | Ratio A:B |
 |---|---|---|---|
-| Outbound payload bytes (ideal path) | ~7,340 | ~11,690 | **1.59x** |
-| Outbound payload bytes (actual, with failed probes) | ~7,340 | ~14,360 | **1.96x** |
+| Outbound payload bytes (construction-only) | ~7,510 | ~8,440 | **1.12x** |
+| Outbound payload bytes (ideal path, no failed probes) | ~7,510 | ~11,690 | **1.56x** |
+| Outbound payload bytes (actual, with failed probes) | ~8,760 | ~14,360 | **1.64x** |
+| Tool calls (construction-only) | 2 | 7 | 3.5x |
 | Tool calls (ideal path) | 2 | 13 | 6.5x |
-| Tool calls (actual) | 2 | 18 | 9x |
-| Wall-clock time | <1 min (projected) | ~7 min (incl. WinMerge accept) | — |
+| Tool calls (actual) | 6 | 18 | 3x |
+| Wall-clock time | <1 min | ~7 min (incl. WinMerge accept) | — |
+| Produced file size (on disk) | 6,963 bytes (LF, no BOM) | 7,178 bytes (CRLF + BOM) | A 3% larger (whitespace only) |
+| Semantic equivalence | identical to A line-for-line | — | ✓ pass |
 
 **Interpretation:**
 
-- On its worst-case scenario (new file from scratch), the workflow path costs ~1.6× the outbound bytes of a raw `Write` even when everything goes smoothly — and ~2× when the agent's first attempt at typed adds fails and has to fall back to whole-file submit. This **confirms** the suspicion that new-file creation is uneconomic for the workflow's per-call overhead. The workflow's intended payoff (skipping unchanged bytes on incremental edits to large existing files) does not apply here.
-- The ~3 KB of `get_symbol` selector overhead is the largest non-payload cost; on a 20-method file that overhead alone would scale to ~9 KB and could exceed the payload itself.
-- **Recommend a Variant C follow-up**: take an existing large repository file (200+ lines) and use `add_method` to append N async-sibling methods to it. That is the workflow's actual claimed strong case — incremental adds where the existing file body is preserved byte-for-byte by Roslyn AST splicing. The crossover question for Variant C is: at what method count does the workflow start beating "raw `Write` of the entire updated file"?
+- **Construction-only the two paths are nearly equal** (~7.5 KB vs ~8.4 KB). Both transport the full file body across the wire exactly once — `Write.content` and `submit_file.content` are functionally the same payload. The workflow's claimed "compose locally, save bytes by skipping unchanged regions" advantage is **zero** here, because there is no existing class body to splice into in a new-file scenario.
+- **The workflow's overhead is the discovery + pre-flight tax**, not the construction payload. Variant A's overhead — pre-flight (~111 bytes), structural reads (~3,090 bytes for `get_source_map` + 6× `get_symbol`), and dead-end typed-add probes that hit Finding 29 (~2,670 bytes) — accounts for almost all of the A:B gap. Without the failed probes, A is 1.56× B. With them, 1.64×.
+- **The ~3 KB of `get_symbol` selector overhead** is the largest non-payload cost on the workflow path; on a 20-method file that overhead alone would scale to ~9 KB and could exceed the payload itself. Worth keeping an eye on as files grow.
+- **Crossover hypothesis for Variant C** (recommended follow-up): take an existing large repository file (200+ lines) and use `add_method` to append N async-sibling methods to it. That is the workflow's actual claimed strong case — incremental adds where the existing file body is preserved byte-for-byte by Roslyn AST splicing. The crossover question for C is: at what method count (and at what existing-file size) does the workflow start beating "raw `Write` of the entire updated file"? Variant B's construction-only number (~7,510 bytes for a 7 KB file) sets the baseline that workflow-path adds must beat per-edit.
+- **Pre-existing file scenario** is the workflow's true home turf and was NOT tested by Variants A or B. Both produced a brand-new file, which is the workflow's worst case by design. Until Variant C runs, treat the A:B ratios as upper-bounds-on-overhead, not as the workflow's typical economics.
 
 ## Defaults Picked Without Operator Confirmation
 

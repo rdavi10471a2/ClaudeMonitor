@@ -538,3 +538,24 @@ Operator accepted S2's probe code in WinMerge instead of rejecting. Watched `Exp
 3. Test V1 composition across mixed tool kinds (`submit_file` baseline followed by `add_method` composition on the same path).
 4. Test `start_monitor_session(purpose: "...")` with non-ASCII Unicode in `purpose` again to confirm F20/F25 status post any encoding fix.
 5. Optionally: explore the Operator workflow for the Working candidate state JSON lifecycle — should it be cleared on accept? Cleared on session end? Stay until rebaselined? The expected behavior is undocumented and the current behavior is the crash-source for Finding 26.
+
+## Token comparison Variants A/B/C — 2026-05-18 — closed for now
+
+Three head-to-head measurements producing the same target file (`SchemaStudio.Data\SchemaObjectColumnRepositoryAsync.cs`):
+
+| Variant | Mode | Outbound bytes | vs raw `Write` baseline |
+|---|---|---|---|
+| A | Monitor workflow, new file from scratch | ~14,360 actual / ~11,690 ideal | **1.59×–1.96× worse** |
+| B | Raw `Read` + `Write` baseline, new file | ~8,760 / ~7,510 construction-only | 1× (baseline) |
+| C | Monitor workflow, incremental adds + 1 bug+fix iteration on existing file | ~3,360 | **0.42× (C 2.4× cheaper)** at K=0; **0.14× at K=2** |
+
+Conclusion: **iteration amortizes the new-file/complete-rewrite overhead** — yes, for now. The workflow's per-iteration marginal (~1 KB via `submit_symbol`) is ~7.6× smaller than raw `Write` (~8 KB whole-file re-emit). New files lose; existing-file iteration wins decisively. Crossover at K=0.53 iterations, so any non-trivial change favors the workflow.
+
+Findings filed: 30 (CLAUDE.md stale on `submit_symbol` V1 promotion).
+
+Details:
+- A/B: [20260518-token-comparison-plan-schemaobjectcolumn-async.md](20260518-token-comparison-plan-schemaobjectcolumn-async.md)
+- C: [20260518-variant-c-iteration-existing-file.md](20260518-variant-c-iteration-existing-file.md)
+- Finding 30: [20260518-finding-30-submit-symbol-claude-md-stale-on-v1-promotion.md](20260518-finding-30-submit-symbol-claude-md-stale-on-v1-promotion.md)
+
+Watched repo: `SchemaObjectColumnRepositoryAsync.cs` is the C end-state (8,057 bytes, sha `e197ee19...`, compiles clean).
