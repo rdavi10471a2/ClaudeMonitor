@@ -45,6 +45,8 @@ get_source_map(scope: "file", mode: "selector")
 get_symbol for the smallest needed body
 submit_symbol / set_type_partial / add_field / add_property / add_method / add_constructor / add_nested_type
 add_symbol / remove_symbol / add_using / remove_using, when the narrow typed tools do not fit
+stage_candidate_for_review
+launch_staged_diff or Host/sidecar WinMerge review/save
 Operator review
 record_diff_decision
 ```
@@ -53,9 +55,11 @@ For multi-file work:
 
 ```text
 start_monitor_session
-stage file A with sessionId
-stage file B with sessionId
-overlay compile validates A+B together
+compose Working candidate A with sessionId
+stage_candidate_for_review for file A with sessionId
+compose Working candidate B with sessionId
+stage_candidate_for_review for file B with sessionId
+candidate overlay validates current Working candidates together
 launch/review file A
 record decision for file A
 launch/review file B
