@@ -2600,22 +2600,22 @@ public sealed partial class MonitorWorkflowService
 
         CompilationUnitSyntax originalRoot = CSharpSyntaxTree.ParseText(originalContent, path: sourceFilePath).GetCompilationUnitRoot();
         CompilationUnitSyntax stagedRoot = CSharpSyntaxTree.ParseText(stagedContent, path: stagedFilePath).GetCompilationUnitRoot();
-        StagedSymbolMetadata[] originalSymbols = GetSymbolMetadata(originalRoot.SyntaxTree, originalRoot).ToArray();
-        StagedSymbolMetadata[] stagedSymbols = GetSymbolMetadata(stagedRoot.SyntaxTree, stagedRoot).ToArray();
-        HashSet<string> originalKeys = originalSymbols.Select(SymbolKey).ToHashSet(StringComparer.Ordinal);
-        HashSet<string> stagedKeys = stagedSymbols.Select(SymbolKey).ToHashSet(StringComparer.Ordinal);
+        StagedSymbolMetadataEntry[] originalSymbols = GetSymbolMetadata(originalRoot.SyntaxTree, originalRoot).ToArray();
+        StagedSymbolMetadataEntry[] stagedSymbols = GetSymbolMetadata(stagedRoot.SyntaxTree, stagedRoot).ToArray();
+        HashSet<string> originalKeys = originalSymbols.Select(symbol => symbol.Key).ToHashSet(StringComparer.Ordinal);
+        HashSet<string> stagedKeys = stagedSymbols.Select(symbol => symbol.Key).ToHashSet(StringComparer.Ordinal);
         string[] originalUsings = GetUsings(originalRoot);
         string[] stagedUsings = GetUsings(stagedRoot);
 
         return new StagedEditMetadata(
-            stagedSymbols.Where(symbol => !originalKeys.Contains(SymbolKey(symbol))).ToArray(),
-            originalSymbols.Where(symbol => !stagedKeys.Contains(SymbolKey(symbol))).ToArray(),
+            stagedSymbols.Where(symbol => !originalKeys.Contains(symbol.Key)).Select(symbol => symbol.Metadata).ToArray(),
+            originalSymbols.Where(symbol => !stagedKeys.Contains(symbol.Key)).Select(symbol => symbol.Metadata).ToArray(),
             stagedUsings.Except(originalUsings, StringComparer.Ordinal).OrderBy(value => value, StringComparer.Ordinal).ToArray(),
             originalUsings.Except(stagedUsings, StringComparer.Ordinal).OrderBy(value => value, StringComparer.Ordinal).ToArray(),
             stagedFilePath);
     }
 
-    private static IEnumerable<StagedSymbolMetadata> GetSymbolMetadata(SyntaxTree tree, CompilationUnitSyntax root)
+    private static IEnumerable<StagedSymbolMetadataEntry> GetSymbolMetadata(SyntaxTree tree, CompilationUnitSyntax root)
     {
         return root.DescendantNodes()
             .OfType<MemberDeclarationSyntax>()
@@ -2624,12 +2624,13 @@ public sealed partial class MonitorWorkflowService
             {
                 FileLinePositionSpan span = tree.GetLineSpan(member.Span);
                 string text = member.NormalizeWhitespace().ToFullString();
-                return new StagedSymbolMetadata(
+                StagedSymbolMetadata metadata = new(
                     SymbolName(member),
                     SymbolKind(member),
                     span.StartLinePosition.Line + 1,
                     span.EndLinePosition.Line + 1,
                     ComputeSha256Text(text));
+                return new StagedSymbolMetadataEntry(metadata, BuildStagedSymbolKey(member));
             });
     }
 
@@ -3132,9 +3133,23 @@ public sealed partial class MonitorWorkflowService
         };
     }
 
-    private static string SymbolKey(StagedSymbolMetadata symbol)
+    private static string BuildStagedSymbolKey(MemberDeclarationSyntax member)
     {
-        return $"{symbol.Kind}:{symbol.Name}";
+        string namespaceName = BuildNamespace(member);
+        string containingType = BuildContainingType(member) ?? string.Empty;
+        string signatureKey = member switch
+        {
+            MethodDeclarationSyntax method => $"{method.Identifier.ValueText}({string.Join(",", method.ParameterList.Parameters.Select(ParameterKey))})",
+            ConstructorDeclarationSyntax constructor => $"{constructor.Identifier.ValueText}({string.Join(",", constructor.ParameterList.Parameters.Select(ParameterKey))})",
+            DelegateDeclarationSyntax del => $"{del.Identifier.ValueText}({string.Join(",", del.ParameterList.Parameters.Select(ParameterKey))})",
+            PropertyDeclarationSyntax property => property.Identifier.ValueText,
+            EventDeclarationSyntax evt => evt.Identifier.ValueText,
+            EventFieldDeclarationSyntax eventField => string.Join(",", eventField.Declaration.Variables.Select(variable => variable.Identifier.ValueText)),
+            FieldDeclarationSyntax field => string.Join(",", field.Declaration.Variables.Select(variable => variable.Identifier.ValueText)),
+            BaseTypeDeclarationSyntax type => type.Identifier.ValueText,
+            _ => SymbolName(member)
+        };
+        return $"{namespaceName}|{containingType}|{SymbolKind(member)}|{signatureKey}";
     }
 
     private static bool IsOutlineMember(MemberDeclarationSyntax member)
@@ -3677,6 +3692,10 @@ public sealed record StagedSymbolMetadata(
     int StartLine,
     int EndLine,
     string TextHash);
+
+internal sealed record StagedSymbolMetadataEntry(
+    StagedSymbolMetadata Metadata,
+    string Key);
 
 public sealed record MonitorSyntaxValidationResult(
     bool HasErrors,

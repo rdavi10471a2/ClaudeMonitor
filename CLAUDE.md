@@ -35,13 +35,16 @@ For watched project source edits, use the Monitor MCP workflow:
 2. Read structure with `get_source_map` for C# files, folders, or project slices. Use `mode: navigation` for broad folder/project orientation and `mode: selector` for a chosen file.
 3. Read the smallest needed body with `get_symbol`.
 4. Use `get_file` only when symbol/source-map context is not enough.
-5. Stage a complete candidate with `submit_file` or a symbol staging tool.
-6. Use `launch_staged_diff`, or let the Host or sidecar open WinMerge between the real watched file and the staged candidate.
-7. The Operator either saves the whole candidate in WinMerge or leaves source unchanged.
-8. Call `record_diff_decision`.
-9. Trust vote-plus-hash classification, not the reported outcome text alone.
+5. Compose a complete Working candidate with `submit_file`, `submit_symbol`, `add_symbol`, `add_field`, `add_property`, `add_method`, `add_constructor`, `add_nested_type`, `set_type_partial`, `add_using`, `remove_using`, or `remove_symbol`.
+6. Call `stage_candidate_for_review` only after the Working candidate is complete enough for review.
+7. Use `launch_staged_diff`, or let the Host or sidecar open WinMerge between the real watched file and the staged candidate.
+8. The Operator either saves the whole candidate in WinMerge or leaves source unchanged.
+9. Call `record_diff_decision`.
+10. Trust vote-plus-hash classification, not the reported outcome text alone.
 
 The Monitor Tool Server never directly overwrites watched source. WinMerge save/no-save is the physical mutation path in the current workflow.
+
+All current candidate composition tools write to the monitor-owned `Working\<observedRootKey>\<relative source path>` mirror. They do not create staged records by themselves. There are no live `*_old` edit tools in the current surface; if `tools/list` shows any, report it as stale binary or stale MCP binding evidence.
 
 If no separate Host or sidecar is available to open WinMerge, use `launch_staged_diff(stagedRecordId)` after staging. This only launches review; it does not accept, reject, classify, or replace `record_diff_decision`.
 
@@ -75,6 +78,9 @@ Expected:
 ```text
 Complete candidate prepared
 -> submit_file or submit_symbol
+   or add_symbol / add_field / add_property / add_method / add_constructor / add_nested_type
+   or set_type_partial / add_using / remove_using / remove_symbol
+-> stage_candidate_for_review
 -> launch_staged_diff, or Host/sidecar opens WinMerge using returned source/staged paths
    -> if launch/review is blocked or cancelled, stop the queue and fix before continuing
 -> Operator saves the whole candidate or leaves source unchanged
