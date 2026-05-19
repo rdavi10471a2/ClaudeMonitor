@@ -1,5 +1,347 @@
 # Status Log
 
+## Readiness assessment — 2026-05-19 — after Passes 11-16
+
+Operator asked whether the system is ready for "a real project that matters." Honest answer below; this is my reading at the end of today's pass series, not a release sign-off.
+
+### Where the system is solid right now
+
+- **Single-file member-level edits in C#** through the V1 candidate path (`submit_file`, `add_using`, `remove_using`, `set_type_partial`, `add_field`, `add_property`, `add_constructor`, `add_method`, `add_nested_type`, `add_symbol`, `submit_symbol`, `remove_symbol`). 20+ accepted candidates across Passes 11-16 with zero unrecoverable failures and every `record_diff_decision` classification correct.
+- **Mega-batching** (N changes → 1 stage → 1 review) for both add and remove sides — Pass 13 ran 14 ops in one candidate; Pass 14 ran 6 removes in one candidate. Both reviewed in a single WinMerge cycle.
+- **Vote-plus-hash gate** holding across three sequential accepts on the same path (Pass 12 → 13 → 14, chained hashes `<new-file>` → `094d7243` → `223346ce` → `e9322d86`). No `dirty-unexpected` observed in the recent runs.
+- **Overlay catches broken intermediate states** (Pass 15 + Pass 16) with structured `CS####` diagnostics including file/line/column. Not just a "won't compile" boolean.
+- **The Host force-review gate** stops broken code at `launch_staged_diff` (Pass 16). WinMerge does not open on a broken candidate unless the Operator explicitly overrides. Recovery via restage-in-same-session works cleanly.
+- **Post-accept state JSON cleanup** confirmed across `submit_file`, `add_*`, `submit_symbol`, `remove_*` families. F26's root cause is resolved for everything tested.
+- **New-file path** works through the special blank-baseline diff shape (Pass 12, Pass 16 step A).
+
+### Where the system is NOT yet ready / where I would not bet a real project on it without more work
+
+- **Documentation is out of sync with the binary.** CLAUDE.md's transitional list claims 8 tools are still legacy; the binary has them all on V1 (Finding 34). An agent following CLAUDE.md instead of the tool descriptions would behave wrongly. **This is a real risk for "a real project" because the next agent picks up CLAUDE.md, not the test transcript.** Fix CLAUDE.md before anything serious.
+- **`serverDerivedMetadata.symbolsRemoved` omits constructors** (Finding 33). Audit trail is incomplete for any candidate that touches constructors. Confusing for review, but the candidate file itself is correct, so it's a reporting bug not a correctness bug.
+- **Multi-file coupled edits not recently verified.** Pass 8 covered this; Passes 11-16 are all single-file. For "a real project" the coupled-edit path needs a re-run on the current binary — at minimum a rename-the-method-and-its-callers pattern across 2-3 files in one session.
+- **Razor / cshtml files are explicitly out of scope** in the current Monitor design. A "real project" with significant Razor surface needs full-file `submit_file` staging + extra caution, not symbol-level tools.
+- **Open findings worth clearing first:** F27 (`record_diff_decision` opaque crash on superseded records), F28 (overlay partial-class substitution edge case), F29 (`add_method` opaque error on non-watched paths), F33 (above), F34 (CLAUDE.md sweep), F35 (force-review button possible UI mismatch — Pass 16). None of these are correctness blockers on the happy path, but each is a sharp edge.
+- **Host UX has a sharp edge that just surfaced** (Finding 35 — Operator reported clicking "review" but the server received `cancel_for_fix`). Until that's reproduced and confirmed as either UI bug or one-off misclick, the force-review modal carries a small risk of the wrong action being taken under attention pressure on a real project.
+- **Telemetry, concurrent edits, network failures, Host restarts mid-session** have not been stress-tested. Pass series ran in a quiet single-Operator workflow.
+- **Cross-solution generalization** — every pass ran against the same `Schema Studio.sln`. The pipeline works for that solution's shape; it has not been validated against a substantially different one (e.g., very large solution, mixed SDK styles, source generators heavy, F# interop, etc.).
+
+### My recommendation
+
+**Conditionally ready for a real project, with these gates first:**
+
+1. Codex closes Findings 33, 34 (the doc sync alone removes the biggest hidden-foot-gun).
+2. Operator confirms or refutes Finding 35 (force-review button) with a single repro session.
+3. One multi-file coupled-edit pass on the current binary (rename method + 2 callers in one session) to re-verify Pass 8's results haven't regressed since.
+4. Pick a "real project that matters" with **bounded scope** — ideally one feature, single-file edits dominant, Razor work walled off. Run the spec at `20260519-system-test-spec-add-remove-api-walk.md` cold against the project once as a smoke test before the first real edit.
+
+If those four are done, I'd be comfortable. **Right now, today, without those gates, I would not bet a high-stakes project on it** — not because the workflow is broken, but because the documentation is misleading enough that the next agent will probably do the wrong thing for the wrong reason.
+
+The architecture is good. The implementation is mostly right. The instructions to the next agent are the weakest link.
+
+## Pass 16 — 2026-05-19 — Full review-chain probe against a deliberately broken candidate
+
+Pass 15 verified the overlay diagnostic; Pass 16 verifies what the Monitor does with the broken candidate downstream — staging, diff launch, Host force-review prompt, recovery. New fresh fixture (`McpOverlayProbeFixture.cs`) so this is reproducible without shared state.
+
+### Setup (step A)
+
+Created `SchemaStudio.SematicModel\Model\McpOverlayProbeFixture.cs` via `submit_file` + stage + accept. Baseline content: `private int _value = 7;` + `public int Compute() => _value + 1;`. Watched hash `7282842e`.
+
+### Probe (steps B-D)
+
+Session `monitor-20260519142558-957611defc884113a`. Single op: `remove_symbol(_value)` against the live watched fixture.
+
+| Step | Tool | Result |
+|---|---|---|
+| B | `remove_symbol(_value)` | `status: candidate-updated`, **`overlayValidation: compiled-with-errors`, `CS0103: The name '_value' does not exist`** at line 5 col 29. The op mutates the candidate (deletes the field); overlay catches the dangling reference. |
+| C | `stage_candidate_for_review` | `status: staged`, record `20260519_092612389_..._38adf30c`. **Stage does NOT refuse a broken candidate** — it records the staged record carrying the overlay error forward. `queueStatus` from `list_session_staged_records`: **`blocked-overlay-validation`**. |
+| D | `launch_staged_diff` | **`status: overlay-errors-review-cancelled`**. Host prompted the Operator with a force-review dialog (per CLAUDE.md design); Operator chose `cancel_for_fix`. Server returned structured fields: `validationGateStatus: completed`, `validationGateDecision: cancel_for_fix`, `validationGateMessage: "Operator cancelled review so the agent can fix overlay compile errors first."`, `nextStep: "Review was not launched. Fix the reported issue, then retry launch_staged_diff before calling record_diff_decision."`. **WinMerge never launched.** |
+
+### Recovery (continued same session)
+
+Once the Host blocks the chain, the documented recovery is "fix the candidate, restage, retry." Pass 16 took the simplest fix: also remove the consumer.
+
+- `remove_symbol(Compute)` → `candidate-updated`, opCount 2, **overlay clean** (no dangling reference any more — both removed).
+- `stage_candidate_for_review` → new staged record `20260519_092746101_..._9e424e00`. `serverDerivedMetadata.symbolsRemoved` listed **both** `_value` and `Compute`. Earlier `blocked-overlay-validation` record stays in queue history; it is **not** auto-superseded — the recovery is a sibling record, not a replacement.
+- `launch_staged_diff` → **`winmerge-launched`** straight through, no force-review prompt this time because overlay is clean.
+- Operator saved. `record_diff_decision(accepted)` → **`classification: accepted`** (exact). Watched hash `96118e14`. Fixture now an empty class (both members removed).
+
+### Key results
+
+- **The Monitor's gate against broken candidates is at `launch_staged_diff`, not at the staging tool.** Staging tools always mutate the candidate; staging archives it with `blocked-overlay-validation` queue status; the diff launcher escalates to the Host for an explicit force-review or cancel-for-fix decision; that decision is the gate.
+- **The cancel-for-fix decision is non-destructive.** It does not delete the candidate or the staged record. The agent can fix and restage in the same session. WinMerge is never opened with broken code unless the Operator explicitly force-reviews.
+- **The Host prompt path works end-to-end.** Pass 16 is the first observed instance of `validationGateDecision: cancel_for_fix` in this notes branch. Earlier passes accepted only clean candidates; the force-review dialog had never been exercised in test.
+- **Recovery is a normal restage, not a special API.** No `clear_block` or `unblock_record` call needed — the agent simply composes a fixing op into the same Working candidate and stages again. The new staged record gets a clean queue status because its overlay is clean.
+- **Sibling vs supersession:** unlike the Pass 8 supersession case (two stages within the same session on a same-file candidate), the blocked-overlay record from step C and the recovered record from the restage are listed as **sibling** records in the session. The blocked one stays `blocked-overlay-validation`; the new one is `staged` then `accepted`. Worth confirming in a future pass whether this is intentional or whether the blocked one should be auto-superseded.
+
+### Findings filed this pass
+
+None. The full review chain behaved as designed. The questions raised at the end ("is the blocked record's persistence intentional?") are observations for a future focused test, not findings of incorrect behavior.
+
+### Watched repo state at end of pass
+
+- `C:\Schema Studio - DBV2`: new file `SchemaStudio.SematicModel\Model\McpOverlayProbeFixture.cs` (untracked), final content is an empty class skeleton (both `_value` and `Compute` removed via the accepted recovery candidate). All prior leftovers still present.
+- Notes branch `claude/live-test-notes-20260517`: this STATUS Pass 16 entry.
+
+### What this answers about the original Pass 14 claim
+
+Pass 14 (unverified): "overlay would flag wrong-order removes."
+Pass 15 (verified): overlay does flag the broken intermediate state with a structured `CS0103` diagnostic.
+**Pass 16 (verified): the gate that prevents broken code from reaching review is the Host force-review prompt at `launch_staged_diff`, which received cancel-for-fix and returned `overlay-errors-review-cancelled`. The agent recovered by composing a fix and restaging in the same session. WinMerge never saw broken code.** The full Monitor design — overlay observes, staging archives, launcher escalates, Host gates — works as documented.
+
+## Pass 15 — 2026-05-19 — Overlay guardrail negative probe
+
+Direct follow-up to the Pass 14 "guardrail works" claim that I had to retract. Pass 14 reordered removes leaf-first **before** firing, so the overlay was never fed a broken intermediate state. Pass 15 deliberately constructs the bad state and observes whether overlay catches it.
+
+### Pre-flight
+
+- Watched-source `McpAddApiFixture.cs` at the Pass-14 final hash `e9322d86` (11-line keep-only state).
+- No `McpAddApiFixture.cs.candidate.json` (Pass 14 cleanup confirmed).
+- WinForms Host UP.
+
+### Walk
+
+Session `monitor-20260519141641-8bc52857ec764862a`. 4 ops composing into one Working candidate. Goal: at op 3, deliberately leave a method referencing a deleted field, then observe overlay diagnostics.
+
+| Op | Tool | Subject | opCount | candidateHash | overlay |
+|---|---|---|---|---|---|
+| 1 | `add_field` | `_probe_field = 99` | 1 | `3923b5a0` | `compiled`, 0 diagnostics |
+| 2 | `add_method` | `Method_ProbeConsumer() => _probe_field + 1` | 2 | `eef613c7` | `compiled`, 0 diagnostics |
+| 3 | `remove_symbol` | remove `_probe_field` (Method_ProbeConsumer still references it) | 3 | `5016e4ef` | **`compiled-with-errors`**, **`CS0103: The name '_probe_field' does not exist in the current context`** at line 11 col 42 |
+| 4 | `remove_symbol` | remove `Method_ProbeConsumer` (cleanup to no-op) | 4 | `e9322d86` (=baseline) | `compiled`, 0 diagnostics |
+
+`stage_candidate_for_review` after op 4 returned **`status: no-op-staged`**, `originalHash == stagedHash == e9322d86`, `diffRequested: false`. Documented no-op detection works exactly as written in the tool manifest. No WinMerge launched. No `record_diff_decision` call needed (or expected).
+
+### Key result
+
+**Overlay guardrail confirmed working.** At op 3, with the candidate containing a method that references a freshly-deleted field, `overlayValidation` returned `compiled-with-errors` with a specific `CS0103` diagnostic at the exact line and column of the dangling reference. Pass 14's hypothesis ("overlay would catch wrong-order removes") is now verified evidence, not assumption.
+
+Two operational nuances worth recording:
+
+1. **The op itself succeeds even with overlay errors.** `remove_symbol` at op 3 returned `status: candidate-updated`, not a refusal. The candidate file was updated; overlay flagged the consequence. The actual mutation gate is at `launch_staged_diff` (which per docs would ask the Host for an explicit `force_review` decision when overlay has errors). So the workflow is: stage tools always mutate the candidate; overlay observes; the diff-launch step is where the validation result becomes a behavior gate.
+2. **No-op staging produces a record but `queueStatus: "staged"` (not a distinct no-op marker).** The `status: no-op-staged` signal is only in the `stage_candidate_for_review` response payload — `list_session_staged_records` returns the record as a normal staged record. Minor inconsistency; not blocking.
+
+### Observation worth noting (not a finding)
+
+- **Candidate state JSON persists after a no-op stage.** Cleanup-on-accept is what deletes the JSON; for a no-op there's no accept call. The state JSON at `Working\.state\Candidates\...\McpAddApiFixture.cs.candidate.json` still records `BaselineHash: e9322d86`, `OperationCount: 4` after Pass 15 closed. Because the baseline hasn't moved (no accept happened), a subsequent op on this path will compose against the same baseline cleanly — distinct from the F26 post-accept stale-state scenario. Not filed as a finding because it does not cause incorrect behavior; documented here so a future test on this path knows to expect a non-zero `operationCount` start.
+
+### Findings filed this pass
+
+None. Pass 15 was a verification probe; the verified outcome was the positive result. The "no-op leaves state JSON" observation is documented in STATUS as a behavioral note rather than as a finding because it does not cause incorrect behavior.
+
+### Watched repo state at end of pass
+
+- `C:\Schema Studio - DBV2`: `McpAddApiFixture.cs` unchanged from Pass 14 (no-op canceled the two adds via two removes). Pass 11 modifications still present.
+- Notes branch `claude/live-test-notes-20260517`: this STATUS Pass 15 entry.
+
+## Pass 14 — 2026-05-19 — Exhaustive remove-* walk
+
+Spec: [20260519-system-test-spec-add-remove-api-walk.md](20260519-system-test-spec-add-remove-api-walk.md).
+
+### Pre-flight
+
+- Watched-source `McpAddApiFixture.cs` carries the Pass-13 final state (hash `223346ce`). State JSON cleaned.
+- WinForms Host UP. WinMerge resolved.
+
+### Walk
+
+Session `monitor-20260519140517-e8bc275066a040f0b`. 6 V1 remove ops fired sequentially into one Working candidate; every op returned `status: candidate-updated` with overlay `compiled` and zero diagnostics.
+
+**Execution order differs from the spec table to keep intermediate states overlay-clean** — `Method_Remove` references `_field_Remove` and `Property_Remove`, and the `(string parm_Remove)` ctor body references `_field_Remove`, so leaf-first dependency order is required. Final state is identical to spec-order; the difference is intermediate-overlay cleanliness. This is a property of correct C# edits, not a workflow bug.
+
+| Op | Tool | Subject | opCount | candidateHash |
+|---|---|---|---|---|
+| 1 | `remove_using` | `System.Linq` | 1 | `5dbb7f63` |
+| 2 | `remove_symbol` | `Method_Remove` (method, no params) | 2 | `82583e54` |
+| 3 | `remove_symbol` | `McpAddApiFixture(string)` ctor (parameterTypes: ["string"]) | 3 | `f3cc43f9` |
+| 4 | `remove_symbol` | `_field_Remove` (field) | 4 | `30bf2f12` |
+| 5 | `remove_symbol` | `Property_Remove` (property) | 5 | `15543fe3` |
+| 6 | `remove_symbol` | `Nested_Remove` (class) | 6 | `e9322d86` |
+
+- `stage_candidate_for_review` → `20260519_090626358_..._c50ee2f1`. `usingsRemoved: ["System.Linq"]` ✅. `symbolsRemoved` contained **only 4 entries** — `_field_Remove`, `Property_Remove`, `Method_Remove`, `Nested_Remove`. **The constructor removal is missing from the metadata** despite the actual candidate file correctly omitting the `(string)` ctor. Filed as Finding 33.
+- Staged-file content verification (`Working\Staged\...\20260519_090626358_..._c50ee2f1.cs`): 11 lines, parameterless ctor only on line 8. The `(string parm_Remove)` overload is gone. File compiles.
+- `launch_staged_diff` → `winmerge-launched`, PID 33160.
+- Operator saved. `record_diff_decision(accepted)` → **`classification: accepted`** (exact byte match). `originalHash: 223346ce` (Pass 13 final), `currentHash == stagedHash == e9322d86`. `decisionMatchesClassification: true`.
+- Post-accept verification: candidate state JSON cleaned. Roslyn `get_diagnostics(error)` on `SchemaStudio.SematicModel` returned `[]`. Final fixture is 11 lines, the keep-only state per spec.
+
+### Findings filed this pass
+
+- **Finding 33** ([20260519-finding-33-staged-metadata-symbols-removed-omits-constructors.md](20260519-finding-33-staged-metadata-symbols-removed-omits-constructors.md)): `stage_candidate_for_review.serverDerivedMetadata.symbolsRemoved` omits constructors that were actually removed. Audit-trail incompleteness; the candidate file itself is correct. Severity: confusing. Sibling asymmetry vs Pass 13's `symbolsAdded` which correctly listed both constructor overloads.
+- **Finding 34** ([20260519-finding-34-claude-md-transitional-list-comprehensively-stale.md](20260519-finding-34-claude-md-transitional-list-comprehensively-stale.md)): CLAUDE.md "Working Candidate Composition Flow" transitional list is comprehensively stale. Pass 13/14 walked every tool in the list (`add_property`, `add_constructor`, `add_nested_type`, `submit_symbol`, `remove_symbol`, `set_type_partial`, `add_using`, `remove_using`) and every one composes into the V1 candidate. Severity: stale. Supersedes Findings 30 and 32 — one CLAUDE.md edit resolves all three.
+
+### Notable positives
+
+- **V1 remove batching matches V1 add batching: 6 removes → 1 stage → 1 merge.** Pass 8's "remove cost = 3× the add cost" observation no longer holds — V1 promotion of `remove_symbol` and `remove_using` closes the gap.
+- Intermediate-state overlay validation stayed clean across all 6 ops because I reordered the removes leaf-first **before** firing them, having thought through the C# dependency graph in advance. **The overlay guardrail was never actually exercised against a wrong-order removal in this pass.** The hypothesis that overlay would flag `CS0103: The name '_field_Remove' does not exist` if removes ran in spec order was plausible but unverified at the time of Pass 14. **Pass 15 (immediately following) ran the negative probe and confirmed overlay does surface `CS0103` at the dangling-reference intermediate state.** The guardrail works; the verification cost one Pass 15 no-op stage cycle.
+- Constructor overload disambiguation by `parameterTypes` selector worked correctly — `remove_symbol` resolved against the `(string)` overload and left the parameterless one intact. (Audit-trail bug aside per Finding 33.)
+- Post-accept state-JSON cleanup confirmed for all three passes (12, 13, 14) on this fixture path. F26 root cause is now firmly resolved across `submit_file`, `add_*`, `submit_symbol`, `remove_*` tool families.
+- Three accept cycles in sequence on the same path, with `originalHash` correctly chaining (Pass 12 `<new-file>` → Pass 13 `094d7243` → Pass 14 `223346ce` → final `e9322d86`). Vote-plus-hash gate held throughout.
+
+### Watched repo state at end of pass
+
+- `C:\Schema Studio - DBV2`: `McpAddApiFixture.cs` carries the 11-line keep-only final state. Pass 11 modifications still present.
+- Notes branch `claude/live-test-notes-20260517`: STATUS entries for Pass 12, 13, 14, the system-test spec at `20260519-system-test-spec-add-remove-api-walk.md`, and Findings 33 and 34.
+
+### Next pass suggestion
+
+1. ~~Actually exercise the overlay guardrail.~~ **Done in Pass 15** — `CS0103` surfaced at the dangling-reference intermediate state. Claim is now verified.
+2. Validate the system-test spec by running it cold from a checkout where `McpAddApiFixture.cs` does not exist. The spec is supposed to be reproducible; the first re-run is the proof.
+3. After Codex resolves Findings 30/32/34, run a quick `tools/list` regression to confirm no legacy `_old` variants reappeared (commit 944f522 removed them but a future revert could resurrect them).
+4. Investigate the `overlayFileCount: 3` observation from Pass 11 / 12 / 13 / 14. Same number across all passes regardless of session scope strongly suggests the overlay pools watched-project candidate state outside the current session. Could be intentional (catches cross-session collisions) or surprising (silently expands the validated set). Worth a focused test that creates a state JSON in one session and observes whether a second session's overlay sees it.
+
+## Pass 13 — 2026-05-19 — Exhaustive add-* mega-candidate walk
+
+Spec: [20260519-system-test-spec-add-remove-api-walk.md](20260519-system-test-spec-add-remove-api-walk.md).
+
+### Pre-flight
+
+- Pass 12 fixture file `McpAddApiFixture.cs` present in watched repo (untracked but the V1 composition only needs the file on disk).
+- No `McpAddApiFixture.cs.candidate.json` (Pass 12 cleanup confirmed).
+- WinForms Host UP. WinMerge resolved.
+
+### Walk
+
+Session `monitor-20260519140105-cdf28125ff0749d49`. All 14 ops fired sequentially into one Working candidate; every op returned `status: candidate-updated` with overlay `compiled` and zero diagnostics.
+
+| Op | Tool | Subject | opCount | candidateHash |
+|---|---|---|---|---|
+| 1 | `add_using` | `System.Collections.Generic` | 1 | `1de94244` |
+| 2 | `add_using` | `System.Linq` (to-remove) | 2 | `3cc29e4a` |
+| 3 | `set_type_partial` | `McpAddApiFixture` → partial | 3 | `ad6880f1` |
+| 4 | `add_field` | `_field = 1` | 4 | `a9799422` |
+| 5 | `add_field` | `_field_Remove = 2` after `_field` | 5 | `b31240dd` |
+| 6 | `add_property` | `Property` after `_field_Remove` | 6 | `99cc1ef0` |
+| 7 | `add_property` | `Property_Remove` after `Property` | 7 | `dd0af4c1` |
+| 8 | `add_constructor` | `()` after `Property_Remove` | 8 | `54900755` |
+| 9 | `add_constructor` | `(string parm_Remove)` after `McpAddApiFixture` | 9 | `950cd47a` |
+| 10 | `add_method` | `Method() => _field + Property;` | 10 | `5820856a` |
+| 11 | `add_method` | `Method_Remove()` after `Method` | 11 | `cc3c5ca6` |
+| 12 | `add_nested_type` | `Nested` | 12 | `ad355a55` |
+| 13 | `add_nested_type` | `Nested_Remove` after `Nested` | 13 | `5709d031` |
+| 14 | `submit_symbol` | `Method` body → `=> _field + Property + 1` | 14 | `223346ce` |
+
+- `stage_candidate_for_review` → `20260519_090252644_..._4bd61342`. `serverDerivedMetadata` enumerated 12 added symbols (including 2 ctor overloads disambiguated by signature, 2 nested types with their `Value` properties, the body-replaced `Method` listed once with its final-state text hash) plus `usingsAdded: ["System.Collections.Generic", "System.Linq"]`. Overlay: 84 syntax trees, 0 diagnostics.
+- `launch_staged_diff` → `winmerge-launched`, PID 30832.
+- Operator saved. `record_diff_decision(accepted)` → **`classification: accepted`** (exact byte match). `originalHash: 094d7243` (Pass 12 accepted hash), `currentHash == stagedHash == 223346ce`. `decisionMatchesClassification: true`.
+- Post-accept verification: candidate state JSON cleaned. Roslyn `get_diagnostics(error)` on `SchemaStudio.SematicModel` returned `[]`. Final fixture content matches spec (18 lines, partial class with all members, single-line declarations).
+
+### Findings filed this pass
+
+- **CLAUDE.md V1-promotion drift sweep (deferred to consolidated finding):** Pass 13 confirms V1 promotion for `add_using`, `set_type_partial`, `add_constructor`, `add_nested_type`, `submit_symbol` (already in Finding 30), and the prior Pass-11 `add_property` (Finding 32). The entire transitional list in `CLAUDE.md` is stale. I'll roll these into one combined finding after Pass 14 so the doc sweep covers `remove_symbol` and `remove_using` results too.
+
+### Notable positives
+
+- **V1 batching delivered as designed: N changes → 1 stage → 1 merge.** 14 ops, one staged record, one WinMerge diff, one Operator decision. Workflow cost asymmetry observed in Pass 8 (3 adds = 1 merge / 3 removes = 3 merges) is now closed for adds; Pass 14 confirms the same for removes.
+- Overlay validation stayed `compiled` with zero diagnostics across every op. The intermediate states (e.g. `Method_Remove` referencing `Property_Remove` after both were added in adjacent ops) all type-checked cleanly. This is the exact pre-Operator-review guardrail the V1 design promised.
+- `submit_symbol` body replacement composed seamlessly on top of 13 prior adds in the same Working candidate (mirrors Variant C observation).
+- `add_constructor` correctly handled the overload pair: `afterSymbol: McpAddApiFixture` found the parameterless ctor as the anchor for the second overload's placement, and `serverDerivedMetadata.symbolsAdded` listed both with distinct text hashes.
+- `set_type_partial` produced `public partial class McpAddApiFixture` in the final source without any companion-partial file (which is legal C# — partial requires the keyword but not multiple files). Finding 28's "overlay partial-class not substituted" risk did not reproduce because there's no other partial to substitute.
+
+### Watched repo state at end of pass
+
+- `C:\Schema Studio - DBV2`: `McpAddApiFixture.cs` now contains the full 14-op result (still untracked from Pass 12's perspective). Pass 11 modifications still present.
+- Notes branch `claude/live-test-notes-20260517`: this STATUS Pass 13 entry.
+
+### Next step
+
+Operator may commit Pass 12 + Pass 13 together (one commit creating the fixture in its final-add-walk state) or keep them split. Either way, Pass 14 begins next.
+
+## Pass 12 — 2026-05-19 — Fixture-create for add/remove API walk
+
+Spec: [20260519-system-test-spec-add-remove-api-walk.md](20260519-system-test-spec-add-remove-api-walk.md).
+
+### Pre-flight
+
+- Branch `claude/live-test-notes-20260517` at Pass-11 tip. Watched repo has the Pass 11 modification to `ViewSourcedColumnDefinition.cs` plus the prior leftovers.
+- WinForms Host UP (Operator confirmed at Pass 11; Pass 12 starts immediately after).
+- Monitor MCP readiness: confirmed at Pass 11 pre-flight.
+- Roslyn `list_solutions`: confirmed at Pass 11. `get_diagnostics(error)`: `[]`.
+- Existing candidate state JSONs: `Enums.cs`, `ExportMappers.cs`, `ParsedQuery.cs`. No `McpAddApiFixture.cs.candidate.json` — fresh path confirmed.
+
+### Target
+
+Per spec: `SchemaStudio.SematicModel\Model\McpAddApiFixture.cs` — new file, empty `public class McpAddApiFixture { }`. After accept and Operator commit, Pass 13 layers the full add-* surface on top via a single Working candidate.
+
+### Walk
+
+Session `monitor-20260519135859-3b44be24c54446fd9`.
+
+- Step 1 — `submit_file(McpAddApiFixture.cs, 5-line skeleton)` → **`status: candidate-updated`**, `baselineHash: <new-file>`, `candidateHash: 094d7243...`, `operationCount: 1`. Overlay `compiled`: 84 syntax trees (one more than Pass 11's 83 — the Roslyn overlay picked up the new file), 0 diagnostics. Reaffirms `submit_file` V1 contract for new-file path.
+- Step 2 — `stage_candidate_for_review` → staged record `20260519_085912613_..._4b8a69c2`. `serverDerivedMetadata.symbolsAdded`: one entry for the `McpAddApiFixture` class (line 3-5). Overlay still clean.
+- Step 3 — `launch_staged_diff` → `winmerge-launched`, PID 26952. WinMerge opened with the proposed (left) vs a fresh blank baseline at `Working\Staged\NewFileBaselines\...\McpAddApiFixture.cs` (right). This is the expected new-file diff shape: there is no watched-source baseline because the file does not exist yet.
+- Step 4 — Operator saved in WinMerge. `record_diff_decision(accepted)` → **`classification: accepted`** (exact byte match). `originalHash: <new-file>`, `currentHash == stagedHash == 094d7243...`. `decisionMatchesClassification: true`. Server created the watched file as part of the accept path.
+- Post-accept verification: `Working\.state\Candidates\<observedRootKey>\<rel>\McpAddApiFixture.cs.candidate.json` does NOT exist. Watched file content matches the spec exactly (5 lines: namespace declaration, blank line, class header, brace open, brace close). F26 cleanup behavior holds for `submit_file` new-file too.
+
+### Findings filed this pass
+
+None. Pass 12 was a clean walk.
+
+### Notable positives
+
+- New-file `submit_file` V1 path works end-to-end with the special blank baseline diff shape. The Operator save+create-watched-file step happened transparently.
+- Post-accept state JSON cleanup now confirmed for both `add_property` (Pass 11) and `submit_file` (Pass 12) on this branch — Finding 26 root cause is fixed for both tools tested so far.
+
+### Watched repo state at end of pass
+
+- `C:\Schema Studio - DBV2`: new file `SchemaStudio.SematicModel\Model\McpAddApiFixture.cs` (untracked). Pass 11 modifications still present. Awaiting Operator commit of the new fixture before Pass 13 begins.
+- Notes branch `claude/live-test-notes-20260517`: this STATUS Pass 12 entry plus the system-test spec at `20260519-system-test-spec-add-remove-api-walk.md`.
+
+### Next step
+
+Operator commits `McpAddApiFixture.cs` to the watched repo. Pass 13 (exhaustive add-* mega-candidate) starts immediately after.
+
+## Pass 11 — 2026-05-19 — `add_property` V1-vs-legacy + clean walk
+
+### Pre-flight
+
+- Branch `claude/live-test-notes-20260517` at `3a5203c`, up to date with `origin/main` (merged `8bc1197`). Watched repo `C:\Schema Studio - DBV2` has 7 modified files leftover from Passes 5–8 plus the Variant-A new file `SchemaObjectColumnRepositoryAsync.cs`; all outside the Pass 11 target path.
+- WinForms Host: confirmed UP by Operator. WinMerge resolved at `C:\Program Files\WinMerge\WinMergeU.exe`.
+- McpServer binary: post-`944f522` (no `_old` variants exposed in `tools/list`). Most recent McpServer source commit was `944f522` "Remove legacy immediate staging MCP tools" on 2026-05-19; binary appears in sync.
+- Monitor MCP readiness: `get_monitor_status`, `get_tool_manifest`, `get_staging_guide`, `get_workflow_status` all returned non-error payloads.
+- Roslyn CodeLens: `list_solutions` shows `Schema Studio.sln` active, `status: ready`, 6 projects. `get_diagnostics(severity=error)` returned `[]`.
+- Re-read `origin/codexNotes:CODEX_NOTES/CLAUDE_TESTING_AGENT_PROMPT.md`. Role unchanged.
+- Existing Working candidate state JSONs (Finding 26 stale-state risk): `Enums.cs`, `ExportMappers.cs`, `ParsedQuery.cs`. Pass 11 target deliberately avoids all three.
+- Open blockers from prior passes still unmarked-fixed: F26 (V1 op crashes on stale state JSON post-accept), F27 (`record_diff_decision` opaque on superseded), F28/F29/F30/F31 (per FINDINGS).
+
+### Target
+
+`SchemaStudio.SematicModel\Model\ViewSourcedColumnDefinition.cs` — 305-line INotifyPropertyChanged DTO. Clean watched, no prior candidate state JSON. Pass 11 walks `add_property` with one derived read-only property and observes whether the tool composes via the V1 Working-candidate path (per its tool description) or creates a staged record immediately (per CLAUDE.md's legacy-list note). This is exactly the divergence Finding 30 flagged for `submit_symbol`; Pass 11 confirms whether `add_property` is in the same state.
+
+### Walk
+
+Session `monitor-20260519134259-142cbd6a5a794b3fb`.
+
+- Step 1 — `add_property(ViewSourcedColumnDefinition, HasBaseLineage => !string.IsNullOrEmpty(BaseDatabase)…)` after anchor `BaseColumn` → **`status: candidate-updated`**, `operationCount: 1`, baseline `c51d358a`, candidate `b8cfcecc`. Overlay clean: 83 syntax trees, 0 diagnostics. `list_session_staged_records(sessionId)` immediately after → `count: 0`. V1 contract confirmed.
+- Step 2 — `stage_candidate_for_review` → staged record `20260519_084343444_..._9968791a`, `serverDerivedMetadata.symbolsAdded: [HasBaseLineage(property, line 221-224)]`, overlay still clean.
+- Step 3 — `launch_staged_diff` → `status: winmerge-launched`, PID 29244.
+- Step 4 — Operator saved in WinMerge. `record_diff_decision(accepted)` → **`classification: accepted`** (exact byte match, not normalized). `currentHash == stagedHash == b8cfcecc...`. `decisionMatchesClassification: true`.
+
+### Findings filed this pass
+
+- Finding 32: CLAUDE.md "Working Candidate Composition Flow" lists `add_property` as not-yet-promoted, but observed behavior is V1 candidate-flow. Sibling to Finding 30 (`submit_symbol`); the transitional list in CLAUDE.md needs a sweep against `b0d071e` / `30f9002` / `944f522`. Severity: stale. Filed at [20260519-finding-32-add-property-claude-md-stale-on-v1-promotion.md](20260519-finding-32-add-property-claude-md-stale-on-v1-promotion.md).
+
+### Notable positives (no finding needed)
+
+- **Finding 26 root cause apparently resolved for this path.** After the `accepted` classification, the candidate state JSON at `Working\.state\Candidates\Schema Studio - DBV2_6c4e124c9922\SchemaStudio.SematicModel\Model\ViewSourcedColumnDefinition.cs.candidate.json` was **deleted**, not left stale. This is exactly the F26 option-(a) outcome — clear the state JSON on accept so the next op on the same path rebaselines naturally. Caveat: only observed for `add_property` on a single path; F26's original reproducer used `add_method` / `add_field`, and the cleanup-on-accept code path could be tool-specific or path-specific. A future pass should retest by chaining a second op on the same path post-accept to confirm the fix is general.
+- V1 promotion of `add_property` itself (Finding 32 captures the doc drift; the binary behavior is the intended V1 shape).
+- `serverDerivedMetadata.symbolsAdded` correctly named the added property and its post-edit line range, useful for review without re-reading the file.
+- WinMerge launch + Operator save + vote-plus-hash classification round-tripped cleanly with no normalization needed (mixed-EOL was not a factor for the EOL-stable target file).
+
+### Observation worth flagging but not filed (insufficient evidence)
+
+- `overlayValidation.overlayFileCount: 3` was reported across all three response sites (`add_property`, `stage_candidate_for_review`, server-side metadata) even though this session staged only one file. Three ambient candidate state JSONs existed in `Working\.state\Candidates` (`Enums.cs`, `ExportMappers.cs`, `ParsedQuery.cs`) — strongly suggesting the overlay validator pools all Working candidate state for the watched root, not just the current session's. Useful (catches cross-session collisions early) and surprising (silently expands the validated set). Not a finding yet because I have no evidence of incorrect behavior; document if a future pass observes a false-positive overlay diagnostic from an unrelated session's stale candidate.
+
+### Watched repo state at end of pass
+
+- `C:\Schema Studio - DBV2`: one additional modified file vs Pass 10 — `SchemaStudio.SematicModel\Model\ViewSourcedColumnDefinition.cs` (new `HasBaseLineage` derived property). Same Pass 5–8 leftovers as before. No `.bak` backups noted (Host preserves them in `SourceBakups\`; not part of the commit lane).
+- Notes branch `claude/live-test-notes-20260517`: this STATUS Pass 11 entry plus the Finding 32 sidecar.
+
+### Next pass suggestion
+
+1. Confirm Finding 26's cleanup-on-accept is general: chain `add_method` then `add_field` on the same path with two accepts between them. Watch for state-JSON deletion after each accept.
+2. Walk `set_type_partial` end-to-end on a fresh type and confirm whether it has been V1-promoted alongside `submit_symbol` / `add_property`. If V1, append to the Finding 32 doc-sweep.
+3. Walk `add_constructor` and `add_nested_type` for the same V1-vs-legacy probe — these are still in the CLAUDE.md transitional list and the binary's actual state is the open question.
+4. If overlay-file-count > 1 reproduces with no other session activity, file a finding for the pooling behavior (or for the missing documentation of it).
+
 ## Pass 1 — 2026-05-17 — Reorientation And Skill-Pack Review
 
 ### Branch State
