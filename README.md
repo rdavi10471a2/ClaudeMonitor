@@ -67,11 +67,13 @@ The source-map hierarchy is intentional:
 dotnet build .\MonitorBaseClaude.slnx
 ```
 
-## Claude Desktop On Windows
+## Claude Code / VS Code
 
-Build the MCP server first, then point Claude Desktop at the server executables directly. Do not use `dotnet run` or PowerShell wrapper scripts as the Desktop MCP command on the Windows MSIX build; the wrapper layer can break stdio forwarding and MSBuild output can pollute the JSON-RPC stream.
+The supported live MCP testing path is Claude Code in VS Code using the project MCP binding.
 
-Use `Docs/ClaudeDesktopAndCodeSetup.md` for the workstation-local direct-exe config.
+Claude Desktop local MCP access is not currently verified for this workstation. Treat Desktop as conversation/review only until a fresh local MCP connection test proves it can call the Monitor MCP server.
+
+Use `Docs/ClaudeDesktopAndCodeSetup.md` for the current client setup notes.
 
 ## High-Value Smokes
 

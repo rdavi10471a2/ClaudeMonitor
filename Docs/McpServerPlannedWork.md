@@ -31,6 +31,39 @@ These tools are token-saving and safety tools for later phases. They should stag
 - `get_file_outline(path)`: return signatures, symbol names, attributes, and line spans without method bodies.
 - `get_source_map(path?, scope?, mode?)`: return a read-only Roslyn source map for a C# file, folder, or project. `navigation` is broad orientation, `selector` is stable target selection, and `full` is audit/debug.
 - `get_symbol(path, symbolName | symbolSelectorJson)`: return one symbol body on demand. Structured selector support lets source-map stable keys fetch exact bodies.
+- `explore_code_task(taskDescription, entryPathOrSymbol?)`: high-level discovery tool that returns likely files, symbols, call chains, namespace neighborhoods, component maps, and next tool calls for a task. It should read durable `AIFileContext` / `FileVersion` headers and rank files by declared purpose/notes before falling back to broader graph or source-map expansion. This is the local "one explore call" path for reducing grep/read loops while preserving Monitor staging for writes.
+
+### CodeGraph Comparison Follow-Ups
+
+Source note: added after comparing MonitorBaseClaude with `colbymchenry/codegraph`, a local pre-indexed code knowledge graph for Claude Code, Codex, Cursor, and OpenCode. Treat these as future ideas to evaluate, not current live contract.
+
+- Add a high-level `explore_code_task(taskDescription, entryPathOrSymbol?)` discovery tool that can collapse first-pass exploration into one structured response. It should combine source maps, namespace neighborhoods, call/caller surfaces, component maps, and durable `AIFileContext` / `FileVersion` headers.
+- Add an impact-radius tool such as `get_change_surface(symbol)` or `get_impact_radius(symbol)` that returns likely callers, callees, related files, and required same-session staging candidates before an API/signature change.
+- Add monitor/Roslyn index health tooling such as `get_monitor_index_status` or `get_roslyn_workspace_status` that reports watched root, loaded solution, workspace freshness, diagnostics freshness, overlay count, stale MCP binding hints, and known fallback state.
+- Generate client-facing agent instructions from the live MCP manifest and staging rules so Claude/Codex/Cursor-facing docs cannot drift far from the actual callable tool surface.
+- Add lightweight benchmark/report tooling that compares task exploration with and without source-map/graph-assisted discovery. Track tool calls, bytes returned, file bodies read, elapsed time, and whether grep/text search was needed.
+
+### Managed Agent / MCP Tunnel Deployment Path
+
+Source note: added after Anthropic announced Claude Managed Agents self-hosted sandboxes and MCP tunnels. Treat this as future deployment architecture, not current local workflow.
+
+The interesting shape is connectivity, not a replacement for the current Monitor UI:
+
+```text
+Claude Managed Agent / cloud agent loop
+    -> MCP tunnel or private connector
+    -> local/private Monitor MCP server
+    -> existing WinForms Host, Working mirror, Roslyn validation, staged records, and review UI
+```
+
+Keep the current local UI/Host review surface unless a better operator surface is deliberately designed. MCP tunnels should be evaluated as networking/proxy plumbing that lets a cloud or managed Claude session reach private Monitor services without exposing them publicly. They should not imply removing WinMerge/Host review, vote-plus-hash classification, local telemetry, or the existing operator controls.
+
+Open questions for later:
+
+- Can the tunnel path reach a workstation-local Monitor MCP server reliably, or does it require a private network/service host?
+- How does operator review work when the agent loop is remote but WinMerge/Host UI remains local?
+- Can session telemetry include tunnel identity, agent session id, and tool-call source without leaking source content?
+- Does this help replace the fragile VS Code MCP binding, or only supplement it for API/Managed Agent workflows?
 
 ### Replace tools
 

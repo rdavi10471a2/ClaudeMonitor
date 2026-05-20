@@ -5,7 +5,7 @@ This note captures the intended Claude setup for MonitorBaseClaude.
 ## Expected Clients
 
 - Claude Code in VS Code or terminal for local project-aware work.
-- Claude Desktop for conversation and MCP experiments where available.
+- Claude Desktop for conversation only unless local MCP support is re-verified on this workstation.
 - Monitor MCP Tool Server for workflow, staging, hashes, ledgers, and review classification.
 - Roslyn CodeLens MCP for semantic .NET code intelligence.
 
@@ -27,7 +27,7 @@ Machine-local paths live in `appsettings.json`. Start from `appsettings.template
 - `MonitorClient:CodeLensSolutionPath`
 - `WorkflowSettings:ObservedRoot`
 
-Relative paths in `appsettings.json` are resolved from the config file folder. The project `.mcp.json` uses repo-local PowerShell scripts for Claude Code and developer shells. Claude Desktop on Windows MSIX should use the direct-exe configuration in the Desktop section below.
+Relative paths in `appsettings.json` are resolved from the config file folder. The project `.mcp.json` uses repo-local PowerShell scripts for Claude Code and developer shells.
 
 Build the Monitor MCP server first:
 
@@ -63,36 +63,13 @@ Recommended first prompt:
 Use the monitor-base-claude MCP server. Call get_monitor_status, get_tool_manifest, and get_source_map for Data\BaseTableRepository.cs with scope file and mode selector. Summarize the safe edit loop before proposing any code change.
 ```
 
-## Claude Desktop Setup
+## Claude Desktop Status
 
-Claude Desktop may not automatically read `CLAUDE.md` the same way Claude Code does. Paste or attach the relevant rules when testing Desktop, especially:
+Claude Desktop local MCP access is not currently a verified path for this workstation. Prior attempts indicated Desktop could not access the local Monitor MCP server reliably, so the supported live testing path is Claude Code in VS Code with the project MCP binding.
 
-- Use Monitor MCP for staging and vote-plus-hash classification.
-- Use `find_file -> get_source_map(mode: navigation) -> get_source_map(mode: selector) -> get_symbol -> get_file only when needed`.
-- Do not directly edit watched source.
-- Do not use source process markers or glyph anchors.
-- Diff review is all-or-none.
+Do not use Desktop for Monitor MCP workflow validation until a fresh local MCP connection test proves it can call the server. If Desktop is used for conversation or external review, paste or attach the relevant rules manually because it may not read `CLAUDE.md` the same way Claude Code does.
 
-Desktop MCP configuration must point to the built server executables directly. Do not launch the servers through PowerShell wrappers from Desktop's MSIX build; that path can break stdio forwarding before the MCP `initialize` request reaches the server.
-
-Use this workstation-local shape after building the Monitor MCP server:
-
-```json
-{
-  "mcpServers": {
-    "monitor-base-claude": {
-      "command": "C:\\VSCodeProjects\\MonitorBaseClaude\\MonitorBaseClaude.McpServer\\bin\\Debug\\net10.0\\MonitorBaseClaude.McpServer.exe",
-      "args": ["--settings", "C:\\VSCodeProjects\\MonitorBaseClaude\\appsettings.json"]
-    },
-    "roslyn-codelens": {
-      "command": "C:\\Users\\rdavi\\.dotnet\\tools\\roslyn-codelens-mcp.exe",
-      "args": ["C:\\Schema Studio - DBV2\\Schema Studio.sln"]
-    }
-  }
-}
-```
-
-The PowerShell scripts under `Tools` remain useful for developer shells and Claude Code experiments, but they are not the canonical Claude Desktop entry point on Windows MSIX.
+The removed direct-exe Desktop configuration is historical only. Keep the active instructions focused on VS Code/Claude Code unless Desktop local MCP support becomes demonstrably reliable.
 
 ## Roslyn CodeLens Pairing
 
