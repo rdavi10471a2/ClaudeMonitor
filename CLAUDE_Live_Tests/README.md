@@ -8,6 +8,18 @@ Claude may write findings, bug reports, and doc suggestions here when live MCP t
 
 Pull latest `main`, rebuild MonitorBaseClaude, restart the VS Code MCP binding if needed, and confirm the live Monitor MCP tool list no longer contains any `*_old` tools.
 
+Configure Claude Code statusline so MonitorBaseClaude can display Claude session usage in `View -> Claude Info`:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File C:\VSCodeProjects\MonitorBaseClaude\Tools\ClaudeStatusLine\Write-ClaudeStatusSnapshot.ps1
+```
+
+After configuration, run any small Claude Code prompt and confirm the Monitor app can refresh `View -> Claude Info` from:
+
+```text
+Working\History\ClaudeCode\statusline-latest.json
+```
+
 Run a compact workflow-surface check:
 
 ```text

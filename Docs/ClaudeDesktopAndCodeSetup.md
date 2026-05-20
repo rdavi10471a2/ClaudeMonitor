@@ -63,6 +63,25 @@ Recommended first prompt:
 Use the monitor-base-claude MCP server. Call get_monitor_status, get_tool_manifest, and get_source_map for Data\BaseTableRepository.cs with scope file and mode selector. Summarize the safe edit loop before proposing any code change.
 ```
 
+## Claude Code Usage Snapshot
+
+Claude Code can expose live model, cost, context-window, token, rate-limit, and session fields through its status line JSON. MonitorBaseClaude reads a local snapshot written by `Tools/ClaudeStatusLine/Write-ClaudeStatusSnapshot.ps1` and displays it in `View -> Claude Info`.
+
+Configure Claude Code statusline to call the script from this repository:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File C:\VSCodeProjects\MonitorBaseClaude\Tools\ClaudeStatusLine\Write-ClaudeStatusSnapshot.ps1
+```
+
+The script writes:
+
+```text
+Working\History\ClaudeCode\statusline-latest.json
+Working\History\ClaudeCode\statusline-history.jsonl
+```
+
+This is the supported path for Claude token/context feedback. MCP request/response byte counts remain separate proxy telemetry and should not be treated as Claude token counts.
+
 ## Claude Desktop Setup
 
 Claude Desktop may not automatically read `CLAUDE.md` the same way Claude Code does. Paste or attach the relevant rules when testing Desktop, especially:

@@ -5,7 +5,7 @@ namespace MonitorBaseClaude.Controls;
 
 [DesignerCategory("Code")]
 [AIFileContext("MonitorDashboardControl.cs", "Code-only monitor shell using deterministic split containers for tool navigation, MCP testing, and telemetry panes.")]
-[FileVersion("2.5")]
+[FileVersion("2.6")]
 public sealed class MonitorDashboardControl : UserControl
 {
     private const int FriendlySplitterWidth = 12;
@@ -26,6 +26,8 @@ public sealed class MonitorDashboardControl : UserControl
     private readonly McpTestBenchControl testBenchControl;
     private readonly TelemetryLogControl telemetryLogControl;
     private readonly TelemetryLogControl monitorMcpTelemetryLogControl;
+    private ClaudeInfoControl? claudeInfoControl;
+    private Form? claudeInfoWindow;
     private SessionInspectorControl? sessionInspectorControl;
     private Form? sessionInspectorWindow;
     private bool splitterLayoutSized;
@@ -105,6 +107,7 @@ public sealed class MonitorDashboardControl : UserControl
             mcpClientService.Dispose();
             monitorMcpClientService.Dispose();
             ollamaToolExplorerService.Dispose();
+            claudeInfoWindow?.Dispose();
             sessionInspectorWindow?.Dispose();
         }
 
@@ -134,6 +137,7 @@ public sealed class MonitorDashboardControl : UserControl
         commandBar.AddMenuItem("View", "System Monitor", (_, _) => mainTabs.SelectedIndex = 0);
         commandBar.AddMenuItem("View", "Roslyn Tooling", (_, _) => mainTabs.SelectedIndex = 1);
         commandBar.AddMenuItem("View", "Current Session", (_, _) => ShowSessionInspectorWindow());
+        commandBar.AddMenuItem("View", "Claude Info", (_, _) => ShowClaudeInfoWindow());
         commandBar.AddMenuItem("Tools", "Open CodeLens Telemetry Folder", (_, _) => telemetryLogControl.OpenLogFolder());
         commandBar.AddMenuItem("Tools", "Open System Monitor Telemetry Folder", (_, _) => monitorMcpTelemetryLogControl.OpenLogFolder());
     }
@@ -219,5 +223,27 @@ public sealed class MonitorDashboardControl : UserControl
         };
         sessionInspectorWindow.Controls.Add(sessionInspectorControl);
         sessionInspectorWindow.Show(FindForm());
+    }
+
+    private void ShowClaudeInfoWindow()
+    {
+        if (claudeInfoWindow is { IsDisposed: false })
+        {
+            claudeInfoControl?.RefreshSnapshot();
+            claudeInfoWindow.Show();
+            claudeInfoWindow.Activate();
+            return;
+        }
+
+        claudeInfoControl = new ClaudeInfoControl(settings) { Dock = DockStyle.Fill };
+        claudeInfoWindow = new Form
+        {
+            Text = "Claude Info",
+            StartPosition = FormStartPosition.CenterParent,
+            Size = new Size(720, 540),
+            MinimumSize = new Size(620, 480)
+        };
+        claudeInfoWindow.Controls.Add(claudeInfoControl);
+        claudeInfoWindow.Show(FindForm());
     }
 }
