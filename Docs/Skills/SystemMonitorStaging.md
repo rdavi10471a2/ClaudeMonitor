@@ -14,6 +14,7 @@ The active safety mechanism is session overlay validation plus gated serial diff
 - For coupled multi-file C# edits, stage every required file in one monitor session before the first review launch so overlay validation sees the whole proposed change.
 - Record the Operator decision with `record_diff_decision`.
 - Stop on `dirty-unexpected`; recovery is explicit refresh/rebase/restage or Operator reconcile.
+- A Working candidate persists across sessions when the watched-source baseline hash is unchanged. If the first edit in a new pass inherits prior in-progress candidate content, either continue deliberately or discard the Working mirror/state before starting a clean test.
 
 ## Choose The Staging Mode
 
@@ -71,6 +72,12 @@ For coupled edits, briefly name why the files must validate together before revi
 ## Discovery Discipline
 
 Empty Roslyn reference/caller results are not proof that no consumers exist. Before treating an API/signature/rename as single-file, cross-check with at least one other signal: diagnostics, symbol search, public API surface, targeted source map, known UI fields/properties, or explicit Operator knowledge.
+
+Before emitting a call site to a type reached through a `using`, local namespace context, or a known dependency, load that target type's real callable surface first. Use `search_symbols` plus `get_type_overview`, or Monitor source maps/symbol reads for watched-project types. Write calls against actual method names, return types, parameter types, and overloads.
+
+Use `get_source_map(scope: "namespace", namespaceName: "...")` when a file's `using` directives or namespace neighborhood point at related watched-project types. Namespace scope is the preferred structural form for "find similar nearby types" when the namespace is known.
+
+If overlay/build diagnostics reveal a missed or broken call site that Roslyn did not surface, text search is allowed as a diagnostic fallback. Use it to locate the missed file or literal call site, then confirm structure where possible and stage the corrected file into the same monitor session before retrying review. Do not use grep as the first-pass way to understand C# code.
 
 For whole-file staging, use Roslyn shape plus `get_file`; skip `get_source_map` unless you need stable selectors or structure. For symbol staging, use Roslyn shape plus `get_source_map`/`get_symbol`; skip `get_file` unless symbol context is insufficient.
 

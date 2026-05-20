@@ -10,6 +10,8 @@ Use when a C# task mentions symbols, references, callers, implementations, diagn
 - Start broad, then narrow: symbol search, type overview, references/callers/impact.
 - Apply this per target file or edit cycle. Do not shortcut with "I already discovered this earlier" when the target file or coupled edit set changes.
 - Treat empty `find_references` / `find_callers` as a result to verify, not proof of absence, before API renames or signature changes.
+- Before writing a call site to a referenced type, load that type's real callable surface with `search_symbols` and `get_type_overview` or equivalent Monitor source-map reads.
+- If overlay/build diagnostics expose a missed call site that Roslyn did not find, use text search only as a diagnostic fallback, then return to Roslyn/Monitor structure and stage the missed file in the same session.
 
 ## Usual Flow
 

@@ -170,13 +170,14 @@ public sealed class MonitorTools
     }
 
     [McpServerTool]
-    [Description("Return a Roslyn-derived source map for a C# file, folder, or watched project. Use before C# edits. Modes: navigation for broad orientation, selector for stable get_symbol/submit_symbol selectors, detail for contract detail, full for audit/debug.")]
+    [Description("Return a Roslyn-derived source map for a C# file, folder, namespace, or watched project. Use before C# edits. Modes: navigation for broad orientation, selector for stable get_symbol/submit_symbol selectors, detail for contract detail, full for audit/debug.")]
     public MonitorSourceMapResult GetSourceMap(
-        [Description("Optional source file or folder path, absolute or relative to the watched solution folder. Omit for the watched project.")] string? path = null,
-        [Description("Source map scope: auto, file, folder, or project.")] string scope = "auto",
-        [Description("Source map density: auto, navigation, selector, detail, or full. auto means selector for file scope and navigation for folder/project scope.")] string mode = "auto")
+        [Description("Optional source file/folder path, or namespace text when scope is namespace. Omit for the watched project.")] string? path = null,
+        [Description("Source map scope: auto, file, folder, namespace, or project.")] string scope = "auto",
+        [Description("Source map density: auto, navigation, selector, detail, or full. auto means selector for file scope and navigation for folder/project/namespace scope.")] string mode = "auto",
+        [Description("Optional namespace text when scope is namespace. If omitted, path is treated as the namespace.")] string? namespaceName = null)
     {
-        return Track(nameof(GetSourceMap), new { path, scope, mode }, () => workflowService.GetSourceMap(path, scope, mode));
+        return Track(nameof(GetSourceMap), new { path, scope, mode, namespaceName }, () => workflowService.GetSourceMap(path, scope, mode, namespaceName));
     }
 
     [McpServerTool]

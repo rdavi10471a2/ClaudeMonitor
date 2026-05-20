@@ -6,9 +6,9 @@ Claude may write findings, bug reports, and doc suggestions here when live MCP t
 
 ## Current Assignment
 
-Pull latest `main`, rebuild MonitorBaseClaude, and confirm the live Monitor MCP tool list no longer contains any `*_old` tools.
+Pull latest `main`, rebuild MonitorBaseClaude, restart the VS Code MCP binding if needed, and confirm the live Monitor MCP tool list no longer contains any `*_old` tools.
 
-Then run a compact workflow-surface check:
+Run a compact workflow-surface check:
 
 ```text
 get_tool_manifest
@@ -16,6 +16,7 @@ get_staging_guide
 get_workflow_status
 start_monitor_session
 get_source_map on a known C# file
+get_source_map(scope: "namespace", namespaceName: "<known watched namespace>")
 ```
 
 Confirm the docs and tool descriptions teach the current workflow and current tool surface:
@@ -32,6 +33,27 @@ Specific regression checks requested after Codex fixes:
 ```text
 1. Removed overloaded constructors should appear in stage_candidate_for_review.serverDerivedMetadata.symbolsRemoved.
 2. Overlay-error launch should show the Host force-review gate. "Force WinMerge Review" should produce validationGateDecision: force_review and open WinMerge. "Cancel Review" should produce cancel_for_fix and not open WinMerge.
+3. Source-map selector results should include parameter names, stable-key-only suggested get_symbol calls, and namespace-neighborhood suggested get_source_map calls derived from using directives.
+```
+
+Real-form partial-class test requested:
+
+```text
+Using DBV2 or another watched WinForms project with real partial forms, pick one form and discover its partial layout from tools rather than from operator hints.
+
+Task shape:
+- Add a trivial button or similar UI entry point.
+- Add or reuse a string/state field.
+- Add a click handler that opens a MessageBox using that field.
+- Prefer the safest composition path after inspecting the form shape. If Designer.cs is generated/designer-shaped, consider whether runtime setup in the main partial is safer than editing designer layout code.
+- Keep all touched files in one monitor session so overlay validation sees sibling partial candidates together.
+- Launch/review serially and record the decisions.
+
+Report:
+- Which discovery calls identified the partial files and insertion points.
+- Whether any candidate was temporarily invalid before the sibling partial candidate existed.
+- Whether the final staged overlay compiled cleanly.
+- Whether grep/text search was needed; if yes, explain the diagnostic or missed-callsite reason.
 ```
 
 Do not edit product code for this assignment. Test with disposable or already-designated smoke-test files only. If anything is confusing or broken, file a compact dated note or bug report in this folder.
