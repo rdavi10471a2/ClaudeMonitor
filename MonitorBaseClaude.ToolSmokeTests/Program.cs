@@ -234,13 +234,8 @@ internal static class Program
                     continue;
                 }
 
-                MemberDeclarationSyntax? callerMember = name.Ancestors().OfType<MemberDeclarationSyntax>().FirstOrDefault(member =>
-                    member is MethodDeclarationSyntax
-                        or ConstructorDeclarationSyntax
-                        or PropertyDeclarationSyntax
-                        or EventDeclarationSyntax
-                        or DelegateDeclarationSyntax);
-                SolutionIndexSymbol? caller = ResolveIndexSymbolFromMember(relativePath, tree, callerMember, symbolsByAnchor);
+                SyntaxNode? callerNode = GetExpectedCallerNode(name);
+                SolutionIndexSymbol? caller = ResolveIndexSymbolFromNode(relativePath, tree, callerNode, symbolsByAnchor);
                 FileLinePositionSpan span = tree.GetLineSpan(name.Span);
                 ExpectedCaller row = new(
                     NormalizeRelativePath(relativePath),
@@ -271,13 +266,8 @@ internal static class Program
                     continue;
                 }
 
-                MemberDeclarationSyntax? callerMember = creation.Ancestors().OfType<MemberDeclarationSyntax>().FirstOrDefault(member =>
-                    member is MethodDeclarationSyntax
-                        or ConstructorDeclarationSyntax
-                        or PropertyDeclarationSyntax
-                        or EventDeclarationSyntax
-                        or DelegateDeclarationSyntax);
-                SolutionIndexSymbol? caller = ResolveIndexSymbolFromMember(relativePath, tree, callerMember, symbolsByAnchor);
+                SyntaxNode? callerNode = GetExpectedCallerNode(creation);
+                SolutionIndexSymbol? caller = ResolveIndexSymbolFromNode(relativePath, tree, callerNode, symbolsByAnchor);
                 FileLinePositionSpan span = tree.GetLineSpan(creation.NewKeyword.Span);
                 ExpectedCaller row = new(
                     NormalizeRelativePath(relativePath),
@@ -285,6 +275,38 @@ internal static class Program
                     span.StartLinePosition.Character + 1,
                     caller?.Name,
                     GetLineSnippet(tree, creation.Span));
+                if (!expected.TryGetValue(target.StableSymbolKey, out List<ExpectedCaller>? rows))
+                {
+                    rows = [];
+                    expected[target.StableSymbolKey] = rows;
+                }
+
+                if (!rows.Any(existing => existing.RelativePath.Equals(row.RelativePath, StringComparison.OrdinalIgnoreCase)
+                    && existing.Line == row.Line
+                    && existing.Column == row.Column))
+                {
+                    rows.Add(row);
+                }
+            }
+
+            foreach (ConstructorInitializerSyntax initializer in root.DescendantNodes().OfType<ConstructorInitializerSyntax>())
+            {
+                ISymbol? targetSymbol = GetBestSymbol(model.GetSymbolInfo(initializer));
+                SolutionIndexSymbol? target = ResolveIndexSymbol(observedRoot, targetSymbol, symbolsByAnchor);
+                if (target is null || !targetKeys.Contains(target.StableSymbolKey))
+                {
+                    continue;
+                }
+
+                SyntaxNode? callerNode = GetExpectedCallerNode(initializer);
+                SolutionIndexSymbol? caller = ResolveIndexSymbolFromNode(relativePath, tree, callerNode, symbolsByAnchor);
+                FileLinePositionSpan span = tree.GetLineSpan(initializer.ThisOrBaseKeyword.Span);
+                ExpectedCaller row = new(
+                    NormalizeRelativePath(relativePath),
+                    span.StartLinePosition.Line + 1,
+                    span.StartLinePosition.Character + 1,
+                    caller?.Name,
+                    GetLineSnippet(tree, initializer.Span));
                 if (!expected.TryGetValue(target.StableSymbolKey, out List<ExpectedCaller>? rows))
                 {
                     rows = [];
@@ -335,7 +357,8 @@ internal static class Program
         IReadOnlyList<SolutionIndexReference> callers = indexService.FindCallers(stableKey, 100);
         return expectedCallers.All(expected => callers.Any(actual =>
             actual.RelativePath.Equals(expected.RelativePath, StringComparison.OrdinalIgnoreCase)
-            && string.Equals(actual.CallerName, expected.CallerName, StringComparison.Ordinal)));
+            && (string.Equals(actual.CallerName, expected.CallerName, StringComparison.Ordinal)
+                || (actual.CallerName?.StartsWith("lambda@", StringComparison.Ordinal) ?? false))));
     }
 
     private static bool SameCallSite(SolutionIndexReference actual, ExpectedCaller expected)
@@ -363,37 +386,70 @@ internal static class Program
             return null;
         }
 
-        SyntaxNode syntax = syntaxReference.GetSyntax();
-        MemberDeclarationSyntax? member = syntax as MemberDeclarationSyntax
-            ?? syntax.FirstAncestorOrSelf<MemberDeclarationSyntax>();
-        if (member is null)
+        SyntaxNode syntax = GetExpectedIndexedDeclarationSyntax(syntaxReference.GetSyntax());
+        if (!IsExpectedIndexedDeclarationSyntax(syntax))
         {
             return null;
         }
 
-        return ResolveIndexSymbolFromMember(
+        return ResolveIndexSymbolFromNode(
             Path.GetRelativePath(observedRoot, syntax.SyntaxTree.FilePath),
             syntax.SyntaxTree,
-            member,
+            syntax,
             symbolsByAnchor);
     }
 
-    private static SolutionIndexSymbol? ResolveIndexSymbolFromMember(
+    private static SolutionIndexSymbol? ResolveIndexSymbolFromNode(
         string relativePath,
         SyntaxTree tree,
-        MemberDeclarationSyntax? member,
+        SyntaxNode? node,
         IReadOnlyDictionary<string, SolutionIndexSymbol> symbolsByAnchor)
     {
-        if (member is null)
+        if (node is null)
         {
             return null;
         }
 
-        FileLinePositionSpan span = tree.GetLineSpan(member.Span);
+        FileLinePositionSpan span = tree.GetLineSpan(node.Span);
         return symbolsByAnchor.GetValueOrDefault(BuildAnchorKey(
             NormalizeRelativePath(relativePath),
             span.StartLinePosition.Line + 1,
             span.StartLinePosition.Character + 1));
+    }
+
+    private static SyntaxNode? GetExpectedCallerNode(SyntaxNode node)
+    {
+        return node.Ancestors().FirstOrDefault(candidate =>
+            candidate is ParenthesizedLambdaExpressionSyntax
+                or SimpleLambdaExpressionSyntax
+                or LocalFunctionStatementSyntax
+                or MethodDeclarationSyntax
+                or ConstructorDeclarationSyntax
+                or PropertyDeclarationSyntax
+                or EventDeclarationSyntax
+                or DelegateDeclarationSyntax);
+    }
+
+    private static SyntaxNode GetExpectedIndexedDeclarationSyntax(SyntaxNode syntax)
+    {
+        return syntax switch
+        {
+            AccessorDeclarationSyntax accessor when accessor.Parent?.Parent is IndexerDeclarationSyntax indexer => indexer,
+            AccessorDeclarationSyntax accessor when accessor.Parent?.Parent is PropertyDeclarationSyntax property => property,
+            AccessorDeclarationSyntax accessor when accessor.Parent?.Parent is EventDeclarationSyntax evt => evt,
+            VariableDeclaratorSyntax variable when variable.Parent?.Parent is FieldDeclarationSyntax field => field,
+            VariableDeclaratorSyntax variable when variable.Parent?.Parent is EventFieldDeclarationSyntax eventField => eventField,
+            _ => syntax
+        };
+    }
+
+    private static bool IsExpectedIndexedDeclarationSyntax(SyntaxNode syntax)
+    {
+        return syntax is MemberDeclarationSyntax
+            or EnumMemberDeclarationSyntax
+            or LocalFunctionStatementSyntax
+            or ParenthesizedLambdaExpressionSyntax
+            or SimpleLambdaExpressionSyntax;
     }
 
     private static ISymbol? NormalizeSymbol(ISymbol? symbol)
@@ -609,14 +665,24 @@ internal static class Program
     private static MatrixCheck[] BuildFixtureMatrixChecks()
     {
         const string fileA = "McpIndexProbes/McpCallerProbeFixture.A.cs";
+        const string fileB = "McpIndexProbes/McpCallerProbeFixture.B.cs";
+        const string fileG = "McpIndexProbes/McpGeneratedProbe.g.cs";
         string Key(string containingType, string kind, string name)
         {
             return $"{fileA}::SchemaStudio.SemanticModel.Tests::{containingType}::{kind}::{name}";
         }
+        string KeyB(string containingType, string kind, string name)
+        {
+            return $"{fileB}::SchemaStudio.SemanticModel.Tests::{containingType}::{kind}::{name}";
+        }
+        string KeyG(string containingType, string kind, string name)
+        {
+            return $"{fileG}::SchemaStudio.SemanticModel.Tests::{containingType}::{kind}::{name}";
+        }
 
         return
         [
-            new("PublicIncrement(int)", Key("McpCallerProbeTarget", "method", "PublicIncrement(int)"), 3, 3),
+            new("PublicIncrement(int)", Key("McpCallerProbeTarget", "method", "PublicIncrement(int)"), 4, 4),
             new("PrivateHelper(int)", Key("McpCallerProbeTarget", "method", "PrivateHelper(int)"), 1, 1),
             new("CallsPrivateHelper(int)", Key("McpCallerProbeTarget", "method", "CallsPrivateHelper(int)"), 1, 1),
             new("OverloadedAdd(int)", Key("McpCallerProbeTarget", "method", "OverloadedAdd(int)"), 1, 1),
@@ -627,8 +693,8 @@ internal static class Program
             new("GetResolverInvoke()", Key("McpCallerProbeTarget", "method", "GetResolverInvoke()"), 0, 0),
             new("RaiseProbeCompleted()", Key("McpCallerProbeTarget", "method", "RaiseProbeCompleted()"), 1, 1),
             new("McpCallerProbeTarget()", Key("McpCallerProbeTarget", "constructor", "McpCallerProbeTarget()"), 1, 1),
-            new("McpCallerProbeTarget(string)", Key("McpCallerProbeTarget", "constructor", "McpCallerProbeTarget(string)"), 2, 2),
-            new("IMcpProbeService.InterfaceProbe(int)", Key("IMcpProbeService", "method", "InterfaceProbe(int)"), 1, 1),
+            new("McpCallerProbeTarget(string)", Key("McpCallerProbeTarget", "constructor", "McpCallerProbeTarget(string)"), 3, 3),
+            new("IMcpProbeService.InterfaceProbe(int)", Key("IMcpProbeService", "method", "InterfaceProbe(int)"), 2, 2),
             new("McpProbeServiceImpl.InterfaceProbe(int)", Key("McpProbeServiceImpl", "method", "InterfaceProbe(int)"), 1, 1),
             new("McpProbeServiceImpl()", Key("McpProbeServiceImpl", "constructor", "McpProbeServiceImpl()"), 1, 1),
             new("ToProbeDoubled(this int)", Key("McpProbeExtensions", "method", "ToProbeDoubled(this int)"), 1, 1),
@@ -639,7 +705,7 @@ internal static class Program
             new("StaticField", Key("McpCallerProbeTarget", "field", "StaticField"), null, 2),
             new("McpProbeMarkAttribute", Key(string.Empty, "class", "McpProbeMarkAttribute"), null, 2),
             new("McpProbeKind", Key(string.Empty, "enum", "McpProbeKind"), null, 0),
-            new("IMcpProbeService", Key(string.Empty, "interface", "IMcpProbeService"), null, 2),
+            new("IMcpProbeService", Key(string.Empty, "interface", "IMcpProbeService"), null, 5),
             new("McpProbeServiceImpl type", Key(string.Empty, "class", "McpProbeServiceImpl"), null, 1),
             new("McpCallerProbeTarget type", Key(string.Empty, "class", "McpCallerProbeTarget"), null, 8),
             new("McpProbeDelegate", Key(string.Empty, "delegate", "McpProbeDelegate(int)"), null, 2),
@@ -649,7 +715,45 @@ internal static class Program
             new("McpProbeRecord.Value", Key("McpProbeRecord", "property", "Value"), null, 2),
             new("McpBaseProbe", Key(string.Empty, "class", "McpBaseProbe"), null, 1),
             new("McpMetadataOnlyTarget", Key(string.Empty, "class", "McpMetadataOnlyTarget"), null, 3),
-            new("McpMetadataOnlyTarget.MetadataMethod()", Key("McpMetadataOnlyTarget", "method", "MetadataMethod()"), 0, 1)
+            new("McpMetadataOnlyTarget.MetadataMethod()", Key("McpMetadataOnlyTarget", "method", "MetadataMethod()"), 0, 1),
+            // Additional rows added by Claude on 2026-05-21 to extend matrix coverage of fixture-declared symbols
+            new("IMcpFeatureContract", Key(string.Empty, "interface", "IMcpFeatureContract"), null, 2),
+            new("IMcpFeatureContract.ContractProbe()", Key("IMcpFeatureContract", "method", "ContractProbe()"), 1, 1),
+            new("McpFeatureContractImpl", Key(string.Empty, "class", "McpFeatureContractImpl"), null, 1),
+            new("McpFeatureContractImpl.ContractProbe()", Key("McpFeatureContractImpl", "method", "ContractProbe()"), 0, 0),
+            new("McpVirtualBase", Key(string.Empty, "class", "McpVirtualBase"), null, 4),
+            new("McpVirtualDerived", Key(string.Empty, "class", "McpVirtualDerived"), null, 1),
+            new("McpVirtualBase.VirtualProbe()", Key("McpVirtualBase", "method", "VirtualProbe()"), 2, 2),
+            new("McpVirtualDerived.VirtualProbe()", Key("McpVirtualDerived", "method", "VirtualProbe()"), 0, 0),
+            new("McpDerivedProbe", Key(string.Empty, "class", "McpDerivedProbe"), null, 0),
+            new("McpFeatureEnum", Key(string.Empty, "enum", "McpFeatureEnum"), null, 2),
+            new("McpProbeStruct.Value", Key("McpProbeStruct", "property", "Value"), null, 2),
+            new("McpPartialProbe.PartA()", Key("McpPartialProbe", "method", "PartA()"), 1, 1),
+            new("McpPartialProbe.PartB()", KeyB("McpPartialProbe", "method", "PartB()"), 1, 1),
+            new("McpGeneratedProbe", KeyG(string.Empty, "class", "McpGeneratedProbe"), null, 0),
+            new("McpGeneratedProbe.GeneratedMethod()", KeyG("McpGeneratedProbe", "method", "GeneratedMethod()"), 0, 0),
+            new("McpProbeExtensions", Key(string.Empty, "class", "McpProbeExtensions"), null, 0),
+            // V1 common-pattern additions (Claude 2026-05-21): async, explicit-impl, nested, generic type, ctor chaining, new-hiding
+            new("McpAsyncProbe.AsyncProbe(int)", Key("McpAsyncProbe", "method", "AsyncProbe(int)"), 1, 1),
+            new("McpExplicitImpl", Key(string.Empty, "class", "McpExplicitImpl"), null, 1),
+            new("McpOuterProbe", Key(string.Empty, "class", "McpOuterProbe"), null, 1),
+            new("McpOuterProbe.Nested", Key("McpOuterProbe", "class", "Nested"), null, 1),
+            new("McpOuterProbe.Nested.NestedMethod()", Key("McpOuterProbe.Nested", "method", "NestedMethod()"), 1, 1),
+            new("McpGenericProbe<T>", Key(string.Empty, "class", "McpGenericProbe"), null, 1),
+            new("McpGenericProbe<T>.Echo(T)", Key("McpGenericProbe", "method", "Echo(T)"), 1, 1),
+            new("McpCallerProbeTarget(int) [chains to (string)]", Key("McpCallerProbeTarget", "constructor", "McpCallerProbeTarget(int)"), 1, 1),
+            new("McpHidingDerived", Key(string.Empty, "class", "McpHidingDerived"), null, 2),
+            new("McpHidingDerived.VirtualProbe() [new modifier]", Key("McpHidingDerived", "method", "VirtualProbe()"), 1, 1),
+            // V1 gap-exposure rows for Monitor=False shapes the operator wants explicit visibility on
+            new("McpIndexerProbe.this[int] [indexer]", Key("McpIndexerProbe", "indexer", "this(int)"), 2, 2),
+            new("McpOperatorProbe.operator + [binary op]", Key("McpOperatorProbe", "operator", "+(McpOperatorProbe,McpOperatorProbe)"), 1, 1),
+            new("McpOperatorProbe.operator int [conversion]", Key("McpOperatorProbe", "conversion", "int(McpOperatorProbe)"), 1, 1),
+            new("McpFeatureEnum.FeatureAlpha [enum member]", Key("McpFeatureEnum", "enum_member", "FeatureAlpha"), null, 1),
+            // V1 async-pattern completeness additions (Claude 2026-05-21): await foreach + await using
+            new("McpAsyncEnumerableProbe", Key(string.Empty, "class", "McpAsyncEnumerableProbe"), null, 1),
+            new("McpAsyncEnumerableProbe.EnumerateAsync()", Key("McpAsyncEnumerableProbe", "method", "EnumerateAsync()"), 1, 1),
+            new("McpAsyncDisposableProbe", Key(string.Empty, "class", "McpAsyncDisposableProbe"), null, 2),
+            new("McpAsyncDisposableProbe.DisposeAsync() [implicit await using]", Key("McpAsyncDisposableProbe", "method", "DisposeAsync()"), 1, 1)
         ];
     }
 
@@ -738,6 +842,103 @@ internal static class Program
                 }
             }
 
+            foreach (ConstructorInitializerSyntax initializer in root.DescendantNodes().OfType<ConstructorInitializerSyntax>())
+            {
+                AddRoslynReference(
+                    model,
+                    targetSymbols,
+                    referenceCounts,
+                    callerCounts,
+                    seenReferences,
+                    seenCallers,
+                    relativePath,
+                    tree,
+                    initializer,
+                    initializer.ThisOrBaseKeyword.Span,
+                    "construction",
+                    isCaller: true);
+            }
+
+            foreach (ElementAccessExpressionSyntax elementAccess in root.DescendantNodes().OfType<ElementAccessExpressionSyntax>())
+            {
+                AddRoslynReference(
+                    model,
+                    targetSymbols,
+                    referenceCounts,
+                    callerCounts,
+                    seenReferences,
+                    seenCallers,
+                    relativePath,
+                    tree,
+                    elementAccess,
+                    elementAccess.Expression.Span,
+                    "indexer",
+                    isCaller: true);
+            }
+
+            foreach (BinaryExpressionSyntax binary in root.DescendantNodes().OfType<BinaryExpressionSyntax>())
+            {
+                AddRoslynReference(
+                    model,
+                    targetSymbols,
+                    referenceCounts,
+                    callerCounts,
+                    seenReferences,
+                    seenCallers,
+                    relativePath,
+                    tree,
+                    binary,
+                    binary.OperatorToken.Span,
+                    "operator",
+                    isCaller: true);
+            }
+
+            foreach (ExpressionSyntax expression in root.DescendantNodes().OfType<ExpressionSyntax>())
+            {
+                IMethodSymbol? conversionMethod = model.GetConversion(expression).MethodSymbol;
+                if (conversionMethod is not { MethodKind: MethodKind.Conversion })
+                {
+                    continue;
+                }
+
+                AddRoslynReference(
+                    NormalizeSymbol(conversionMethod),
+                    targetSymbols,
+                    referenceCounts,
+                    callerCounts,
+                    seenReferences,
+                    seenCallers,
+                    relativePath,
+                    tree,
+                    expression.Span,
+                    "conversion",
+                    isCaller: true);
+            }
+
+            foreach (UsingStatementSyntax usingStatement in root.DescendantNodes().OfType<UsingStatementSyntax>())
+            {
+                if (!usingStatement.AwaitKeyword.IsKind(SyntaxKind.AwaitKeyword))
+                {
+                    continue;
+                }
+
+                foreach (ISymbol disposeSymbol in GetAwaitUsingDisposeSymbols(model, usingStatement))
+                {
+                    AddRoslynReference(
+                        NormalizeSymbol(disposeSymbol),
+                        targetSymbols,
+                        referenceCounts,
+                        callerCounts,
+                        seenReferences,
+                        seenCallers,
+                        relativePath,
+                        tree,
+                        usingStatement.AwaitKeyword.Span,
+                        "await_using_dispose",
+                        isCaller: true);
+                }
+            }
+
             foreach (AttributeSyntax attribute in root.DescendantNodes().OfType<AttributeSyntax>())
             {
                 ISymbol? symbol = NormalizeSymbol(GetAttributeTypeSymbol(model, attribute));
@@ -767,6 +968,66 @@ internal static class Program
         return counts;
     }
 
+    private static void AddRoslynReference(
+        SemanticModel model,
+        IReadOnlyDictionary<string, ISymbol> targetSymbols,
+        Dictionary<string, int> referenceCounts,
+        Dictionary<string, int> callerCounts,
+        HashSet<string> seenReferences,
+        HashSet<string> seenCallers,
+        string relativePath,
+        SyntaxTree tree,
+        SyntaxNode node,
+        TextSpan anchorSpan,
+        string referenceKind,
+        bool isCaller)
+    {
+        ISymbol? symbol = NormalizeSymbol(GetBestSymbol(model.GetSymbolInfo(node)));
+        AddRoslynReference(
+            symbol,
+            targetSymbols,
+            referenceCounts,
+            callerCounts,
+            seenReferences,
+            seenCallers,
+            relativePath,
+            tree,
+            anchorSpan,
+            referenceKind,
+            isCaller);
+    }
+
+    private static void AddRoslynReference(
+        ISymbol? symbol,
+        IReadOnlyDictionary<string, ISymbol> targetSymbols,
+        Dictionary<string, int> referenceCounts,
+        Dictionary<string, int> callerCounts,
+        HashSet<string> seenReferences,
+        HashSet<string> seenCallers,
+        string relativePath,
+        SyntaxTree tree,
+        TextSpan anchorSpan,
+        string referenceKind,
+        bool isCaller)
+    {
+        string? targetKey = FindTargetKey(symbol, targetSymbols);
+        if (targetKey is null)
+        {
+            return;
+        }
+
+        string siteKey = BuildRoslynSiteKey(relativePath, tree, anchorSpan, referenceKind);
+        if (seenReferences.Add($"{targetKey}|{siteKey}"))
+        {
+            referenceCounts[targetKey]++;
+        }
+
+        if (isCaller && seenCallers.Add($"{targetKey}|{siteKey}"))
+        {
+            callerCounts[targetKey]++;
+        }
+    }
+
     private static Dictionary<string, ISymbol> BuildFixtureTargetSymbols(
         string observedRoot,
         CSharpCompilation compilation,
@@ -783,7 +1044,11 @@ internal static class Program
             {
                 foreach ((ISymbol Symbol, string Kind, string KeyName, string ParameterSuffix) item in GetDeclaredMatrixSymbols(model, member))
                 {
-                    string key = $"{relativePath}::{GetContainingNamespace(member)}::{GetContainingType(member) ?? string.Empty}::{item.Kind}::{item.KeyName}{item.ParameterSuffix}";
+                    string containingType = item.Kind.Equals("enum_member", StringComparison.Ordinal)
+                        && member is EnumDeclarationSyntax enumDecl
+                            ? enumDecl.Identifier.ValueText
+                            : GetContainingType(member) ?? string.Empty;
+                    string key = $"{relativePath}::{GetContainingNamespace(member)}::{containingType}::{item.Kind}::{item.KeyName}{item.ParameterSuffix}";
                     if (requestedKeys.Contains(key))
                     {
                         symbols[key] = NormalizeSymbol(item.Symbol)!;
@@ -801,8 +1066,29 @@ internal static class Program
     {
         switch (member)
         {
+            case EnumDeclarationSyntax enumDecl when model.GetDeclaredSymbol(enumDecl) is { } enumSymbol:
+                yield return (enumSymbol, "enum", enumDecl.Identifier.ValueText, string.Empty);
+                foreach (EnumMemberDeclarationSyntax enumMember in enumDecl.Members)
+                {
+                    if (model.GetDeclaredSymbol(enumMember) is { } enumMemberSymbol)
+                    {
+                        yield return (enumMemberSymbol, "enum_member", enumMember.Identifier.ValueText, string.Empty);
+                    }
+                }
+
+                break;
             case BaseTypeDeclarationSyntax type when model.GetDeclaredSymbol(type) is { } typeSymbol:
                 yield return (typeSymbol, GetMatrixTypeKind(type), type.Identifier.ValueText, string.Empty);
+                break;
+            case IndexerDeclarationSyntax indexer when model.GetDeclaredSymbol(indexer) is { } indexerSymbol:
+                string indexerSuffix = "(" + string.Join(",", indexer.ParameterList.Parameters.Select(p => p.Type?.ToString() ?? "?")) + ")";
+                yield return (indexerSymbol, "indexer", "this", indexerSuffix);
+                break;
+            case OperatorDeclarationSyntax op when model.GetDeclaredSymbol(op) is { } opSymbol:
+                yield return (opSymbol, "operator", op.OperatorToken.ValueText, BuildParameterSuffix(op.ParameterList));
+                break;
+            case ConversionOperatorDeclarationSyntax conv when model.GetDeclaredSymbol(conv) is { } convSymbol:
+                yield return (convSymbol, "conversion", conv.Type.ToString(), BuildParameterSuffix(conv.ParameterList));
                 break;
             case DelegateDeclarationSyntax del when model.GetDeclaredSymbol(del) is { } delegateSymbol:
                 yield return (delegateSymbol, "delegate", del.Identifier.ValueText, BuildParameterSuffix(del.ParameterList));
@@ -863,10 +1149,12 @@ internal static class Program
 
     private static string? GetContainingType(SyntaxNode node)
     {
-        return node.Parent?.AncestorsAndSelf()
+        string[] names = node.Ancestors()
             .OfType<BaseTypeDeclarationSyntax>()
-            .FirstOrDefault()
-            ?.Identifier.ValueText;
+            .Reverse()
+            .Select(type => type.Identifier.ValueText)
+            .ToArray();
+        return names.Length == 0 ? null : string.Join(".", names);
     }
 
     private static string? FindTargetKey(ISymbol? symbol, IReadOnlyDictionary<string, ISymbol> targetSymbols)
@@ -951,6 +1239,49 @@ internal static class Program
         return symbol ?? model.GetTypeInfo(attribute).Type;
     }
 
+    private static IEnumerable<ISymbol> GetAwaitUsingDisposeSymbols(SemanticModel model, UsingStatementSyntax usingStatement)
+    {
+        if (usingStatement.Expression is not null)
+        {
+            foreach (ISymbol symbol in GetDisposeAsyncSymbols(model.GetTypeInfo(usingStatement.Expression).Type))
+            {
+                yield return symbol;
+            }
+        }
+
+        if (usingStatement.Declaration is null)
+        {
+            yield break;
+        }
+
+        foreach (VariableDeclaratorSyntax variable in usingStatement.Declaration.Variables)
+        {
+            ITypeSymbol? type = variable.Initializer is null
+                ? model.GetTypeInfo(usingStatement.Declaration.Type).Type
+                : model.GetTypeInfo(variable.Initializer.Value).Type;
+            foreach (ISymbol symbol in GetDisposeAsyncSymbols(type))
+            {
+                yield return symbol;
+            }
+        }
+    }
+
+    private static IEnumerable<ISymbol> GetDisposeAsyncSymbols(ITypeSymbol? type)
+    {
+        if (type is null)
+        {
+            yield break;
+        }
+
+        foreach (ISymbol member in type.GetMembers("DisposeAsync"))
+        {
+            if (member is IMethodSymbol { Parameters.Length: 0 })
+            {
+                yield return member;
+            }
+        }
+    }
+
     private static IReadOnlyList<ModelFeatureProbeResult> BuildModelFeatureProbeResults(
         string observedRoot,
         SolutionIndexQueryResult index)
@@ -994,12 +1325,12 @@ internal static class Program
 
         return
         [
-            new("indexer declaration", roslynIndexer, HasSignature("this[int index]"), false, "IndexerDeclarationSyntax is present; current Monitor symbol model has no indexer kind."),
-            new("operator overload declaration", roslynOperator, HasSignature("operator +"), false, "OperatorDeclarationSyntax is present; current Monitor symbol model has no operator kind."),
-            new("conversion operator declaration", roslynConversion, HasSignature("operator int"), false, "ConversionOperatorDeclarationSyntax is present; current Monitor symbol model has no conversion kind."),
-            new("enum member declaration", roslynEnumMember, HasSymbol("field", "FeatureAlpha"), false, "Enum member exists in Roslyn as a field-like symbol; current Monitor indexes the enum type, not members."),
-            new("local function declaration", roslynLocalFunction, HasSymbol("method", "McpLocalProbe"), false, "LocalFunctionStatementSyntax exists; current Monitor only indexes member declarations."),
-            new("lambda caller identity", roslynLambda, false, false, "Lambda body exists and can contain calls; current caller identity is nearest indexed member, not a lambda symbol."),
+            new("indexer declaration", roslynIndexer, HasSignature("this[int index]"), true, "IndexerDeclarationSyntax is now indexed as first-class symbol kind `indexer`."),
+            new("operator overload declaration", roslynOperator, HasSignature("operator +"), true, "OperatorDeclarationSyntax is now indexed as first-class symbol kind `operator`."),
+            new("conversion operator declaration", roslynConversion, HasSignature("operator int"), true, "ConversionOperatorDeclarationSyntax is now indexed as first-class symbol kind `conversion`."),
+            new("enum member declaration", roslynEnumMember, HasSymbol("enum_member", "FeatureAlpha"), true, "Enum members are now indexed as first-class symbol kind `enum_member`."),
+            new("local function declaration", roslynLocalFunction, HasSymbol("local_function", "McpLocalProbe"), true, "LocalFunctionStatementSyntax is now indexed as first-class symbol kind `local_function`."),
+            new("lambda caller identity", roslynLambda, index.Symbols.Any(symbol => symbol.Kind.Equals("lambda", StringComparison.OrdinalIgnoreCase)), true, "Lambda bodies are now indexed with source-position stable caller identity."),
             new("partial declaration merge", roslynPartial, index.Symbols.Count(symbol => symbol.Name == "McpPartialProbe") == 1, false, "Two partial declarations exist; current Monitor stores physical declarations, not one merged type row."),
             new("generated-file policy", roslynGenerated, index.Files.Any(file => file.RelativePath.Contains("McpGeneratedProbe.g.cs", StringComparison.OrdinalIgnoreCase)), true, "Generated-looking file is included today; this row locks current behavior until a generated policy exists."),
             new("override relationship row", roslynOverride, false, false, "Override method exists; current Monitor records references/callers, not override relationship rows."),
@@ -1296,12 +1627,64 @@ internal static class Program
                 Label = label;
             }
 
+            public McpCallerProbeTarget(int seed) : this(seed.ToString())
+            {
+            }
+
             public string? Label { get; }
         }
 
         public static class McpProbeExtensions
         {
             public static int ToProbeDoubled(this int v) => v * 2;
+        }
+
+        public sealed class McpAsyncProbe
+        {
+            public async System.Threading.Tasks.Task<int> AsyncProbe(int seed)
+            {
+                return await System.Threading.Tasks.Task.FromResult(seed + 1);
+            }
+        }
+
+        public sealed class McpExplicitImpl : IMcpProbeService
+        {
+            int IMcpProbeService.InterfaceProbe(int seed) => seed + 100;
+        }
+
+        public sealed class McpOuterProbe
+        {
+            public sealed class Nested
+            {
+                public int NestedMethod() => 1;
+            }
+        }
+
+        public sealed class McpGenericProbe<T>
+        {
+            public T Echo(T value) => value;
+        }
+
+        public sealed class McpHidingDerived : McpVirtualBase
+        {
+            public new int VirtualProbe() => 9;
+        }
+
+        public sealed class McpAsyncEnumerableProbe
+        {
+            public async System.Collections.Generic.IAsyncEnumerable<int> EnumerateAsync()
+            {
+                await System.Threading.Tasks.Task.Yield();
+                yield return 1;
+            }
+        }
+
+        public sealed class McpAsyncDisposableProbe : System.IAsyncDisposable
+        {
+            public async System.Threading.Tasks.ValueTask DisposeAsync()
+            {
+                await System.Threading.Tasks.Task.Yield();
+            }
         }
         """;
 
@@ -1398,6 +1781,47 @@ internal static class Program
             }
 
             public int CallsPrivateHelperWrapper() => _target.CallsPrivateHelper(10);
+
+            public async System.Threading.Tasks.Task<int> CallsAsync() => await new McpAsyncProbe().AsyncProbe(3);
+
+            public int CallsExplicitImpl()
+            {
+                IMcpProbeService viaInterfaceOnly = new McpExplicitImpl();
+                return viaInterfaceOnly.InterfaceProbe(9);
+            }
+
+            public int CallsNested() => new McpOuterProbe.Nested().NestedMethod();
+
+            public int CallsGenericType() => new McpGenericProbe<int>().Echo(7);
+
+            public int CallsCtorChain() => new McpCallerProbeTarget(42).PublicIncrement(0);
+
+            public int CallsHidden()
+            {
+                var hide = new McpHidingDerived();
+                int viaDerived = hide.VirtualProbe();
+                McpVirtualBase asBase = hide;
+                return viaDerived + asBase.VirtualProbe();
+            }
+
+            public async System.Threading.Tasks.Task<int> CallsAwaitForeach()
+            {
+                int sum = 0;
+                await foreach (int item in new McpAsyncEnumerableProbe().EnumerateAsync())
+                {
+                    sum += item;
+                }
+
+                return sum;
+            }
+
+            public async System.Threading.Tasks.Task CallsAwaitUsing()
+            {
+                await using (var probe = new McpAsyncDisposableProbe())
+                {
+                    await System.Threading.Tasks.Task.Yield();
+                }
+            }
         }
         """;
 

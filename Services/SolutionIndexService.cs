@@ -12,7 +12,7 @@ using MonitorBaseClaude.AI;
 namespace MonitorBaseClaude.Services;
 
 [AIFileContext("SolutionIndexService.cs", "Builds and queries the monitor-owned SQLite index for watched C# solution structure.")]
-[FileVersion("1.5")]
+[FileVersion("1.6")]
 public sealed class SolutionIndexService
 {
     private static readonly string[] ExcludedDirectoryNames =
@@ -265,7 +265,7 @@ public sealed class SolutionIndexService
         using SqliteCommand command = connection.CreateCommand();
         StringBuilder sql = new(
             """
-            select s.stable_key, f.relative_path, f.sha256, s.text_hash, s.namespace, s.containing_type, s.kind, s.name, s.signature, s.start_line, s.end_line, s.start_column, s.end_column, s.text_span_start, s.text_span_length, s.source_anchor, s.selector_json
+            select s.stable_key, f.relative_path, f.sha256, s.text_hash, s.namespace, s.containing_type, s.kind, s.name, s.signature, s.start_line, s.end_line, s.start_column, s.end_column, s.text_span_start, s.text_span_length, s.source_anchor, s.selector_json, s.declared_accessibility, s.is_generated, s.is_partial
             from symbols s
             join files f on f.id = s.file_id
             where s.name like $text escape '\'
@@ -302,7 +302,7 @@ public sealed class SolutionIndexService
         using SqliteCommand command = connection.CreateCommand();
         command.CommandText =
             """
-            select s.stable_key, f.relative_path, f.sha256, s.text_hash, s.namespace, s.containing_type, s.kind, s.name, s.signature, s.start_line, s.end_line, s.start_column, s.end_column, s.text_span_start, s.text_span_length, s.source_anchor, s.selector_json
+            select s.stable_key, f.relative_path, f.sha256, s.text_hash, s.namespace, s.containing_type, s.kind, s.name, s.signature, s.start_line, s.end_line, s.start_column, s.end_column, s.text_span_start, s.text_span_length, s.source_anchor, s.selector_json, s.declared_accessibility, s.is_generated, s.is_partial
             from symbols s
             join files f on f.id = s.file_id
             where s.stable_key = $stableKey
@@ -392,7 +392,10 @@ public sealed class SolutionIndexService
                 text_span_start integer not null default 0,
                 text_span_length integer not null default 0,
                 source_anchor text not null default '',
-                selector_json text not null default ''
+                selector_json text not null default '',
+                declared_accessibility text not null default '',
+                is_generated integer not null default 0,
+                is_partial integer not null default 0
             );
 
             create table if not exists diagnostics (
@@ -443,6 +446,9 @@ public sealed class SolutionIndexService
         EnsureColumn(connection, "symbols", "text_span_length", "integer not null default 0");
         EnsureColumn(connection, "symbols", "source_anchor", "text not null default ''");
         EnsureColumn(connection, "symbols", "selector_json", "text not null default ''");
+        EnsureColumn(connection, "symbols", "declared_accessibility", "text not null default ''");
+        EnsureColumn(connection, "symbols", "is_generated", "integer not null default 0");
+        EnsureColumn(connection, "symbols", "is_partial", "integer not null default 0");
     }
 
     private static long InsertIndexRun(SqliteConnection connection, SqliteTransaction transaction, string observedRoot, string observedRootKey, string watchedSolutionPath, DateTimeOffset indexedAt)
@@ -489,8 +495,8 @@ public sealed class SolutionIndexService
         command.Transaction = transaction;
         command.CommandText =
             """
-            insert into symbols(file_id, stable_key, namespace, containing_type, kind, name, signature, start_line, end_line, text_hash, start_column, end_column, text_span_start, text_span_length, source_anchor, selector_json)
-            values ($fileId, $stableKey, $namespace, $containingType, $kind, $name, $signature, $startLine, $endLine, $textHash, $startColumn, $endColumn, $textSpanStart, $textSpanLength, $sourceAnchor, $selectorJson);
+            insert into symbols(file_id, stable_key, namespace, containing_type, kind, name, signature, start_line, end_line, text_hash, start_column, end_column, text_span_start, text_span_length, source_anchor, selector_json, declared_accessibility, is_generated, is_partial)
+            values ($fileId, $stableKey, $namespace, $containingType, $kind, $name, $signature, $startLine, $endLine, $textHash, $startColumn, $endColumn, $textSpanStart, $textSpanLength, $sourceAnchor, $selectorJson, $declaredAccessibility, $isGenerated, $isPartial);
             select last_insert_rowid();
             """;
         command.Parameters.AddWithValue("$fileId", fileId);
@@ -509,6 +515,9 @@ public sealed class SolutionIndexService
         command.Parameters.AddWithValue("$textSpanLength", symbol.TextSpanLength);
         command.Parameters.AddWithValue("$sourceAnchor", symbol.SourceAnchor);
         command.Parameters.AddWithValue("$selectorJson", symbol.SelectorJson);
+        command.Parameters.AddWithValue("$declaredAccessibility", symbol.DeclaredAccessibility);
+        command.Parameters.AddWithValue("$isGenerated", symbol.IsGenerated ? 1 : 0);
+        command.Parameters.AddWithValue("$isPartial", symbol.IsPartial ? 1 : 0);
         return (long)command.ExecuteScalar()!;
     }
 
@@ -589,9 +598,9 @@ public sealed class SolutionIndexService
         IReadOnlyList<IndexedDiagnosticBuild> diagnostics = tree.GetDiagnostics()
             .Select(diagnostic => BuildDiagnostic(tree, diagnostic))
             .ToArray();
+        bool isGenerated = IsGeneratedFile(root);
         IReadOnlyList<IndexedSymbolBuild> symbols = root.DescendantNodes()
-            .OfType<MemberDeclarationSyntax>()
-            .SelectMany(member => BuildSymbolsForMember(tree, relativePath, member))
+            .SelectMany(node => BuildSymbolsForNode(tree, relativePath, node, isGenerated))
             .OrderBy(symbol => symbol.StartLine)
             .ThenBy(symbol => symbol.Name, StringComparer.OrdinalIgnoreCase)
             .ToArray();
@@ -726,12 +735,229 @@ public sealed class SolutionIndexService
                     column,
                     snippet));
             }
+
+            foreach (ElementAccessExpressionSyntax elementAccess in file.Root.DescendantNodes().OfType<ElementAccessExpressionSyntax>())
+            {
+                AddExpressionReference(
+                    references,
+                    seen,
+                    model,
+                    filesByRelativePath,
+                    file,
+                    elementAccess,
+                    elementAccess.Expression.Span,
+                    "indexer",
+                    isCallSite: true);
+            }
+
+            foreach (BinaryExpressionSyntax binary in file.Root.DescendantNodes().OfType<BinaryExpressionSyntax>())
+            {
+                AddExpressionReference(
+                    references,
+                    seen,
+                    model,
+                    filesByRelativePath,
+                    file,
+                    binary,
+                    binary.OperatorToken.Span,
+                    "operator",
+                    isCallSite: true);
+            }
+
+            foreach (CastExpressionSyntax cast in file.Root.DescendantNodes().OfType<CastExpressionSyntax>())
+            {
+                AddExpressionReference(
+                    references,
+                    seen,
+                    model,
+                    filesByRelativePath,
+                    file,
+                    cast,
+                    cast.Type.Span,
+                    "conversion",
+                    isCallSite: true);
+            }
+
+            foreach (ConstructorInitializerSyntax initializer in file.Root.DescendantNodes().OfType<ConstructorInitializerSyntax>())
+            {
+                AddExpressionReference(
+                    references,
+                    seen,
+                    model,
+                    filesByRelativePath,
+                    file,
+                    initializer,
+                    initializer.ThisOrBaseKeyword.Span,
+                    "construction",
+                    isCallSite: true);
+            }
+
+            foreach (ExpressionSyntax expression in file.Root.DescendantNodes().OfType<ExpressionSyntax>())
+            {
+                IMethodSymbol? conversionMethod = model.GetConversion(expression).MethodSymbol;
+                if (conversionMethod is not { MethodKind: MethodKind.Conversion })
+                {
+                    continue;
+                }
+
+                AddSymbolReference(
+                    references,
+                    seen,
+                    filesByRelativePath,
+                    file,
+                    expression,
+                    expression.Span,
+                    conversionMethod,
+                    "conversion",
+                    isCallSite: true);
+            }
+
+            foreach (UsingStatementSyntax usingStatement in file.Root.DescendantNodes().OfType<UsingStatementSyntax>())
+            {
+                if (!usingStatement.AwaitKeyword.IsKind(SyntaxKind.AwaitKeyword))
+                {
+                    continue;
+                }
+
+                foreach (ISymbol disposeSymbol in GetAwaitUsingDisposeSymbols(model, usingStatement))
+                {
+                    AddSymbolReference(
+                        references,
+                        seen,
+                        filesByRelativePath,
+                        file,
+                        usingStatement,
+                        usingStatement.AwaitKeyword.Span,
+                        disposeSymbol,
+                        "await_using_dispose",
+                        isCallSite: true);
+                }
+            }
         }
 
         return references;
     }
 
-    private static IEnumerable<IndexedSymbolBuild> BuildSymbolsForMember(SyntaxTree tree, string relativePath, MemberDeclarationSyntax member)
+    private static void AddExpressionReference(
+        List<IndexedReferenceBuild> references,
+        HashSet<string> seen,
+        SemanticModel model,
+        IReadOnlyDictionary<string, IndexedFileBuild> filesByRelativePath,
+        IndexedFileBuild file,
+        SyntaxNode expression,
+        TextSpan anchorSpan,
+        string referenceKind,
+        bool isCallSite)
+    {
+        ISymbol? symbol = GetBestSymbol(model.GetSymbolInfo(expression));
+        AddSymbolReference(
+            references,
+            seen,
+            filesByRelativePath,
+            file,
+            expression,
+            anchorSpan,
+            symbol,
+            referenceKind,
+            isCallSite);
+    }
+
+    private static void AddSymbolReference(
+        List<IndexedReferenceBuild> references,
+        HashSet<string> seen,
+        IReadOnlyDictionary<string, IndexedFileBuild> filesByRelativePath,
+        IndexedFileBuild file,
+        SyntaxNode node,
+        TextSpan anchorSpan,
+        ISymbol? symbol,
+        string referenceKind,
+        bool isCallSite)
+    {
+        string? targetStableKey = GetStableKeyForSymbol(symbol, filesByRelativePath);
+        if (string.IsNullOrWhiteSpace(targetStableKey))
+        {
+            return;
+        }
+
+        FileLinePositionSpan span = file.SyntaxTree.GetLineSpan(anchorSpan);
+        int line = span.StartLinePosition.Line + 1;
+        int column = span.StartLinePosition.Character + 1;
+        string? callerStableKey = GetCallerStableKey(file.SyntaxTree, file.RelativePath, node);
+        string snippet = GetLineSnippet(file.SyntaxTree, node.Span);
+        string seenKey = $"{targetStableKey}|{NormalizeIndexPath(file.RelativePath)}|{line}|{column}|{referenceKind}";
+        if (!seen.Add(seenKey))
+        {
+            return;
+        }
+
+        references.Add(new IndexedReferenceBuild(
+            targetStableKey,
+            callerStableKey,
+            file.RelativePath,
+            referenceKind,
+            isCallSite,
+            line,
+            column,
+            snippet));
+    }
+
+    private static IEnumerable<ISymbol> GetAwaitUsingDisposeSymbols(SemanticModel model, UsingStatementSyntax usingStatement)
+    {
+        if (usingStatement.Expression is not null)
+        {
+            foreach (ISymbol symbol in GetDisposeAsyncSymbols(model.GetTypeInfo(usingStatement.Expression).Type))
+            {
+                yield return symbol;
+            }
+        }
+
+        if (usingStatement.Declaration is null)
+        {
+            yield break;
+        }
+
+        foreach (VariableDeclaratorSyntax variable in usingStatement.Declaration.Variables)
+        {
+            ITypeSymbol? type = variable.Initializer is null
+                ? model.GetTypeInfo(usingStatement.Declaration.Type).Type
+                : model.GetTypeInfo(variable.Initializer.Value).Type;
+            foreach (ISymbol symbol in GetDisposeAsyncSymbols(type))
+            {
+                yield return symbol;
+            }
+        }
+    }
+
+    private static IEnumerable<ISymbol> GetDisposeAsyncSymbols(ITypeSymbol? type)
+    {
+        if (type is null)
+        {
+            yield break;
+        }
+
+        foreach (ISymbol member in type.GetMembers("DisposeAsync"))
+        {
+            if (member is IMethodSymbol { Parameters.Length: 0 })
+            {
+                yield return member;
+            }
+        }
+    }
+
+    private static IEnumerable<IndexedSymbolBuild> BuildSymbolsForNode(SyntaxTree tree, string relativePath, SyntaxNode node, bool isGenerated)
+    {
+        return node switch
+        {
+            EnumMemberDeclarationSyntax enumMember => BuildSymbolForSyntax(tree, relativePath, enumMember, "enum_member", enumMember.Identifier.ValueText, enumMember.Identifier.ValueText, BuildEnumMemberSignature(enumMember), string.Empty, isGenerated),
+            MemberDeclarationSyntax member => BuildSymbolsForMember(tree, relativePath, member, isGenerated),
+            LocalFunctionStatementSyntax localFunction => BuildSymbolForSyntax(tree, relativePath, localFunction, "local_function", localFunction.Identifier.ValueText, localFunction.Identifier.ValueText, BuildLocalFunctionSignature(localFunction), BuildParameterSuffix(localFunction.ParameterList), isGenerated),
+            ParenthesizedLambdaExpressionSyntax lambda => BuildLambdaSymbol(tree, relativePath, lambda, isGenerated),
+            SimpleLambdaExpressionSyntax lambda => BuildLambdaSymbol(tree, relativePath, lambda, isGenerated),
+            _ => []
+        };
+    }
+
+    private static IEnumerable<IndexedSymbolBuild> BuildSymbolsForMember(SyntaxTree tree, string relativePath, MemberDeclarationSyntax member, bool isGenerated)
     {
         string @namespace = GetContainingNamespace(member);
         string? containingType = GetContainingType(member);
@@ -761,8 +987,61 @@ public sealed class SolutionIndexService
                 member.SpanStart,
                 member.Span.Length,
                 sourceAnchor,
-                BuildSelectorJson(stableKey, relativeKeyPath, @namespace, containingType, item.Kind, item.Name, GetParameterTypes(member)));
+                BuildSelectorJson(stableKey, relativeKeyPath, @namespace, containingType, item.Kind, item.Name, GetParameterTypes(member)),
+                GetDeclaredAccessibility(member),
+                isGenerated,
+                IsPartial(member));
         }
+    }
+
+    private static IEnumerable<IndexedSymbolBuild> BuildSymbolForSyntax(
+        SyntaxTree tree,
+        string relativePath,
+        SyntaxNode node,
+        string kind,
+        string name,
+        string keyName,
+        string signature,
+        string parameterSuffix,
+        bool isGenerated)
+    {
+        string @namespace = GetContainingNamespace(node);
+        string? containingType = GetContainingType(node);
+        string relativeKeyPath = relativePath.Replace('\\', '/');
+        string textHash = ComputeSha256Text(node.NormalizeWhitespace().ToFullString());
+        FileLinePositionSpan span = tree.GetLineSpan(node.Span);
+        int startLine = span.StartLinePosition.Line + 1;
+        int endLine = span.EndLinePosition.Line + 1;
+        int startColumn = span.StartLinePosition.Character + 1;
+        int endColumn = span.EndLinePosition.Character + 1;
+        string stableKey = $"{relativeKeyPath}::{@namespace}::{containingType ?? string.Empty}::{kind}::{keyName}{parameterSuffix}";
+        string sourceAnchor = $"{relativeKeyPath}:{startLine}:{startColumn}-{endLine}:{endColumn}";
+        yield return new IndexedSymbolBuild(
+            stableKey,
+            @namespace,
+            containingType,
+            kind,
+            name,
+            signature,
+            textHash,
+            startLine,
+            endLine,
+            startColumn,
+            endColumn,
+            node.SpanStart,
+            node.Span.Length,
+            sourceAnchor,
+            BuildSelectorJson(stableKey, relativeKeyPath, @namespace, containingType, kind, name, GetParameterTypes(node)),
+            GetDeclaredAccessibility(node),
+            isGenerated,
+            IsPartial(node));
+    }
+
+    private static IEnumerable<IndexedSymbolBuild> BuildLambdaSymbol(SyntaxTree tree, string relativePath, LambdaExpressionSyntax lambda, bool isGenerated)
+    {
+        FileLinePositionSpan span = tree.GetLineSpan(lambda.Span);
+        string name = $"lambda@{span.StartLinePosition.Line + 1}:{span.StartLinePosition.Character + 1}";
+        return BuildSymbolForSyntax(tree, relativePath, lambda, "lambda", name, name, "lambda", string.Empty, isGenerated);
     }
 
     private static IEnumerable<(string Kind, string Name, string KeyName, string Signature, string ParameterSuffix)> GetMemberSymbolParts(MemberDeclarationSyntax member)
@@ -793,6 +1072,16 @@ public sealed class SolutionIndexService
             case ConstructorDeclarationSyntax node:
                 yield return ("constructor", node.Identifier.ValueText, node.Identifier.ValueText, BuildSignature(node), BuildParameterSuffix(node.ParameterList));
                 break;
+            case IndexerDeclarationSyntax node:
+                yield return ("indexer", "this[]", "this", BuildSignature(node), BuildBracketedParameterSuffix(node.ParameterList));
+                break;
+            case OperatorDeclarationSyntax node:
+                yield return ("operator", $"operator {node.OperatorToken.ValueText}", node.OperatorToken.ValueText, BuildSignature(node), BuildParameterSuffix(node.ParameterList));
+                break;
+            case ConversionOperatorDeclarationSyntax node:
+                string conversionName = $"{node.ImplicitOrExplicitKeyword.ValueText} operator {node.Type}";
+                yield return ("conversion", conversionName, node.Type.ToString(), BuildSignature(node), BuildParameterSuffix(node.ParameterList));
+                break;
             case PropertyDeclarationSyntax node:
                 yield return ("property", node.Identifier.ValueText, node.Identifier.ValueText, BuildSignature(node), string.Empty);
                 break;
@@ -819,6 +1108,9 @@ public sealed class SolutionIndexService
             EventFieldDeclarationSyntax eventField => BuildEventFieldSignature(eventField),
             EventDeclarationSyntax evt => BuildEventSignature(evt),
             DelegateDeclarationSyntax del => BuildDelegateSignature(del),
+            IndexerDeclarationSyntax indexer => BuildIndexerSignature(indexer),
+            OperatorDeclarationSyntax op => BuildOperatorSignature(op),
+            ConversionOperatorDeclarationSyntax conversion => BuildConversionSignature(conversion),
             BaseTypeDeclarationSyntax type => BuildTypeSignature(type),
             _ => member.WithoutLeadingTrivia().NormalizeWhitespace().ToFullString().Replace(Environment.NewLine, " ", StringComparison.Ordinal).Trim()
         };
@@ -871,6 +1163,36 @@ public sealed class SolutionIndexService
         return $"{prefix}delegate {del.ReturnType} {del.Identifier.ValueText}({BuildParameterList(del.ParameterList.Parameters)})";
     }
 
+    private static string BuildIndexerSignature(IndexerDeclarationSyntax indexer)
+    {
+        string prefix = BuildModifierPrefix(indexer.Modifiers);
+        return $"{prefix}{indexer.Type} this[{BuildParameterList(indexer.ParameterList.Parameters)}]";
+    }
+
+    private static string BuildOperatorSignature(OperatorDeclarationSyntax op)
+    {
+        string prefix = BuildModifierPrefix(op.Modifiers);
+        return $"{prefix}{op.ReturnType} operator {op.OperatorToken.ValueText}({BuildParameterList(op.ParameterList.Parameters)})";
+    }
+
+    private static string BuildConversionSignature(ConversionOperatorDeclarationSyntax conversion)
+    {
+        string prefix = BuildModifierPrefix(conversion.Modifiers);
+        return $"{prefix}{conversion.ImplicitOrExplicitKeyword.ValueText} operator {conversion.Type}({BuildParameterList(conversion.ParameterList.Parameters)})";
+    }
+
+    private static string BuildEnumMemberSignature(EnumMemberDeclarationSyntax enumMember)
+    {
+        string value = enumMember.EqualsValue is null ? string.Empty : $" {enumMember.EqualsValue}";
+        return $"{enumMember.Identifier.ValueText}{value}";
+    }
+
+    private static string BuildLocalFunctionSignature(LocalFunctionStatementSyntax localFunction)
+    {
+        string prefix = BuildModifierPrefix(localFunction.Modifiers);
+        return $"{prefix}{localFunction.ReturnType} {localFunction.Identifier.ValueText}({BuildParameterList(localFunction.ParameterList.Parameters)})";
+    }
+
     private static string BuildTypeSignature(BaseTypeDeclarationSyntax type)
     {
         string prefix = BuildModifierPrefix(type.Modifiers);
@@ -917,6 +1239,55 @@ public sealed class SolutionIndexService
         };
     }
 
+    private static string GetDeclaredAccessibility(SyntaxNode node)
+    {
+        SyntaxTokenList modifiers = node switch
+        {
+            MemberDeclarationSyntax member => member.Modifiers,
+            LocalFunctionStatementSyntax localFunction => localFunction.Modifiers,
+            _ => default
+        };
+        if (modifiers.Any(SyntaxKind.PublicKeyword))
+        {
+            return "public";
+        }
+
+        if (modifiers.Any(SyntaxKind.PrivateKeyword))
+        {
+            return "private";
+        }
+
+        if (modifiers.Any(SyntaxKind.ProtectedKeyword) && modifiers.Any(SyntaxKind.InternalKeyword))
+        {
+            return "protected internal";
+        }
+
+        if (modifiers.Any(SyntaxKind.ProtectedKeyword))
+        {
+            return "protected";
+        }
+
+        if (modifiers.Any(SyntaxKind.InternalKeyword))
+        {
+            return "internal";
+        }
+
+        return string.Empty;
+    }
+
+    private static bool IsPartial(SyntaxNode node)
+    {
+        return node is MemberDeclarationSyntax member
+            && member.Modifiers.Any(SyntaxKind.PartialKeyword);
+    }
+
+    private static bool IsGeneratedFile(CompilationUnitSyntax root)
+    {
+        return root.GetLeadingTrivia().Any(trivia =>
+            trivia.ToFullString().Contains("<auto-generated", StringComparison.OrdinalIgnoreCase)
+            || trivia.ToFullString().Contains("<autogenerated", StringComparison.OrdinalIgnoreCase));
+    }
+
     private static string BuildModifierPrefix(SyntaxTokenList modifiers)
     {
         string text = modifiers.ToFullString().Trim();
@@ -924,6 +1295,19 @@ public sealed class SolutionIndexService
     }
 
     private static string BuildParameterSuffix(ParameterListSyntax? parameterList)
+    {
+        if (parameterList is null)
+        {
+            return string.Empty;
+        }
+
+        string[] parameterTypes = parameterList.Parameters
+            .Select(GetStableKeyParameterType)
+            .ToArray();
+        return "(" + string.Join(",", parameterTypes) + ")";
+    }
+
+    private static string BuildBracketedParameterSuffix(BracketedParameterListSyntax? parameterList)
     {
         if (parameterList is null)
         {
@@ -945,11 +1329,34 @@ public sealed class SolutionIndexService
 
     private static IReadOnlyList<string> GetParameterTypes(MemberDeclarationSyntax member)
     {
+        if (member is IndexerDeclarationSyntax indexer)
+        {
+            return indexer.ParameterList.Parameters.Select(GetStableKeyParameterType).ToArray();
+        }
+
         ParameterListSyntax? parameterList = member switch
         {
             BaseMethodDeclarationSyntax method => method.ParameterList,
             DelegateDeclarationSyntax del => del.ParameterList,
             RecordDeclarationSyntax record => record.ParameterList,
+            _ => null
+        };
+        return parameterList?.Parameters.Select(GetStableKeyParameterType).ToArray() ?? [];
+    }
+
+    private static IReadOnlyList<string> GetParameterTypes(SyntaxNode node)
+    {
+        if (node is IndexerDeclarationSyntax indexer)
+        {
+            return indexer.ParameterList.Parameters.Select(GetStableKeyParameterType).ToArray();
+        }
+
+        ParameterListSyntax? parameterList = node switch
+        {
+            BaseMethodDeclarationSyntax method => method.ParameterList,
+            DelegateDeclarationSyntax del => del.ParameterList,
+            RecordDeclarationSyntax record => record.ParameterList,
+            LocalFunctionStatementSyntax localFunction => localFunction.ParameterList,
             _ => null
         };
         return parameterList?.Parameters.Select(GetStableKeyParameterType).ToArray() ?? [];
@@ -995,10 +1402,8 @@ public sealed class SolutionIndexService
             return null;
         }
 
-        SyntaxNode syntax = syntaxReference.GetSyntax();
-        MemberDeclarationSyntax? member = syntax as MemberDeclarationSyntax
-            ?? syntax.FirstAncestorOrSelf<MemberDeclarationSyntax>();
-        if (member is null)
+        SyntaxNode syntax = GetIndexedDeclarationSyntax(syntaxReference.GetSyntax());
+        if (!IsIndexedDeclarationSyntax(syntax))
         {
             return null;
         }
@@ -1013,9 +1418,10 @@ public sealed class SolutionIndexService
             }
         }
 
-        string? expectedKind = GetIndexedSymbolKind(symbol, member);
+        string? expectedKind = GetIndexedSymbolKind(symbol, syntax);
         string expectedName = GetIndexedSymbolName(symbol);
-        IndexedSymbolBuild[] candidates = BuildSymbolsForMember(syntax.SyntaxTree, relativePath, member).ToArray();
+        bool isGenerated = IsGeneratedFile(syntax.SyntaxTree.GetCompilationUnitRoot());
+        IndexedSymbolBuild[] candidates = BuildSymbolsForNode(syntax.SyntaxTree, relativePath, syntax, isGenerated).ToArray();
         IndexedSymbolBuild? exact = candidates.FirstOrDefault(candidate =>
             (expectedKind is null || candidate.Kind.Equals(expectedKind, StringComparison.OrdinalIgnoreCase))
             && SymbolNameMatches(candidate.Name, expectedName));
@@ -1029,6 +1435,28 @@ public sealed class SolutionIndexService
             or IPropertySymbol
             or IFieldSymbol
             or IEventSymbol;
+    }
+
+    private static SyntaxNode GetIndexedDeclarationSyntax(SyntaxNode syntax)
+    {
+        return syntax switch
+        {
+            AccessorDeclarationSyntax accessor when accessor.Parent?.Parent is IndexerDeclarationSyntax indexer => indexer,
+            AccessorDeclarationSyntax accessor when accessor.Parent?.Parent is PropertyDeclarationSyntax property => property,
+            AccessorDeclarationSyntax accessor when accessor.Parent?.Parent is EventDeclarationSyntax evt => evt,
+            VariableDeclaratorSyntax variable when variable.Parent?.Parent is FieldDeclarationSyntax field => field,
+            VariableDeclaratorSyntax variable when variable.Parent?.Parent is EventFieldDeclarationSyntax eventField => eventField,
+            _ => syntax
+        };
+    }
+
+    private static bool IsIndexedDeclarationSyntax(SyntaxNode syntax)
+    {
+        return syntax is MemberDeclarationSyntax
+            or EnumMemberDeclarationSyntax
+            or LocalFunctionStatementSyntax
+            or ParenthesizedLambdaExpressionSyntax
+            or SimpleLambdaExpressionSyntax;
     }
 
     private static ISymbol NormalizeSymbol(ISymbol symbol)
@@ -1051,16 +1479,18 @@ public sealed class SolutionIndexService
         return symbol.OriginalDefinition;
     }
 
-    private static string? GetIndexedSymbolKind(ISymbol symbol, MemberDeclarationSyntax member)
+    private static string? GetIndexedSymbolKind(ISymbol symbol, SyntaxNode declaration)
     {
         return symbol switch
         {
             IMethodSymbol { MethodKind: MethodKind.Constructor } => "constructor",
-            IMethodSymbol => "method",
-            IPropertySymbol => "property",
-            IFieldSymbol => "field",
+            IMethodSymbol { MethodKind: MethodKind.UserDefinedOperator } => "operator",
+            IMethodSymbol { MethodKind: MethodKind.Conversion } => "conversion",
+            IMethodSymbol => declaration is LocalFunctionStatementSyntax ? "local_function" : "method",
+            IPropertySymbol => declaration is IndexerDeclarationSyntax ? "indexer" : "property",
+            IFieldSymbol => declaration is EnumMemberDeclarationSyntax ? "enum_member" : "field",
             IEventSymbol => "event",
-            INamedTypeSymbol => member switch
+            INamedTypeSymbol => declaration switch
             {
                 ClassDeclarationSyntax => "class",
                 StructDeclarationSyntax => "struct",
@@ -1076,9 +1506,36 @@ public sealed class SolutionIndexService
 
     private static string GetIndexedSymbolName(ISymbol symbol)
     {
-        return symbol is IMethodSymbol { MethodKind: MethodKind.Constructor, ContainingType: not null }
-            ? symbol.ContainingType.Name
-            : symbol.Name;
+        return symbol switch
+        {
+            IMethodSymbol { MethodKind: MethodKind.Constructor, ContainingType: not null } method => method.ContainingType.Name,
+            IMethodSymbol { MethodKind: MethodKind.UserDefinedOperator } method => $"operator {GetOperatorTokenText(method.Name)}",
+            IMethodSymbol { MethodKind: MethodKind.Conversion } method => $"{method.Name.Replace("op_", string.Empty, StringComparison.Ordinal).ToLowerInvariant()} operator {method.ReturnType}",
+            IPropertySymbol { IsIndexer: true } => "this[]",
+            _ => symbol.Name
+        };
+    }
+
+    private static string GetOperatorTokenText(string metadataName)
+    {
+        return metadataName switch
+        {
+            "op_Addition" => "+",
+            "op_Subtraction" => "-",
+            "op_Multiply" => "*",
+            "op_Division" => "/",
+            "op_Modulus" => "%",
+            "op_Equality" => "==",
+            "op_Inequality" => "!=",
+            "op_LessThan" => "<",
+            "op_GreaterThan" => ">",
+            "op_LessThanOrEqual" => "<=",
+            "op_GreaterThanOrEqual" => ">=",
+            "op_UnaryNegation" => "-",
+            "op_UnaryPlus" => "+",
+            "op_LogicalNot" => "!",
+            _ => metadataName
+        };
     }
 
     private static bool SymbolNameMatches(string indexedName, string symbolName)
@@ -1090,8 +1547,11 @@ public sealed class SolutionIndexService
 
     private static string? GetCallerStableKey(SyntaxTree tree, string relativePath, SyntaxNode node)
     {
-        MemberDeclarationSyntax? caller = node.Ancestors().OfType<MemberDeclarationSyntax>().FirstOrDefault(member =>
-            member is MethodDeclarationSyntax
+        SyntaxNode? caller = node.Ancestors().FirstOrDefault(candidate =>
+            candidate is ParenthesizedLambdaExpressionSyntax
+                or SimpleLambdaExpressionSyntax
+                or LocalFunctionStatementSyntax
+                or MethodDeclarationSyntax
                 or ConstructorDeclarationSyntax
                 or PropertyDeclarationSyntax
                 or EventDeclarationSyntax
@@ -1101,7 +1561,8 @@ public sealed class SolutionIndexService
             return null;
         }
 
-        return BuildSymbolsForMember(tree, relativePath, caller).FirstOrDefault()?.StableKey;
+        bool isGenerated = IsGeneratedFile(tree.GetCompilationUnitRoot());
+        return BuildSymbolsForNode(tree, relativePath, caller, isGenerated).FirstOrDefault()?.StableKey;
     }
 
     private static bool IsInvocationName(SimpleNameSyntax name, out InvocationExpressionSyntax? invocation)
@@ -1343,7 +1804,7 @@ public sealed class SolutionIndexService
         using SqliteCommand command = connection.CreateCommand();
         command.CommandText =
             """
-            select s.stable_key, f.relative_path, f.sha256, s.text_hash, s.namespace, s.containing_type, s.kind, s.name, s.signature, s.start_line, s.end_line, s.start_column, s.end_column, s.text_span_start, s.text_span_length, s.source_anchor, s.selector_json
+            select s.stable_key, f.relative_path, f.sha256, s.text_hash, s.namespace, s.containing_type, s.kind, s.name, s.signature, s.start_line, s.end_line, s.start_column, s.end_column, s.text_span_start, s.text_span_length, s.source_anchor, s.selector_json, s.declared_accessibility, s.is_generated, s.is_partial
             from symbols s
             join files f on f.id = s.file_id
             where ($scope = 'solution')
@@ -1380,7 +1841,10 @@ public sealed class SolutionIndexService
                 reader.GetInt32(13),
                 reader.GetInt32(14),
                 reader.GetString(15),
-                reader.GetString(16)));
+                reader.GetString(16),
+                reader.GetString(17),
+                reader.GetInt32(18) != 0,
+                reader.GetInt32(19) != 0));
         }
 
         return symbols;
@@ -1697,7 +2161,10 @@ public sealed class SolutionIndexService
         int TextSpanStart,
         int TextSpanLength,
         string SourceAnchor,
-        string SelectorJson);
+        string SelectorJson,
+        string DeclaredAccessibility,
+        bool IsGenerated,
+        bool IsPartial);
 
     private sealed record IndexedDiagnosticBuild(
         string Severity,
@@ -1797,7 +2264,10 @@ public sealed record SolutionIndexSymbol(
     int TextSpanStart,
     int TextSpanLength,
     string SourceAnchor,
-    string SelectorJson);
+    string SelectorJson,
+    string DeclaredAccessibility,
+    bool IsGenerated,
+    bool IsPartial);
 
 [Description("Indexed C# reference or call-site metadata from the watched solution index.")]
 public sealed record SolutionIndexReference(
