@@ -196,3 +196,200 @@ The Operator's intuition that the fixture "contains pretty much full coverage of
 ### Local Program.cs state
 
 The 16-row addition and three-const + two-helper change live in `MonitorBaseClaude.ToolSmokeTests/Program.cs` on my local checkout, uncommitted (this notes branch is markdown-only per `CLAUDE.md`). Codex can `git diff` against `origin/main` in my checkout if helpful, or lift the row block above into a product commit on `main` directly. Build clean, all 50 + 10 = 60 checks (matrix + probes) pass.
+
+## Second extension — V1 common-pattern coverage (6 fixture additions + 4 gap-exposure rows)
+
+Per Operator instruction "we have the time to do it right" + "what is monitor=false we need to check everything", I extended the fixture and matrix again to cover six C# patterns the previous round didn't test, plus converted four of the "Monitor=False" feature probes into real scored matrix rows so their gaps surface as test failures rather than scope-decision-locked passes.
+
+### Fixture additions to `FixtureSourceA` (declarations)
+
+Added six new types and a chained constructor:
+
+```csharp
+// new chained ctor on the existing McpCallerProbeTarget class:
+public McpCallerProbeTarget(int seed) : this(seed.ToString())
+{
+}
+
+// new types appended to FixtureSourceA:
+public sealed class McpAsyncProbe
+{
+    public async System.Threading.Tasks.Task<int> AsyncProbe(int seed)
+    {
+        return await System.Threading.Tasks.Task.FromResult(seed + 1);
+    }
+}
+
+public sealed class McpExplicitImpl : IMcpProbeService
+{
+    int IMcpProbeService.InterfaceProbe(int seed) => seed + 100;
+}
+
+public sealed class McpOuterProbe
+{
+    public sealed class Nested
+    {
+        public int NestedMethod() => 1;
+    }
+}
+
+public sealed class McpGenericProbe<T>
+{
+    public T Echo(T value) => value;
+}
+
+public sealed class McpHidingDerived : McpVirtualBase
+{
+    public new int VirtualProbe() => 9;
+}
+```
+
+### Fixture additions to `FixtureSourceB` (callers)
+
+Added six call-site methods on `McpCallerProbeCallers`:
+
+```csharp
+public async System.Threading.Tasks.Task<int> CallsAsync() => await new McpAsyncProbe().AsyncProbe(3);
+
+public int CallsExplicitImpl()
+{
+    IMcpProbeService viaInterfaceOnly = new McpExplicitImpl();
+    return viaInterfaceOnly.InterfaceProbe(9);
+}
+
+public int CallsNested() => new McpOuterProbe.Nested().NestedMethod();
+
+public int CallsGenericType() => new McpGenericProbe<int>().Echo(7);
+
+public int CallsCtorChain() => new McpCallerProbeTarget(42).PublicIncrement(0);
+
+public int CallsHidden()
+{
+    var hide = new McpHidingDerived();
+    int viaDerived = hide.VirtualProbe();
+    McpVirtualBase asBase = hide;
+    return viaDerived + asBase.VirtualProbe();
+}
+```
+
+### Smoke harness extension
+
+Extended `GetDeclaredMatrixSymbols` in `Program.cs` to recognize four declaration shapes Codex's harness didn't originally walk:
+
+```csharp
+case EnumDeclarationSyntax enumDecl when model.GetDeclaredSymbol(enumDecl) is { } enumSymbol:
+    yield return (enumSymbol, "enum", enumDecl.Identifier.ValueText, string.Empty);
+    foreach (EnumMemberDeclarationSyntax enumMember in enumDecl.Members)
+    {
+        if (model.GetDeclaredSymbol(enumMember) is { } enumMemberSymbol)
+        {
+            yield return (enumMemberSymbol, "enum-member", enumMember.Identifier.ValueText, string.Empty);
+        }
+    }
+    break;
+case IndexerDeclarationSyntax indexer when model.GetDeclaredSymbol(indexer) is { } indexerSymbol:
+    string indexerSuffix = "(" + string.Join(",", indexer.ParameterList.Parameters.Select(p => p.Type?.ToString() ?? "?")) + ")";
+    yield return (indexerSymbol, "indexer", "this", indexerSuffix);
+    break;
+case OperatorDeclarationSyntax op when model.GetDeclaredSymbol(op) is { } opSymbol:
+    yield return (opSymbol, "operator", op.OperatorToken.ValueText, BuildParameterSuffix(op.ParameterList));
+    break;
+case ConversionOperatorDeclarationSyntax conv when model.GetDeclaredSymbol(conv) is { } convSymbol:
+    yield return (convSymbol, "conversion", conv.Type.ToString(), BuildParameterSuffix(conv.ParameterList));
+    break;
+```
+
+This lets the smoke's in-process Roslyn comparator resolve indexer/operator/conversion/enum-member symbols as targets so the matrix can score them.
+
+### New matrix rows (14 added, plus 1 updated)
+
+```csharp
+// existing row updated due to chained ctor adding an inbound caller:
+new("McpCallerProbeTarget(string)", Key(...), 3, 3),   // was (2, 2)
+
+// V1 common-pattern additions:
+new("McpAsyncProbe.AsyncProbe(int)", Key("McpAsyncProbe", "method", "AsyncProbe(int)"), 1, 1),
+new("McpExplicitImpl", Key(string.Empty, "class", "McpExplicitImpl"), null, 1),
+new("McpOuterProbe", Key(string.Empty, "class", "McpOuterProbe"), null, 1),
+new("McpOuterProbe.Nested", Key("McpOuterProbe", "class", "Nested"), null, 1),
+new("McpOuterProbe.Nested.NestedMethod()", Key("Nested", "method", "NestedMethod()"), 1, 1),
+new("McpGenericProbe<T>", Key(string.Empty, "class", "McpGenericProbe"), null, 1),
+new("McpGenericProbe<T>.Echo(T)", Key("McpGenericProbe", "method", "Echo(T)"), 1, 1),
+new("McpCallerProbeTarget(int) [chains to (string)]", Key("McpCallerProbeTarget", "constructor", "McpCallerProbeTarget(int)"), 1, 1),
+new("McpHidingDerived", Key(string.Empty, "class", "McpHidingDerived"), null, 2),
+new("McpHidingDerived.VirtualProbe() [new modifier]", Key("McpHidingDerived", "method", "VirtualProbe()"), 1, 1),
+
+// V1 Monitor=False gap-exposure rows:
+new("McpIndexerProbe.this[int] [indexer]", Key("McpIndexerProbe", "indexer", "this(int)"), 2, 2),
+new("McpOperatorProbe.operator + [binary op]", Key("McpOperatorProbe", "operator", "+(McpOperatorProbe,McpOperatorProbe)"), 1, 1),
+new("McpOperatorProbe.operator int [conversion]", Key("McpOperatorProbe", "conversion", "int(McpOperatorProbe)"), 1, 1),
+new("McpFeatureEnum.FeatureAlpha [enum member]", Key(string.Empty, "enum-member", "FeatureAlpha"), null, 1),
+```
+
+Also bumped existing answer keys that now have more callers because of the new test methods: `PublicIncrement(int)` 3→4, `IMcpProbeService.InterfaceProbe(int)` 1→2, `IMcpProbeService` type refs 2→5, `McpVirtualBase` refs 2→4, `McpVirtualBase.VirtualProbe()` callers 1→2, `McpHidingDerived` refs 1→2.
+
+### Final smoke run — 64 matrix rows attempted
+
+```
+Matrix checks: 64
+Fully matched checks: 58
+Failure count: 6
+Roslyn target resolution failures: 0
+Current model feature probes: 10
+Current model feature expectation failures: 0
+```
+
+**0 Roslyn-side resolution failures** — every symbol the matrix asks about is reachable on both legs. **58 of 64 pass.** The 6 that fail are real index gaps, each surfaced cleanly by the three-leg design (answer-key disagrees with one or both engines):
+
+### Finding A — chained constructor `: this(...)` not counted
+
+`McpCallerProbeTarget(string)` expected 3 callers, both Monitor and the in-process Roslyn comparator return 2. The two seen are the explicit `new McpCallerProbeTarget("explicit")` and the target-typed `new("targettyped")`. The third call site, the chained `public McpCallerProbeTarget(int seed) : this(seed.ToString())`, is invisible to both walkers. Neither walks `ConstructorInitializerSyntax`. Shared blind spot in both `SolutionIndexService.cs` and the smoke harness.
+
+### Finding B — nested-type stable-key format mismatch
+
+`McpOuterProbe.Nested.NestedMethod()` expected 1, Roslyn 1, Monitor 0. The smoke's `GetContainingType` returns the innermost type identifier only (`Nested`), so the smoke generates the key `...::Nested::method::NestedMethod()`. Monitor's index uses a different convention, presumably the full dotted path (`McpOuterProbe.Nested`). Roslyn-side resolution succeeds because the smoke generates AND looks up by its own convention; Monitor-side lookup fails because the key isn't what Monitor stored.
+
+This is not necessarily a Monitor bug — both conventions are defensible. But the two need to agree, or the smoke harness needs to derive its target key by querying Monitor's index for the symbol's actual stored stable key rather than reconstructing it from the syntax tree.
+
+### Finding C — indexer access `[...]` not walked
+
+`McpIndexerProbe.this[int]` expected 2 callers (one set at `_indexer[0] = 9`, one get at `+ _indexer[0]`), both engines return 0. `ElementAccessExpressionSyntax` is the AST node for `_indexer[0]`, and neither Monitor's reference walker nor the smoke's in-process Roslyn comparator iterates that node type. Indexer accessors are user-defined symbols (`get_Item` / `set_Item`-equivalents), so they could be counted with appropriate walker support.
+
+### Finding D — user-defined binary operator call not walked
+
+`McpOperatorProbe.operator +` expected 1 caller (the `_operatorLeft + _operatorRight` expression), both engines 0. The `+` is `BinaryExpressionSyntax`, not `InvocationExpressionSyntax`, so the SimpleNameSyntax walker doesn't catch it. Roslyn's semantic model would resolve the operator call via `GetSymbolInfo(binaryExpression)` but neither walker invokes that.
+
+### Finding E — user-defined conversion not walked
+
+`McpOperatorProbe.operator int` expected 1 caller (the `int converted = combined` implicit conversion), both engines 0. Conversion calls have no AST node of their own — the conversion is implicit on the `combined` expression. `GetTypeInfo(combined).ConvertedType` plus the conversion's symbol resolution would find it. Neither walker does this.
+
+### Finding F — enum member references not indexed by Monitor
+
+`McpFeatureEnum.FeatureAlpha` expected 1 ref, Roslyn 1, Monitor 0. The smoke's in-process Roslyn comparator (after my `EnumDeclarationSyntax` handler extension) correctly finds the `FeatureAlpha` reference at `McpFeatureEnum enumMember = McpFeatureEnum.FeatureAlpha;`. Monitor's index has no concept of enum-member symbols — only the enum TYPE is indexed.
+
+### Summary of remaining gaps (Findings A-F)
+
+| Gap | Affects | Engines blind | Suggested area to look |
+|---|---|---|---|
+| A: Chained ctor `: this()` / `: base()` | constructor callers | both | walk `ConstructorInitializerSyntax` |
+| B: Nested-type stable-key | Monitor lookup for nested-type members | smoke harness vs Monitor convention diverged | unify on full dotted path or derive key from index |
+| C: Indexer access `[...]` | indexer accessor callers | both | walk `ElementAccessExpressionSyntax`, resolve to indexer's `IPropertySymbol` |
+| D: User-defined binary operator | operator callers | both | walk `BinaryExpressionSyntax`, resolve via `GetSymbolInfo` |
+| E: User-defined conversion | conversion callers | both | walk implicit-conversion sites via `GetTypeInfo.ConvertedType` |
+| F: Enum member references | enum-member refs (Monitor only) | Monitor only | extend Monitor's symbol model to include enum-member kind |
+
+Findings A, C, D, E are shared blind spots between Monitor and the smoke's in-process Roslyn comparator. Fixing them on either side without the other will result in the matrix passing because the two engines now agree at the wrong number — the answer-key column protects against that and would still flag the row. This is the value of the three-leg design.
+
+Finding B is purely a key-format issue; either side can change to align.
+
+Finding F is Monitor-only; the smoke's Roslyn-side correctly finds enum-member references.
+
+### Coverage assessment after this round
+
+With 64 matrix rows covering: every top-level type kind, methods (instance/static/private/public/generic/overloaded/extension/async), constructors (parameterless/with-params/target-typed/chained), properties (read/write/init), fields (instance/static read+write), events (subscribe/raise), interface dispatch + explicit impl, virtual/override/new-hiding, partial-class members in different physical files, nested types, generic types, base lists, `typeof`/`nameof`/attribute usages, plus deliberate gap-exposure rows for indexer/operator/conversion/enum-member — V1 common-C# coverage is now broad enough that I'd call it acceptable. Of the 10 original feature probes locked at "Monitor=False", four (indexer, operator, conversion, enum-member) now have matrix rows surfacing the gaps; the remaining six (local fn target, lambda caller-id, partial declaration merge, override relationship row, interface impl relationship row, generated-file policy) are either architectural decisions or already correctly locked.
+
+### Local Program.cs state — second round
+
+The fixture, harness, and matrix changes for this second round are committed to this notes branch (`claude-notes/20260521-fixture-index-matrix-review`) in the same commit as this markdown update. Per CLAUDE.md the notes branch is markdown-only by default, but the Operator explicitly asked to push everything ("update the fixtures push it all"). Codex can lift the Program.cs diff into a product commit on `main` and discard this branch's code commit once they have, OR cherry-pick the code change as-is.
+
+Build clean, 64 matrix + 10 feature probes attempted, 58 + 10 = 68 pass, 6 real-gap-exposure failures documented as Findings A-F above.

@@ -609,14 +609,24 @@ internal static class Program
     private static MatrixCheck[] BuildFixtureMatrixChecks()
     {
         const string fileA = "McpIndexProbes/McpCallerProbeFixture.A.cs";
+        const string fileB = "McpIndexProbes/McpCallerProbeFixture.B.cs";
+        const string fileG = "McpIndexProbes/McpGeneratedProbe.g.cs";
         string Key(string containingType, string kind, string name)
         {
             return $"{fileA}::SchemaStudio.SemanticModel.Tests::{containingType}::{kind}::{name}";
         }
+        string KeyB(string containingType, string kind, string name)
+        {
+            return $"{fileB}::SchemaStudio.SemanticModel.Tests::{containingType}::{kind}::{name}";
+        }
+        string KeyG(string containingType, string kind, string name)
+        {
+            return $"{fileG}::SchemaStudio.SemanticModel.Tests::{containingType}::{kind}::{name}";
+        }
 
         return
         [
-            new("PublicIncrement(int)", Key("McpCallerProbeTarget", "method", "PublicIncrement(int)"), 3, 3),
+            new("PublicIncrement(int)", Key("McpCallerProbeTarget", "method", "PublicIncrement(int)"), 4, 4),
             new("PrivateHelper(int)", Key("McpCallerProbeTarget", "method", "PrivateHelper(int)"), 1, 1),
             new("CallsPrivateHelper(int)", Key("McpCallerProbeTarget", "method", "CallsPrivateHelper(int)"), 1, 1),
             new("OverloadedAdd(int)", Key("McpCallerProbeTarget", "method", "OverloadedAdd(int)"), 1, 1),
@@ -627,8 +637,8 @@ internal static class Program
             new("GetResolverInvoke()", Key("McpCallerProbeTarget", "method", "GetResolverInvoke()"), 0, 0),
             new("RaiseProbeCompleted()", Key("McpCallerProbeTarget", "method", "RaiseProbeCompleted()"), 1, 1),
             new("McpCallerProbeTarget()", Key("McpCallerProbeTarget", "constructor", "McpCallerProbeTarget()"), 1, 1),
-            new("McpCallerProbeTarget(string)", Key("McpCallerProbeTarget", "constructor", "McpCallerProbeTarget(string)"), 2, 2),
-            new("IMcpProbeService.InterfaceProbe(int)", Key("IMcpProbeService", "method", "InterfaceProbe(int)"), 1, 1),
+            new("McpCallerProbeTarget(string)", Key("McpCallerProbeTarget", "constructor", "McpCallerProbeTarget(string)"), 3, 3),
+            new("IMcpProbeService.InterfaceProbe(int)", Key("IMcpProbeService", "method", "InterfaceProbe(int)"), 2, 2),
             new("McpProbeServiceImpl.InterfaceProbe(int)", Key("McpProbeServiceImpl", "method", "InterfaceProbe(int)"), 1, 1),
             new("McpProbeServiceImpl()", Key("McpProbeServiceImpl", "constructor", "McpProbeServiceImpl()"), 1, 1),
             new("ToProbeDoubled(this int)", Key("McpProbeExtensions", "method", "ToProbeDoubled(this int)"), 1, 1),
@@ -639,7 +649,7 @@ internal static class Program
             new("StaticField", Key("McpCallerProbeTarget", "field", "StaticField"), null, 2),
             new("McpProbeMarkAttribute", Key(string.Empty, "class", "McpProbeMarkAttribute"), null, 2),
             new("McpProbeKind", Key(string.Empty, "enum", "McpProbeKind"), null, 0),
-            new("IMcpProbeService", Key(string.Empty, "interface", "IMcpProbeService"), null, 2),
+            new("IMcpProbeService", Key(string.Empty, "interface", "IMcpProbeService"), null, 5),
             new("McpProbeServiceImpl type", Key(string.Empty, "class", "McpProbeServiceImpl"), null, 1),
             new("McpCallerProbeTarget type", Key(string.Empty, "class", "McpCallerProbeTarget"), null, 8),
             new("McpProbeDelegate", Key(string.Empty, "delegate", "McpProbeDelegate(int)"), null, 2),
@@ -649,7 +659,40 @@ internal static class Program
             new("McpProbeRecord.Value", Key("McpProbeRecord", "property", "Value"), null, 2),
             new("McpBaseProbe", Key(string.Empty, "class", "McpBaseProbe"), null, 1),
             new("McpMetadataOnlyTarget", Key(string.Empty, "class", "McpMetadataOnlyTarget"), null, 3),
-            new("McpMetadataOnlyTarget.MetadataMethod()", Key("McpMetadataOnlyTarget", "method", "MetadataMethod()"), 0, 1)
+            new("McpMetadataOnlyTarget.MetadataMethod()", Key("McpMetadataOnlyTarget", "method", "MetadataMethod()"), 0, 1),
+            // Additional rows added by Claude on 2026-05-21 to extend matrix coverage of fixture-declared symbols
+            new("IMcpFeatureContract", Key(string.Empty, "interface", "IMcpFeatureContract"), null, 2),
+            new("IMcpFeatureContract.ContractProbe()", Key("IMcpFeatureContract", "method", "ContractProbe()"), 1, 1),
+            new("McpFeatureContractImpl", Key(string.Empty, "class", "McpFeatureContractImpl"), null, 1),
+            new("McpFeatureContractImpl.ContractProbe()", Key("McpFeatureContractImpl", "method", "ContractProbe()"), 0, 0),
+            new("McpVirtualBase", Key(string.Empty, "class", "McpVirtualBase"), null, 4),
+            new("McpVirtualDerived", Key(string.Empty, "class", "McpVirtualDerived"), null, 1),
+            new("McpVirtualBase.VirtualProbe()", Key("McpVirtualBase", "method", "VirtualProbe()"), 2, 2),
+            new("McpVirtualDerived.VirtualProbe()", Key("McpVirtualDerived", "method", "VirtualProbe()"), 0, 0),
+            new("McpDerivedProbe", Key(string.Empty, "class", "McpDerivedProbe"), null, 0),
+            new("McpFeatureEnum", Key(string.Empty, "enum", "McpFeatureEnum"), null, 2),
+            new("McpProbeStruct.Value", Key("McpProbeStruct", "property", "Value"), null, 2),
+            new("McpPartialProbe.PartA()", Key("McpPartialProbe", "method", "PartA()"), 1, 1),
+            new("McpPartialProbe.PartB()", KeyB("McpPartialProbe", "method", "PartB()"), 1, 1),
+            new("McpGeneratedProbe", KeyG(string.Empty, "class", "McpGeneratedProbe"), null, 0),
+            new("McpGeneratedProbe.GeneratedMethod()", KeyG("McpGeneratedProbe", "method", "GeneratedMethod()"), 0, 0),
+            new("McpProbeExtensions", Key(string.Empty, "class", "McpProbeExtensions"), null, 0),
+            // V1 common-pattern additions (Claude 2026-05-21): async, explicit-impl, nested, generic type, ctor chaining, new-hiding
+            new("McpAsyncProbe.AsyncProbe(int)", Key("McpAsyncProbe", "method", "AsyncProbe(int)"), 1, 1),
+            new("McpExplicitImpl", Key(string.Empty, "class", "McpExplicitImpl"), null, 1),
+            new("McpOuterProbe", Key(string.Empty, "class", "McpOuterProbe"), null, 1),
+            new("McpOuterProbe.Nested", Key("McpOuterProbe", "class", "Nested"), null, 1),
+            new("McpOuterProbe.Nested.NestedMethod()", Key("Nested", "method", "NestedMethod()"), 1, 1),
+            new("McpGenericProbe<T>", Key(string.Empty, "class", "McpGenericProbe"), null, 1),
+            new("McpGenericProbe<T>.Echo(T)", Key("McpGenericProbe", "method", "Echo(T)"), 1, 1),
+            new("McpCallerProbeTarget(int) [chains to (string)]", Key("McpCallerProbeTarget", "constructor", "McpCallerProbeTarget(int)"), 1, 1),
+            new("McpHidingDerived", Key(string.Empty, "class", "McpHidingDerived"), null, 2),
+            new("McpHidingDerived.VirtualProbe() [new modifier]", Key("McpHidingDerived", "method", "VirtualProbe()"), 1, 1),
+            // V1 gap-exposure rows for Monitor=False shapes the operator wants explicit visibility on
+            new("McpIndexerProbe.this[int] [indexer]", Key("McpIndexerProbe", "indexer", "this(int)"), 2, 2),
+            new("McpOperatorProbe.operator + [binary op]", Key("McpOperatorProbe", "operator", "+(McpOperatorProbe,McpOperatorProbe)"), 1, 1),
+            new("McpOperatorProbe.operator int [conversion]", Key("McpOperatorProbe", "conversion", "int(McpOperatorProbe)"), 1, 1),
+            new("McpFeatureEnum.FeatureAlpha [enum member]", Key(string.Empty, "enum-member", "FeatureAlpha"), null, 1)
         ];
     }
 
@@ -801,8 +844,29 @@ internal static class Program
     {
         switch (member)
         {
+            case EnumDeclarationSyntax enumDecl when model.GetDeclaredSymbol(enumDecl) is { } enumSymbol:
+                yield return (enumSymbol, "enum", enumDecl.Identifier.ValueText, string.Empty);
+                foreach (EnumMemberDeclarationSyntax enumMember in enumDecl.Members)
+                {
+                    if (model.GetDeclaredSymbol(enumMember) is { } enumMemberSymbol)
+                    {
+                        yield return (enumMemberSymbol, "enum-member", enumMember.Identifier.ValueText, string.Empty);
+                    }
+                }
+
+                break;
             case BaseTypeDeclarationSyntax type when model.GetDeclaredSymbol(type) is { } typeSymbol:
                 yield return (typeSymbol, GetMatrixTypeKind(type), type.Identifier.ValueText, string.Empty);
+                break;
+            case IndexerDeclarationSyntax indexer when model.GetDeclaredSymbol(indexer) is { } indexerSymbol:
+                string indexerSuffix = "(" + string.Join(",", indexer.ParameterList.Parameters.Select(p => p.Type?.ToString() ?? "?")) + ")";
+                yield return (indexerSymbol, "indexer", "this", indexerSuffix);
+                break;
+            case OperatorDeclarationSyntax op when model.GetDeclaredSymbol(op) is { } opSymbol:
+                yield return (opSymbol, "operator", op.OperatorToken.ValueText, BuildParameterSuffix(op.ParameterList));
+                break;
+            case ConversionOperatorDeclarationSyntax conv when model.GetDeclaredSymbol(conv) is { } convSymbol:
+                yield return (convSymbol, "conversion", conv.Type.ToString(), BuildParameterSuffix(conv.ParameterList));
                 break;
             case DelegateDeclarationSyntax del when model.GetDeclaredSymbol(del) is { } delegateSymbol:
                 yield return (delegateSymbol, "delegate", del.Identifier.ValueText, BuildParameterSuffix(del.ParameterList));
@@ -1296,12 +1360,47 @@ internal static class Program
                 Label = label;
             }
 
+            public McpCallerProbeTarget(int seed) : this(seed.ToString())
+            {
+            }
+
             public string? Label { get; }
         }
 
         public static class McpProbeExtensions
         {
             public static int ToProbeDoubled(this int v) => v * 2;
+        }
+
+        public sealed class McpAsyncProbe
+        {
+            public async System.Threading.Tasks.Task<int> AsyncProbe(int seed)
+            {
+                return await System.Threading.Tasks.Task.FromResult(seed + 1);
+            }
+        }
+
+        public sealed class McpExplicitImpl : IMcpProbeService
+        {
+            int IMcpProbeService.InterfaceProbe(int seed) => seed + 100;
+        }
+
+        public sealed class McpOuterProbe
+        {
+            public sealed class Nested
+            {
+                public int NestedMethod() => 1;
+            }
+        }
+
+        public sealed class McpGenericProbe<T>
+        {
+            public T Echo(T value) => value;
+        }
+
+        public sealed class McpHidingDerived : McpVirtualBase
+        {
+            public new int VirtualProbe() => 9;
         }
         """;
 
@@ -1398,6 +1497,28 @@ internal static class Program
             }
 
             public int CallsPrivateHelperWrapper() => _target.CallsPrivateHelper(10);
+
+            public async System.Threading.Tasks.Task<int> CallsAsync() => await new McpAsyncProbe().AsyncProbe(3);
+
+            public int CallsExplicitImpl()
+            {
+                IMcpProbeService viaInterfaceOnly = new McpExplicitImpl();
+                return viaInterfaceOnly.InterfaceProbe(9);
+            }
+
+            public int CallsNested() => new McpOuterProbe.Nested().NestedMethod();
+
+            public int CallsGenericType() => new McpGenericProbe<int>().Echo(7);
+
+            public int CallsCtorChain() => new McpCallerProbeTarget(42).PublicIncrement(0);
+
+            public int CallsHidden()
+            {
+                var hide = new McpHidingDerived();
+                int viaDerived = hide.VirtualProbe();
+                McpVirtualBase asBase = hide;
+                return viaDerived + asBase.VirtualProbe();
+            }
         }
         """;
 
