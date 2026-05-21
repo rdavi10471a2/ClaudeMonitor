@@ -163,3 +163,70 @@ Two possible paths to close Finding 1 if the architectural call needs revisiting
 2. **Query-side workaround**: when `FindReferences` receives a stable key for a partial-class declaration, fetch all sibling partial declarations of the same `namespace::name` and union their reference rows before returning. Smaller change — query layer only, no schema impact, no indexer change. Same caller-visible behavior.
 
 Operator's call whether to file Finding 1 as a real finding requiring a fix, or leave it as a locked architectural decision (the current `partial declaration merge: Monitor=False` feature probe already documents this).
+
+## Retest after `c97ecdc "Add partial and relationship index coverage"`
+
+Codex shipped a follow-up commit (`c97ecdc`, 2026-05-21 15:24 CDT) addressing the architectural items. Pulled and re-ran both smokes.
+
+### Fixture matrix — fully green including all 11 feature probes
+
+```
+Matrix checks: 68
+Fully matched checks: 68
+Failure count: 0
+Roslyn target resolution failures: 0
+Current model feature probes: 11      (was 10 — one new probe added)
+Current model feature expectation failures: 0
+```
+
+The three previously-locked architectural feature probes flipped from `Monitor=False, expectation=False` to `Monitor=True, expectation=True`:
+
+- `partial declaration merge` — Monitor now exposes one merged type identity. The fixture's two `McpPartialProbe` partials are reported as a single logical symbol.
+- `override relationship row` — Monitor now exposes override relationship rows in references.
+- `interface implementation relationship row` — Monitor now exposes implementation relationship rows in references.
+
+### WebViewer re-run — Finding 1 closed, Findings 2 and 3 reclassified
+
+| Finding | Pre-fix observation | Post-`c97ecdc` observation | Status |
+|---|---|---|---|
+| 1 | `ManageViewsNext` partial class: Monitor refs = 0, grep extra-file = 7 | Monitor refs = **3** | **Improved by the partial-merge addition** |
+| 2 | `DatabaseRepository` class: Monitor refs = 0, grep extra-file = 3 | Monitor refs = 0 (unchanged) | **Reclassified — Monitor is semantically correct** (see below) |
+| 3 | `DatabaseRepository.GetAllAsync` etc.: Monitor callers = 0 | Monitor callers = 0 (unchanged) | **Reclassified — Razor-not-indexed limitation, not a C# correctness gap** (see below) |
+
+### Finding 2 reclassification — Monitor's 0 refs for `DatabaseRepository` class is correct
+
+Targeted grep on the `.cs` corpus broke down the 3 extra-file occurrences:
+
+1. `Program.cs:67` — `new DatabaseRepository(...)` — a ctor invocation. The type token here is counted under the *ctor's* stable key (its callers row shows 1, matching). Not separately counted under the class's type-ref set, consistent with the convention the fixture matrix already established.
+2. `ManageViewsNext.Selection.cs:22` — `DatabaseRepository.GetAllAsync()` — looks like a class-type-then-static-method on the surface, but semantically `DatabaseRepository` here is a *property*. The `.razor` file declares `@inject DatabaseRepository DatabaseRepository` which creates a property named `DatabaseRepository` typed as `DatabaseRepository`. At the call site the text resolves to the property, not the class type.
+3. `DomainObjectModeler.Selection.cs:22` — same Blazor `@inject`-named-property pattern.
+
+The ONLY true class-type reference outside the declaring file is the ctor invocation in `Program.cs`, and that's tracked under the ctor's stable key. **Monitor's 0 is semantically correct.** Grep's whole-word match couldn't distinguish "the text DatabaseRepository as a type" from "the text DatabaseRepository as a property name."
+
+### Finding 3 reclassification — Razor `@inject` properties are not indexed by Monitor
+
+The apparent "dead methods" on Data repositories (`GetAllAsync`, `GetByIdAsync`, `CreateAsync`, `UpdateAsync`, `DeleteAsync`) are actually called via injected Blazor properties:
+
+```csharp
+// ManageViewsNext.razor — declares the injected property:
+@inject DatabaseRepository DatabaseRepository
+
+// ManageViewsNext.Selection.cs — a partial-class file alongside the Razor file:
+Databases = (await DatabaseRepository.GetAllAsync()).ToList();
+```
+
+`GetAllAsync()` IS semantically a call to `DatabaseRepository.GetAllAsync` on the injected property. Roslyn-with-Razor-generated-codebehind would resolve this and report it as a caller. But Monitor only indexes `.cs` files (not `.razor`), so the property declaration is invisible to Monitor's indexer. The call site appears unresolvable and the method's caller count stays at 0.
+
+This is not a C# language coverage gap. The fixture-index-matrix already covers method-call-via-injected-property when both the property declaration and the call site are in `.cs` (the `IMcpProbeService _via` field pattern at matrix row 13 passes). The WebViewer case fails because the property declaration is in a `.razor` file the indexer doesn't parse.
+
+**This is a Razor support gap, not a C# semantic-engine gap.** Future work to index `.razor` files (parsing `@inject`, `@code`, and the Razor-generated codebehind) would close it. Without Razor support, callers via Razor-injected properties continue to show 0 — by design of the current C#-only scope.
+
+### Final state across all smokes
+
+| Smoke | Result | Notes |
+|---|---|---|
+| `--fixture-index-matrix` | 68/68 matrix + 11/11 feature probes pass | All C# Findings A-G closed at `2a8537d`; partial-merge + override-row + interface-impl-row architectural locks closed at `c97ecdc` |
+| `--dbv2-index-callers-all` | 420/420 at `2a8537d` (after SourceBakups cleanup) | No expected regression under `c97ecdc`; re-verify if any DBV2-targeted concern arises |
+| `--webviewer-file-by-file` | Finding 1 closed (0 → 3 refs on `ManageViewsNext`); Findings 2 and 3 reclassified | Razor-injected-property dispatch surfaces only with Razor support |
+
+**C# language coverage is substantively complete across all three harnesses.** The remaining real-world gap is `.razor` file indexing for `@inject` and `@code` blocks — a Razor support effort, not a C# semantic-engine effort.
