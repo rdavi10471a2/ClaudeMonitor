@@ -26,6 +26,7 @@ public sealed class SolutionIndexControl : UserControl
     private readonly DataGridView symbolsGrid;
     private readonly DataGridView referencesGrid;
     private SplitContainer? mainSplit;
+    private string referenceViewMode = "references";
 
     public SolutionIndexControl(MonitorClientSettings settings)
     {
@@ -212,6 +213,7 @@ public sealed class SolutionIndexControl : UserControl
         callersButton.Click += (_, _) => QuerySelectedSymbolCallers();
         rebuildButton.Click += async (_, _) => await RebuildIndexAsync();
         indexTree.AfterSelect += (_, args) => QueryTreeNode(args.Node);
+        symbolsGrid.SelectionChanged += (_, _) => QuerySelectedSymbolReferenceRows(referenceViewMode == "callers", showSelectionMessage: false);
         scopeBox.SelectedIndexChanged += (_, _) =>
         {
             valueBox.Enabled = !string.Equals(scopeBox.Text, "solution", StringComparison.OrdinalIgnoreCase);
@@ -294,22 +296,28 @@ public sealed class SolutionIndexControl : UserControl
 
     private void QuerySelectedSymbolReferences()
     {
-        QuerySelectedSymbolReferenceRows(onlyCallers: false);
+        referenceViewMode = "references";
+        QuerySelectedSymbolReferenceRows(onlyCallers: false, showSelectionMessage: true);
     }
 
     private void QuerySelectedSymbolCallers()
     {
-        QuerySelectedSymbolReferenceRows(onlyCallers: true);
+        referenceViewMode = "callers";
+        QuerySelectedSymbolReferenceRows(onlyCallers: true, showSelectionMessage: true);
     }
 
-    private void QuerySelectedSymbolReferenceRows(bool onlyCallers)
+    private void QuerySelectedSymbolReferenceRows(bool onlyCallers, bool showSelectionMessage)
     {
         try
         {
             string? stableKey = GetSelectedSymbolStableKey();
             if (string.IsNullOrWhiteSpace(stableKey))
             {
-                statusLabel.Text = "Select a symbol row first.";
+                if (showSelectionMessage)
+                {
+                    statusLabel.Text = "Select a symbol row first.";
+                }
+
                 return;
             }
 
