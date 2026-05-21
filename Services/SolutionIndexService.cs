@@ -10,7 +10,7 @@ using MonitorBaseClaude.AI;
 namespace MonitorBaseClaude.Services;
 
 [AIFileContext("SolutionIndexService.cs", "Builds and queries the monitor-owned SQLite index for watched C# solution structure.")]
-[FileVersion("1.0")]
+[FileVersion("1.1")]
 public sealed class SolutionIndexService
 {
     private static readonly string[] ExcludedDirectoryNames =
@@ -171,8 +171,8 @@ public sealed class SolutionIndexService
 
         string normalizedScope = NormalizeScope(scope);
         string? normalizedValue = string.IsNullOrWhiteSpace(value) ? null : value.Trim();
-        maxFiles = Math.Clamp(maxFiles, 1, 1000);
-        maxSymbols = Math.Clamp(maxSymbols, 1, 5000);
+        maxFiles = Math.Clamp(maxFiles, 1, 5000);
+        maxSymbols = Math.Clamp(maxSymbols, 1, 50000);
 
         using SqliteConnection connection = OpenConnection(dbPath);
         IReadOnlyList<SolutionIndexFile> files = QueryFiles(connection, normalizedScope, normalizedValue, maxFiles);
@@ -237,7 +237,7 @@ public sealed class SolutionIndexService
         using SqliteCommand command = connection.CreateCommand();
         StringBuilder sql = new(
             """
-            select s.stable_key, f.relative_path, s.namespace, s.containing_type, s.kind, s.name, s.signature, s.start_line, s.end_line
+            select s.stable_key, f.relative_path, f.sha256, s.text_hash, s.namespace, s.containing_type, s.kind, s.name, s.signature, s.start_line, s.end_line
             from symbols s
             join files f on f.id = s.file_id
             where s.name like $text escape '\'
@@ -252,7 +252,7 @@ public sealed class SolutionIndexService
         if (!string.IsNullOrWhiteSpace(namespaceName))
         {
             sql.AppendLine("and s.namespace = $namespace");
-            command.Parameters.AddWithValue("$namespace", namespaceName.Trim());
+            command.Parameters.AddWithValue("$namespace", NormalizeNamespaceValue(namespaceName));
         }
 
         sql.AppendLine("order by s.name collate nocase, f.relative_path collate nocase limit $limit;");
@@ -273,7 +273,7 @@ public sealed class SolutionIndexService
         using SqliteCommand command = connection.CreateCommand();
         command.CommandText =
             """
-            select s.stable_key, f.relative_path, s.namespace, s.containing_type, s.kind, s.name, s.signature, s.start_line, s.end_line
+            select s.stable_key, f.relative_path, f.sha256, s.text_hash, s.namespace, s.containing_type, s.kind, s.name, s.signature, s.start_line, s.end_line
             from symbols s
             join files f on f.id = s.file_id
             where s.stable_key = $stableKey
@@ -346,7 +346,8 @@ public sealed class SolutionIndexService
                 name text not null,
                 signature text not null,
                 start_line integer not null,
-                end_line integer not null
+                end_line integer not null,
+                text_hash text not null default ''
             );
 
             create table if not exists diagnostics (
@@ -365,6 +366,7 @@ public sealed class SolutionIndexService
             create index if not exists ix_symbols_namespace on symbols(namespace);
             create index if not exists ix_symbols_kind on symbols(kind);
             """);
+        EnsureColumn(connection, "symbols", "text_hash", "text not null default ''");
     }
 
     private static long InsertIndexRun(SqliteConnection connection, SqliteTransaction transaction, string observedRoot, string observedRootKey, string watchedSolutionPath, DateTimeOffset indexedAt)
@@ -434,8 +436,8 @@ public sealed class SolutionIndexService
         command.Transaction = transaction;
         command.CommandText =
             """
-            insert into symbols(file_id, stable_key, namespace, containing_type, kind, name, signature, start_line, end_line)
-            values ($fileId, $stableKey, $namespace, $containingType, $kind, $name, $signature, $startLine, $endLine);
+            insert into symbols(file_id, stable_key, namespace, containing_type, kind, name, signature, start_line, end_line, text_hash)
+            values ($fileId, $stableKey, $namespace, $containingType, $kind, $name, $signature, $startLine, $endLine, $textHash);
             """;
         command.Parameters.AddWithValue("$fileId", fileId);
         command.Parameters.AddWithValue("$stableKey", symbol.StableKey);
@@ -446,6 +448,7 @@ public sealed class SolutionIndexService
         command.Parameters.AddWithValue("$signature", symbol.Signature);
         command.Parameters.AddWithValue("$startLine", symbol.StartLine);
         command.Parameters.AddWithValue("$endLine", symbol.EndLine);
+        command.Parameters.AddWithValue("$textHash", symbol.TextHash);
         command.ExecuteNonQuery();
     }
 
@@ -500,10 +503,11 @@ public sealed class SolutionIndexService
         string @namespace = GetContainingNamespace(member);
         string? containingType = GetContainingType(member);
         string relativeKeyPath = relativePath.Replace('\\', '/');
-        foreach ((string Kind, string Name, string Signature, string ParameterSuffix) item in GetMemberSymbolParts(member))
+        string textHash = ComputeSha256Text(member.NormalizeWhitespace().ToFullString());
+        foreach ((string Kind, string Name, string KeyName, string Signature, string ParameterSuffix) item in GetMemberSymbolParts(member))
         {
             FileLinePositionSpan span = tree.GetLineSpan(member.Span);
-            string stableKey = $"{relativeKeyPath}::{@namespace}::{containingType ?? string.Empty}::{item.Kind}::{item.Name}{item.ParameterSuffix}";
+            string stableKey = $"{relativeKeyPath}::{@namespace}::{containingType ?? string.Empty}::{item.Kind}::{item.KeyName}{item.ParameterSuffix}";
             yield return new IndexedSymbolBuild(
                 stableKey,
                 @namespace,
@@ -511,58 +515,51 @@ public sealed class SolutionIndexService
                 item.Kind,
                 item.Name,
                 item.Signature,
+                textHash,
                 span.StartLinePosition.Line + 1,
                 span.EndLinePosition.Line + 1);
         }
     }
 
-    private static IEnumerable<(string Kind, string Name, string Signature, string ParameterSuffix)> GetMemberSymbolParts(MemberDeclarationSyntax member)
+    private static IEnumerable<(string Kind, string Name, string KeyName, string Signature, string ParameterSuffix)> GetMemberSymbolParts(MemberDeclarationSyntax member)
     {
         switch (member)
         {
             case ClassDeclarationSyntax node:
-                yield return ("class", node.Identifier.ValueText, BuildSignature(node), string.Empty);
+                yield return ("class", node.Identifier.ValueText, node.Identifier.ValueText, BuildSignature(node), string.Empty);
                 break;
             case StructDeclarationSyntax node:
-                yield return ("struct", node.Identifier.ValueText, BuildSignature(node), string.Empty);
+                yield return ("struct", node.Identifier.ValueText, node.Identifier.ValueText, BuildSignature(node), string.Empty);
                 break;
             case InterfaceDeclarationSyntax node:
-                yield return ("interface", node.Identifier.ValueText, BuildSignature(node), string.Empty);
+                yield return ("interface", node.Identifier.ValueText, node.Identifier.ValueText, BuildSignature(node), string.Empty);
                 break;
             case RecordDeclarationSyntax node:
-                yield return ("record", node.Identifier.ValueText, BuildSignature(node), BuildParameterSuffix(node.ParameterList));
+                yield return ("record", node.Identifier.ValueText, node.Identifier.ValueText, BuildSignature(node), BuildParameterSuffix(node.ParameterList));
                 break;
             case EnumDeclarationSyntax node:
-                yield return ("enum", node.Identifier.ValueText, BuildSignature(node), string.Empty);
+                yield return ("enum", node.Identifier.ValueText, node.Identifier.ValueText, BuildSignature(node), string.Empty);
                 break;
             case DelegateDeclarationSyntax node:
-                yield return ("delegate", node.Identifier.ValueText, BuildSignature(node), BuildParameterSuffix(node.ParameterList));
+                yield return ("delegate", node.Identifier.ValueText, node.Identifier.ValueText, BuildSignature(node), BuildParameterSuffix(node.ParameterList));
                 break;
             case MethodDeclarationSyntax node:
-                yield return ("method", node.Identifier.ValueText, BuildSignature(node), BuildParameterSuffix(node.ParameterList));
+                yield return ("method", node.Identifier.ValueText, node.Identifier.ValueText, BuildSignature(node), BuildParameterSuffix(node.ParameterList));
                 break;
             case ConstructorDeclarationSyntax node:
-                yield return ("constructor", node.Identifier.ValueText, BuildSignature(node), BuildParameterSuffix(node.ParameterList));
+                yield return ("constructor", node.Identifier.ValueText, node.Identifier.ValueText, BuildSignature(node), BuildParameterSuffix(node.ParameterList));
                 break;
             case PropertyDeclarationSyntax node:
-                yield return ("property", node.Identifier.ValueText, BuildSignature(node), string.Empty);
+                yield return ("property", node.Identifier.ValueText, node.Identifier.ValueText, BuildSignature(node), string.Empty);
                 break;
             case EventDeclarationSyntax node:
-                yield return ("event", node.Identifier.ValueText, BuildSignature(node), string.Empty);
+                yield return ("event", node.Identifier.ValueText, node.Identifier.ValueText, BuildSignature(node), string.Empty);
                 break;
             case EventFieldDeclarationSyntax node:
-                foreach (VariableDeclaratorSyntax variable in node.Declaration.Variables)
-                {
-                    yield return ("event", variable.Identifier.ValueText, BuildSignature(node), string.Empty);
-                }
-
+                yield return ("event", BuildVariableNameList(node.Declaration.Variables, includeSpaces: true), BuildVariableNameList(node.Declaration.Variables, includeSpaces: false), BuildSignature(node), string.Empty);
                 break;
             case FieldDeclarationSyntax node:
-                foreach (VariableDeclaratorSyntax variable in node.Declaration.Variables)
-                {
-                    yield return ("field", variable.Identifier.ValueText, BuildSignature(node), string.Empty);
-                }
-
+                yield return ("field", BuildVariableNameList(node.Declaration.Variables, includeSpaces: true), BuildVariableNameList(node.Declaration.Variables, includeSpaces: false), BuildSignature(node), string.Empty);
                 break;
         }
     }
@@ -601,12 +598,8 @@ public sealed class SolutionIndexService
     private static string GetStableKeyParameterType(ParameterSyntax parameter)
     {
         string type = parameter.Type?.ToString() ?? string.Empty;
-        SyntaxToken modifier = parameter.Modifiers.FirstOrDefault(token =>
-            token.IsKind(SyntaxKind.RefKeyword)
-            || token.IsKind(SyntaxKind.OutKeyword)
-            || token.IsKind(SyntaxKind.InKeyword)
-            || token.IsKind(SyntaxKind.ParamsKeyword));
-        return modifier.RawKind == 0 ? type : $"{modifier.Text} {type}";
+        string modifier = parameter.Modifiers.ToFullString().Trim();
+        return string.IsNullOrWhiteSpace(modifier) ? type : $"{modifier} {type}";
     }
 
     private static string GetContainingNamespace(SyntaxNode node)
@@ -620,8 +613,12 @@ public sealed class SolutionIndexService
 
     private static string? GetContainingType(SyntaxNode node)
     {
-        BaseTypeDeclarationSyntax? type = node.Ancestors().OfType<BaseTypeDeclarationSyntax>().FirstOrDefault();
-        return type?.Identifier.ValueText;
+        string[] names = node.Ancestors()
+            .OfType<BaseTypeDeclarationSyntax>()
+            .Reverse()
+            .Select(type => type.Identifier.ValueText)
+            .ToArray();
+        return names.Length == 0 ? null : string.Join(".", names);
     }
 
     private static IndexedDiagnosticBuild BuildDiagnostic(SyntaxTree tree, Diagnostic diagnostic)
@@ -644,7 +641,7 @@ public sealed class SolutionIndexService
             from files
             where ($scope = 'solution')
                 or ($scope = 'file' and relative_path = $value)
-                or ($scope = 'folder' and relative_path like $valuePrefix escape '\')
+                or ($scope = 'folder' and replace(relative_path, '\', '/') like $valuePrefix escape '\')
                 or ($scope = 'namespace' and exists (
                     select 1 from symbols s where s.file_id = files.id and s.namespace = $value
                 ))
@@ -674,12 +671,12 @@ public sealed class SolutionIndexService
         using SqliteCommand command = connection.CreateCommand();
         command.CommandText =
             """
-            select s.stable_key, f.relative_path, s.namespace, s.containing_type, s.kind, s.name, s.signature, s.start_line, s.end_line
+            select s.stable_key, f.relative_path, f.sha256, s.text_hash, s.namespace, s.containing_type, s.kind, s.name, s.signature, s.start_line, s.end_line
             from symbols s
             join files f on f.id = s.file_id
             where ($scope = 'solution')
                 or ($scope = 'file' and f.relative_path = $value)
-                or ($scope = 'folder' and f.relative_path like $valuePrefix escape '\')
+                or ($scope = 'folder' and replace(f.relative_path, '\', '/') like $valuePrefix escape '\')
                 or ($scope = 'namespace' and s.namespace = $value)
             order by f.relative_path collate nocase, s.start_line, s.name collate nocase
             limit $limit;
@@ -698,12 +695,14 @@ public sealed class SolutionIndexService
                 reader.GetString(0),
                 reader.GetString(1),
                 reader.GetString(2),
-                reader.IsDBNull(3) ? null : reader.GetString(3),
+                reader.GetString(3),
                 reader.GetString(4),
-                reader.GetString(5),
+                reader.IsDBNull(5) ? null : reader.GetString(5),
                 reader.GetString(6),
-                reader.GetInt32(7),
-                reader.GetInt32(8)));
+                reader.GetString(7),
+                reader.GetString(8),
+                reader.GetInt32(9),
+                reader.GetInt32(10)));
         }
 
         return symbols;
@@ -711,10 +710,12 @@ public sealed class SolutionIndexService
 
     private static void BindScopeParameters(SqliteCommand command, string scope, string? value, int limit)
     {
-        string normalizedValue = NormalizeRelativePath(value ?? string.Empty);
+        string normalizedValue = scope.Equals("namespace", StringComparison.OrdinalIgnoreCase)
+            ? NormalizeNamespaceValue(value)
+            : NormalizeRelativePath(value ?? string.Empty);
         command.Parameters.AddWithValue("$scope", scope);
         command.Parameters.AddWithValue("$value", normalizedValue);
-        command.Parameters.AddWithValue("$valuePrefix", EscapeLike(normalizedValue.TrimEnd('\\', '/')) + "\\%");
+        command.Parameters.AddWithValue("$valuePrefix", EscapeLike(NormalizeIndexPath(normalizedValue).TrimEnd('/')) + "/%");
         command.Parameters.AddWithValue("$limit", limit);
     }
 
@@ -834,6 +835,17 @@ public sealed class SolutionIndexService
         return path.Replace('/', Path.DirectorySeparatorChar).Replace('\\', Path.DirectorySeparatorChar);
     }
 
+    private static string NormalizeIndexPath(string path)
+    {
+        return path.Replace('\\', '/');
+    }
+
+    private static string NormalizeNamespaceValue(string? value)
+    {
+        string normalized = value?.Trim() ?? string.Empty;
+        return normalized.Equals("(global)", StringComparison.OrdinalIgnoreCase) ? string.Empty : normalized;
+    }
+
     private static string EscapeLike(string value)
     {
         return value.Replace(@"\", @"\\", StringComparison.Ordinal)
@@ -845,6 +857,35 @@ public sealed class SolutionIndexService
     {
         using FileStream stream = File.OpenRead(path);
         return Convert.ToHexString(SHA256.HashData(stream)).ToLowerInvariant();
+    }
+
+    private static string ComputeSha256Text(string text)
+    {
+        return Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(text))).ToLowerInvariant();
+    }
+
+    private static string BuildVariableNameList(SeparatedSyntaxList<VariableDeclaratorSyntax> variables, bool includeSpaces)
+    {
+        string separator = includeSpaces ? ", " : ",";
+        return string.Join(separator, variables.Select(variable => variable.Identifier.ValueText));
+    }
+
+    private static void EnsureColumn(SqliteConnection connection, string tableName, string columnName, string definition)
+    {
+        using SqliteCommand exists = connection.CreateCommand();
+        exists.CommandText = $"pragma table_info({tableName});";
+        using SqliteDataReader reader = exists.ExecuteReader();
+        while (reader.Read())
+        {
+            if (reader.GetString(1).Equals(columnName, StringComparison.OrdinalIgnoreCase))
+            {
+                return;
+            }
+        }
+
+        using SqliteCommand alter = connection.CreateCommand();
+        alter.CommandText = $"alter table {tableName} add column {columnName} {definition};";
+        alter.ExecuteNonQuery();
     }
 
     private static string BuildObservedRootKey(string observedRoot)
@@ -890,6 +931,7 @@ public sealed class SolutionIndexService
         string Kind,
         string Name,
         string Signature,
+        string TextHash,
         int StartLine,
         int EndLine);
 
@@ -963,6 +1005,8 @@ public sealed record SolutionIndexFile(
 public sealed record SolutionIndexSymbol(
     string StableSymbolKey,
     string RelativePath,
+    string FileHash,
+    string SymbolTextHash,
     string Namespace,
     string? ContainingType,
     string Kind,

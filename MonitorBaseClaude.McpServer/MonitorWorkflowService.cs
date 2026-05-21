@@ -1534,7 +1534,7 @@ public sealed partial class MonitorWorkflowService
             throw new InvalidOperationException("Namespace scope requires namespaceName or path.");
         }
 
-        return file.Symbols.Any(symbol => string.Equals(symbol.Namespace, namespaceName, StringComparison.Ordinal));
+        return file.Namespaces?.Any(candidate => string.Equals(candidate, namespaceName, StringComparison.Ordinal)) == true;
     }
 
     private static void EnsurePathIsUnderObservedRoot(string observedRoot, string path)
@@ -2686,6 +2686,28 @@ public sealed partial class MonitorWorkflowService
             .ToArray();
     }
 
+    private static string[] GetDeclaredNamespaces(CompilationUnitSyntax root)
+    {
+        return root.DescendantNodes()
+            .OfType<BaseNamespaceDeclarationSyntax>()
+            .Select(BuildDeclaredNamespaceName)
+            .Where(value => !string.IsNullOrWhiteSpace(value))
+            .Distinct(StringComparer.Ordinal)
+            .OrderBy(value => value, StringComparer.Ordinal)
+            .ToArray();
+    }
+
+    private static string BuildDeclaredNamespaceName(BaseNamespaceDeclarationSyntax namespaceDeclaration)
+    {
+        string[] containingNames = namespaceDeclaration.Ancestors()
+            .OfType<BaseNamespaceDeclarationSyntax>()
+            .Reverse()
+            .Select(ancestor => ancestor.Name.ToString())
+            .ToArray();
+        string ownName = namespaceDeclaration.Name.ToString();
+        return containingNames.Length == 0 ? ownName : string.Join(".", containingNames.Append(ownName));
+    }
+
     private static MonitorSourceMapFile BuildSourceMapFile(string observedRoot, string sourcePath)
     {
         string text = File.ReadAllText(sourcePath);
@@ -2710,6 +2732,7 @@ public sealed partial class MonitorWorkflowService
             diagnostics.Length,
             diagnostics.Select(ToSourceMapDiagnostic).Take(10).ToArray(),
             GetUsings(root),
+            GetDeclaredNamespaces(root),
             symbols);
     }
 
@@ -2731,6 +2754,7 @@ public sealed partial class MonitorWorkflowService
                 SourceFilePath = null,
                 DiagnosticsSummary = file.DiagnosticCount > 0 ? file.DiagnosticsSummary : null,
                 Usings = NullIfEmpty(file.Usings),
+                Namespaces = NullIfEmpty(file.Namespaces),
                 Symbols = symbols
             };
         }
@@ -2742,6 +2766,7 @@ public sealed partial class MonitorWorkflowService
                 SourceFilePath = null,
                 DiagnosticsSummary = file.DiagnosticCount > 0 ? file.DiagnosticsSummary : null,
                 Usings = NullIfEmpty(file.Usings),
+                Namespaces = NullIfEmpty(file.Namespaces),
                 Symbols = symbols
             };
         }
@@ -2753,6 +2778,7 @@ public sealed partial class MonitorWorkflowService
             Length = null,
             DiagnosticsSummary = file.DiagnosticCount > 0 ? file.DiagnosticsSummary : null,
             Usings = null,
+            Namespaces = NullIfEmpty(file.Namespaces),
             Symbols = symbols
         };
     }
@@ -3545,6 +3571,7 @@ public sealed record MonitorSourceMapFile(
     int DiagnosticCount,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] IReadOnlyList<MonitorSourceMapDiagnostic>? DiagnosticsSummary,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] IReadOnlyList<string>? Usings,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] IReadOnlyList<string>? Namespaces,
     IReadOnlyList<MonitorSourceMapSymbol> Symbols);
 
 public sealed record MonitorSourceMapDiagnostic(

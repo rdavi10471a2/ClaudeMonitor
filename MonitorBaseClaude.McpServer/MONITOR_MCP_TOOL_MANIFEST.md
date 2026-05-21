@@ -361,7 +361,7 @@ Returns the local SQLite database path, watched solution path, observed root key
 
 ### `get_solution_index`
 
-Returns the indexed file and symbol JSON for the watched solution. Use `maxFiles` and `maxSymbols` to budget the payload.
+Returns the indexed file and symbol JSON for the watched solution. Use `maxFiles` and `maxSymbols` to budget the payload. Symbol rows include `fileHash` and `symbolTextHash` so clients can verify freshness before using a cached stable key for edit targeting.
 
 ### `get_solution_index_tree`
 
@@ -369,7 +369,7 @@ Returns compact solution tree JSON: solution index status, namespaces, and files
 
 ### `query_solution_index`
 
-Returns indexed files and symbols from the monitor-owned SQLite index without reparsing the watched solution. Supported scopes are `solution`, `namespace`, `folder`, and `file`.
+Returns indexed files and symbols from the monitor-owned SQLite index without reparsing the watched solution. Supported scopes are `solution`, `namespace`, `folder`, and `file`. Folder scopes use descendant path matching; namespace scope accepts `(global)` as the UI display value for the empty/global namespace.
 
 ### `find_indexed_symbols`
 
