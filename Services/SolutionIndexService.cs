@@ -12,7 +12,7 @@ using MonitorBaseClaude.AI;
 namespace MonitorBaseClaude.Services;
 
 [AIFileContext("SolutionIndexService.cs", "Builds and queries the monitor-owned SQLite index for watched C# solution structure.")]
-[FileVersion("1.4")]
+[FileVersion("1.5")]
 public sealed class SolutionIndexService
 {
     private static readonly string[] ExcludedDirectoryNames =
@@ -662,6 +662,70 @@ public sealed class SolutionIndexService
                     column,
                     snippet));
             }
+
+            foreach (ImplicitObjectCreationExpressionSyntax creation in file.Root.DescendantNodes().OfType<ImplicitObjectCreationExpressionSyntax>())
+            {
+                ISymbol? symbol = GetBestSymbol(model.GetSymbolInfo(creation));
+                string? targetStableKey = GetStableKeyForSymbol(symbol, filesByRelativePath);
+                if (string.IsNullOrWhiteSpace(targetStableKey))
+                {
+                    continue;
+                }
+
+                FileLinePositionSpan span = file.SyntaxTree.GetLineSpan(creation.NewKeyword.Span);
+                int line = span.StartLinePosition.Line + 1;
+                int column = span.StartLinePosition.Character + 1;
+                string referenceKind = "construction";
+                string? callerStableKey = GetCallerStableKey(file.SyntaxTree, file.RelativePath, creation);
+                string snippet = GetLineSnippet(file.SyntaxTree, creation.Span);
+                string seenKey = $"{targetStableKey}|{NormalizeIndexPath(file.RelativePath)}|{line}|{column}|{referenceKind}";
+                if (!seen.Add(seenKey))
+                {
+                    continue;
+                }
+
+                references.Add(new IndexedReferenceBuild(
+                    targetStableKey,
+                    callerStableKey,
+                    file.RelativePath,
+                    referenceKind,
+                    true,
+                    line,
+                    column,
+                    snippet));
+            }
+
+            foreach (AttributeSyntax attribute in file.Root.DescendantNodes().OfType<AttributeSyntax>())
+            {
+                ISymbol? symbol = GetAttributeTypeSymbol(model, attribute);
+                string? targetStableKey = GetStableKeyForSymbol(symbol, filesByRelativePath);
+                if (string.IsNullOrWhiteSpace(targetStableKey))
+                {
+                    continue;
+                }
+
+                FileLinePositionSpan span = file.SyntaxTree.GetLineSpan(attribute.Name.Span);
+                int line = span.StartLinePosition.Line + 1;
+                int column = span.StartLinePosition.Character + 1;
+                string referenceKind = "attribute";
+                string? callerStableKey = GetCallerStableKey(file.SyntaxTree, file.RelativePath, attribute);
+                string snippet = GetLineSnippet(file.SyntaxTree, attribute.Name.Span);
+                string seenKey = $"{targetStableKey}|{NormalizeIndexPath(file.RelativePath)}|{line}|{column}|{referenceKind}";
+                if (!seen.Add(seenKey))
+                {
+                    continue;
+                }
+
+                references.Add(new IndexedReferenceBuild(
+                    targetStableKey,
+                    callerStableKey,
+                    file.RelativePath,
+                    referenceKind,
+                    false,
+                    line,
+                    column,
+                    snippet));
+            }
         }
 
         return references;
@@ -1082,6 +1146,17 @@ public sealed class SolutionIndexService
     private static ISymbol? GetBestSymbol(SymbolInfo symbolInfo)
     {
         return symbolInfo.Symbol ?? symbolInfo.CandidateSymbols.FirstOrDefault();
+    }
+
+    private static ISymbol? GetAttributeTypeSymbol(SemanticModel model, AttributeSyntax attribute)
+    {
+        ISymbol? symbol = GetBestSymbol(model.GetSymbolInfo(attribute));
+        if (symbol is IMethodSymbol method)
+        {
+            return method.ContainingType;
+        }
+
+        return symbol ?? model.GetTypeInfo(attribute).Type;
     }
 
     private static string ClassifyReferenceKind(SimpleNameSyntax name)
