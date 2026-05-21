@@ -1,0 +1,9 @@
+﻿using System.Collections.Generic;
+namespace SchemaStudio.SemanticModel.Model;
+
+public partial class McpAddApiFixture
+{
+    public sealed class Nested { public int Value { get; set; } }
+    public McpAddApiFixture(string parm) { }
+    public McpAddApiFixture(string parm, int count) { }
+}
