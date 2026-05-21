@@ -289,6 +289,7 @@ public sealed class SolutionIndexService
 
     public SolutionIndexSymbol? GetSymbol(string stableSymbolKey)
     {
+        stableSymbolKey = NormalizeStableSymbolKey(stableSymbolKey);
         string dbPath = GetIndexDatabasePath();
         if (!File.Exists(dbPath) || string.IsNullOrWhiteSpace(stableSymbolKey))
         {
@@ -628,12 +629,7 @@ public sealed class SolutionIndexService
             SemanticModel model = compilation.GetSemanticModel(file.SyntaxTree, ignoreAccessibility: true);
             foreach (SimpleNameSyntax name in file.Root.DescendantNodes().OfType<SimpleNameSyntax>())
             {
-                ISymbol? symbol = model.GetSymbolInfo(name).Symbol;
-                if (symbol is null)
-                {
-                    continue;
-                }
-
+                ISymbol? symbol = GetBestSymbol(model.GetSymbolInfo(name));
                 string? callTargetStableKey = GetCallTargetStableKey(model, name, filesByRelativePath, out string? callKind);
                 string? targetStableKey = callTargetStableKey ?? GetStableKeyForSymbol(symbol, filesByRelativePath);
                 if (string.IsNullOrWhiteSpace(targetStableKey))
@@ -953,17 +949,26 @@ public sealed class SolutionIndexService
         if (IsInvocationName(name, out InvocationExpressionSyntax? invocation) && invocation is not null)
         {
             callKind = "invocation";
-            return GetStableKeyForSymbol(model.GetSymbolInfo(invocation).Symbol, filesByRelativePath);
+            ISymbol? invocationSymbol = GetBestSymbol(model.GetSymbolInfo(invocation))
+                ?? GetBestSymbol(model.GetSymbolInfo(name));
+            return GetStableKeyForSymbol(invocationSymbol, filesByRelativePath);
         }
 
         ObjectCreationExpressionSyntax? objectCreation = name.FirstAncestorOrSelf<ObjectCreationExpressionSyntax>();
         if (objectCreation is not null && objectCreation.Type.Span.Contains(name.Span))
         {
             callKind = "construction";
-            return GetStableKeyForSymbol(model.GetSymbolInfo(objectCreation).Symbol, filesByRelativePath);
+            ISymbol? constructionSymbol = GetBestSymbol(model.GetSymbolInfo(objectCreation))
+                ?? GetBestSymbol(model.GetSymbolInfo(name));
+            return GetStableKeyForSymbol(constructionSymbol, filesByRelativePath);
         }
 
         return null;
+    }
+
+    private static ISymbol? GetBestSymbol(SymbolInfo symbolInfo)
+    {
+        return symbolInfo.Symbol ?? symbolInfo.CandidateSymbols.FirstOrDefault();
     }
 
     private static string ClassifyReferenceKind(SimpleNameSyntax name)
@@ -1195,6 +1200,7 @@ public sealed class SolutionIndexService
 
     private IReadOnlyList<SolutionIndexReference> QueryReferenceRows(string stableSymbolKey, bool onlyCallSites, int maxResults)
     {
+        stableSymbolKey = NormalizeStableSymbolKey(stableSymbolKey);
         string dbPath = GetIndexDatabasePath();
         if (!File.Exists(dbPath) || string.IsNullOrWhiteSpace(stableSymbolKey))
         {
@@ -1389,6 +1395,17 @@ public sealed class SolutionIndexService
     private static string NormalizeIndexPath(string path)
     {
         return path.Replace('\\', '/');
+    }
+
+    private static string NormalizeStableSymbolKey(string stableSymbolKey)
+    {
+        int separatorIndex = stableSymbolKey.IndexOf("::", StringComparison.Ordinal);
+        if (separatorIndex < 0)
+        {
+            return stableSymbolKey.Replace('\\', '/');
+        }
+
+        return stableSymbolKey[..separatorIndex].Replace('\\', '/') + stableSymbolKey[separatorIndex..];
     }
 
     private static string NormalizeNamespaceValue(string? value)
