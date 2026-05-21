@@ -86,6 +86,14 @@ The expected C# context loop is:
 find_file -> get_source_map(mode: navigation) -> get_source_map(mode: selector) -> get_symbol -> get_file only when needed
 ```
 
+For index-first navigation, compact index artifacts are advisory discovery data, not edit authority. If selector data comes from `get_solution_index`, `get_solution_index_tree`, or cached compact index JSON, make a same-session freshness hop before composing an edit:
+
+```text
+get_solution_index or compact index -> choose file/symbol -> get_source_map(scope: "file", mode: "selector") or check_file_hash -> get_symbol -> submit/stage
+```
+
+If the live selector map no longer contains the symbol, the file hash changed unexpectedly, or the symbol is ambiguous, refresh the file selector/index data and rebuild the selector JSON before staging. Do not use stale cached selectors directly with submit/remove tools.
+
 Do not add source process markers or glyph/emoji anchors. Routine workflow state belongs in Monitor-owned staged records, sessions, ledgers, or review docs.
 
 ## Source-Map Corpus Smoke
@@ -112,6 +120,8 @@ Live `get_source_map` responses include ranked `suggestedNextCalls`. A good Clau
 - full response -> treat as audit/debug context, not the default broad orientation path
 
 The corpus index files are aggregate smoke artifacts, not exact live `get_source_map` envelopes. Live responses include `scope`, `mode`, `modePurpose`, budget metadata, and ranked `suggestedNextCalls`; corpus indexes are for comparing source-map size and structure across DBV2.
+
+When an edit path starts from an aggregate index, do one live file-level selector/hash check before `get_symbol` and staging. Treat cached `stableSymbolKey` values as a narrowing hint until the live selector response or `check_file_hash` confirms the current file state.
 
 ## Claude Workflow Learning Script
 
