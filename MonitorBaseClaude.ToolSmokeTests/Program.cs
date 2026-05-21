@@ -692,7 +692,12 @@ internal static class Program
             new("McpIndexerProbe.this[int] [indexer]", Key("McpIndexerProbe", "indexer", "this(int)"), 2, 2),
             new("McpOperatorProbe.operator + [binary op]", Key("McpOperatorProbe", "operator", "+(McpOperatorProbe,McpOperatorProbe)"), 1, 1),
             new("McpOperatorProbe.operator int [conversion]", Key("McpOperatorProbe", "conversion", "int(McpOperatorProbe)"), 1, 1),
-            new("McpFeatureEnum.FeatureAlpha [enum member]", Key(string.Empty, "enum-member", "FeatureAlpha"), null, 1)
+            new("McpFeatureEnum.FeatureAlpha [enum member]", Key(string.Empty, "enum-member", "FeatureAlpha"), null, 1),
+            // V1 async-pattern completeness additions (Claude 2026-05-21): await foreach + await using
+            new("McpAsyncEnumerableProbe", Key(string.Empty, "class", "McpAsyncEnumerableProbe"), null, 1),
+            new("McpAsyncEnumerableProbe.EnumerateAsync()", Key("McpAsyncEnumerableProbe", "method", "EnumerateAsync()"), 1, 1),
+            new("McpAsyncDisposableProbe", Key(string.Empty, "class", "McpAsyncDisposableProbe"), null, 2),
+            new("McpAsyncDisposableProbe.DisposeAsync() [implicit await using]", Key("McpAsyncDisposableProbe", "method", "DisposeAsync()"), 1, 1)
         ];
     }
 
@@ -1402,6 +1407,23 @@ internal static class Program
         {
             public new int VirtualProbe() => 9;
         }
+
+        public sealed class McpAsyncEnumerableProbe
+        {
+            public async System.Collections.Generic.IAsyncEnumerable<int> EnumerateAsync()
+            {
+                await System.Threading.Tasks.Task.Yield();
+                yield return 1;
+            }
+        }
+
+        public sealed class McpAsyncDisposableProbe : System.IAsyncDisposable
+        {
+            public async System.Threading.Tasks.ValueTask DisposeAsync()
+            {
+                await System.Threading.Tasks.Task.Yield();
+            }
+        }
         """;
 
     private const string FixtureSourceB =
@@ -1518,6 +1540,25 @@ internal static class Program
                 int viaDerived = hide.VirtualProbe();
                 McpVirtualBase asBase = hide;
                 return viaDerived + asBase.VirtualProbe();
+            }
+
+            public async System.Threading.Tasks.Task<int> CallsAwaitForeach()
+            {
+                int sum = 0;
+                await foreach (int item in new McpAsyncEnumerableProbe().EnumerateAsync())
+                {
+                    sum += item;
+                }
+
+                return sum;
+            }
+
+            public async System.Threading.Tasks.Task CallsAwaitUsing()
+            {
+                await using (var probe = new McpAsyncDisposableProbe())
+                {
+                    await System.Threading.Tasks.Task.Yield();
+                }
             }
         }
         """;

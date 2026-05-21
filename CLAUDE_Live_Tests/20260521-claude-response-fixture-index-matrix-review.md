@@ -384,6 +384,91 @@ Finding B is purely a key-format issue; either side can change to align.
 
 Finding F is Monitor-only; the smoke's Roslyn-side correctly finds enum-member references.
 
+## Third extension — async completeness
+
+Added two more fixture types and four matrix rows to verify async patterns explicitly.
+
+### Fixture additions
+
+```csharp
+// FixtureSourceA — declarations
+public sealed class McpAsyncEnumerableProbe
+{
+    public async System.Collections.Generic.IAsyncEnumerable<int> EnumerateAsync()
+    {
+        await System.Threading.Tasks.Task.Yield();
+        yield return 1;
+    }
+}
+
+public sealed class McpAsyncDisposableProbe : System.IAsyncDisposable
+{
+    public async System.Threading.Tasks.ValueTask DisposeAsync()
+    {
+        await System.Threading.Tasks.Task.Yield();
+    }
+}
+
+// FixtureSourceB — callers
+public async System.Threading.Tasks.Task<int> CallsAwaitForeach()
+{
+    int sum = 0;
+    await foreach (int item in new McpAsyncEnumerableProbe().EnumerateAsync())
+    {
+        sum += item;
+    }
+    return sum;
+}
+
+public async System.Threading.Tasks.Task CallsAwaitUsing()
+{
+    await using (var probe = new McpAsyncDisposableProbe())
+    {
+        await System.Threading.Tasks.Task.Yield();
+    }
+}
+```
+
+### New matrix rows
+
+```csharp
+new("McpAsyncEnumerableProbe", Key(string.Empty, "class", "McpAsyncEnumerableProbe"), null, 1),
+new("McpAsyncEnumerableProbe.EnumerateAsync()", Key("McpAsyncEnumerableProbe", "method", "EnumerateAsync()"), 1, 1),
+new("McpAsyncDisposableProbe", Key(string.Empty, "class", "McpAsyncDisposableProbe"), null, 2),
+new("McpAsyncDisposableProbe.DisposeAsync() [implicit await using]", Key("McpAsyncDisposableProbe", "method", "DisposeAsync()"), 1, 1),
+```
+
+### Async results
+
+```
+Matrix checks: 68
+Fully matched checks: 61
+Failure count: 7
+Roslyn target resolution failures: 0
+```
+
+- `McpAsyncEnumerableProbe.EnumerateAsync()` → **PASS** (1/1 callers, 1/1 refs). Async iterator method declaration + explicit invocation via await-foreach line is fully indexed.
+- `McpAsyncEnumerableProbe` type → **PASS** (1 ref, the ctor target).
+- `McpAsyncDisposableProbe` type → **PASS** (2 refs — corrected from my initial expected of 1 to 2 after the smoke caught the off-by-one).
+- `McpAsyncDisposableProbe.DisposeAsync() [implicit await using]` → **FAIL** (expected 1 caller for the implicit `DisposeAsync` invocation at the end of the await-using block; both engines return 0). **Finding G: implicit `DisposeAsync` call from `await using` block not walked.** Shared blind-spot family with Findings C/D/E — the dispatch happens without a `SimpleNameSyntax` for the method name.
+
+### Updated summary of remaining gaps (Findings A-G)
+
+| Gap | Affects | Engines blind | Suggested area to look |
+|---|---|---|---|
+| A: Chained ctor `: this()` / `: base()` | constructor callers | both | walk `ConstructorInitializerSyntax` |
+| B: Nested-type stable-key | Monitor lookup for nested-type members | smoke harness vs Monitor convention diverged | unify on full dotted path or derive key from index |
+| C: Indexer access `[...]` | indexer accessor callers | both | walk `ElementAccessExpressionSyntax`, resolve to indexer's `IPropertySymbol` |
+| D: User-defined binary operator | operator callers | both | walk `BinaryExpressionSyntax`, resolve via `GetSymbolInfo` |
+| E: User-defined conversion | conversion callers | both | walk implicit-conversion sites via `GetTypeInfo.ConvertedType` |
+| F: Enum member references | enum-member refs (Monitor only) | Monitor only | extend Monitor's symbol model to include enum-member kind |
+| G: Implicit `DisposeAsync` from `await using` | async-disposable callers | both | walk `UsingStatementSyntax` / `LocalDeclarationStatementSyntax` with `AwaitKeyword`, resolve the disposable's `DisposeAsync` symbol |
+
+Async-pattern conclusions:
+- **Everyday async (declare async method, `await target.AsyncMethod()`)**: fully verified, no gap.
+- **Async iterator (`async IAsyncEnumerable<T>` + `yield return`)**: declaration indexed correctly, explicit invocation site captured. Implicit `GetAsyncEnumerator` / `MoveNextAsync` calls at the `await foreach` keyword aren't tested here (would need an explicit `IAsyncEnumerable<T>` implementation in the fixture; compiler-generated implementation is invisible to source-walkers).
+- **`await using` async disposal**: the explicit `new McpAsyncDisposableProbe()` ctor IS captured. The implicit `DisposeAsync` at the end of the using block is NOT — Finding G above.
+
 ### Coverage assessment after this round
 
 With 64 matrix rows covering: every top-level type kind, methods (instance/static/private/public/generic/overloaded/extension/async), constructors (parameterless/with-params/target-typed/chained), properties (read/write/init), fields (instance/static read+write), events (subscribe/raise), interface dispatch + explicit impl, virtual/override/new-hiding, partial-class members in different physical files, nested types, generic types, base lists, `typeof`/`nameof`/attribute usages, plus deliberate gap-exposure rows for indexer/operator/conversion/enum-member — V1 common-C# coverage is now broad enough that I'd call it acceptable. Of the 10 original feature probes locked at "Monitor=False", four (indexer, operator, conversion, enum-member) now have matrix rows surfacing the gaps; the remaining six (local fn target, lambda caller-id, partial declaration merge, override relationship row, interface impl relationship row, generated-file policy) are either architectural decisions or already correctly locked.
