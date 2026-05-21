@@ -89,3 +89,67 @@ Treat `find_indexed_symbols`, `query_solution_index`, `get_solution_index`, and 
 - This test did not exercise `get_solution_index_tree` directly. It is the smallest-response shape in the index family and could be the cheap-navigation foothold the index family needs. Worth a separate measurement.
 - This test did not measure latency. The index is local SQLite (fast), source map is live Roslyn (slower for cold-cache hits). For an agent in a long session the latency difference may be small relative to round-trip time; this is a follow-up measurement.
 - This test did not exercise the freshness-hop interaction. If the integration option (option 2 above) lands, the freshness-hop rule still applies between discovery and mutation; integration only collapses the discovery layer.
+
+## Addendum — pollution-subtracted ("ignoring the AI attributes") comparison
+
+Operator follow-up: *if you ignore the AI attributes, is the index actually better?*
+
+Short answer: **the AI attributes alone are not the main cost. Even with every defensible cleanup applied, the index is still ~2× source map at navigation scope — but the index DOES win on bulk-discovery scope by ~49%.** The right framing isn't "index vs source-map," it's "which task shape does each tool win on?"
+
+### What's in the index pollution, by actual byte cost
+
+Measured against the 137,947-byte persisted `query_solution_index(scope:namespace, value:"SchemaStudio.Data")` response:
+
+| Category | Bytes | % of response |
+|---|---|---|
+| `AIFileContext` attribute argument text (2 occurrences) | 1,454 | 1.05% |
+| `AIChange` attribute argument text (2 occurrences) | 397 | 0.29% |
+| `AIHistory` / `AIInstructions` / `UserHistory` (1 occurrence) | 189 | 0.14% |
+| **AI attributes subtotal** | **2,040** | **1.48%** |
+| Decorative attributes (`[Browsable]`, `[Category]`, `[DisplayName]`, `[PropertyOrder]`, `[ValueRequired]`, etc.) — 169 occurrences | 8,123 | 5.89% |
+| ` { ... }` body placeholders (148 occurrences) | 1,184 | 0.86% |
+| ` => ...` expression-body placeholders (16 occurrences) | 192 | 0.14% |
+| Redundant per-symbol `fileHash` (64-char hex, 219 occurrences) — same hash is already in the per-file `sha256` field | 16,863 | 12.22% |
+| **Total cleanable overhead** | **28,402** | **20.59%** |
+
+So the **AI attributes are 1.5%, not the main cost.** The bigger costs are the decorative attribute brackets (which the source map's "compact contract signatures" rule strips) and the redundant per-symbol `fileHash` (which is structurally avoidable — the file's hash is already in `files[]`).
+
+### Cleaned ratio at namespace scope
+
+| Tool | Bytes | Cleaned bytes | ~tokens |
+|---|---|---|---|
+| `query_solution_index(scope:namespace)` | 137,947 | 109,545 | ~27,386 |
+| `get_source_map(scope:namespace, navigation)` (inner JSON) | 55,432 | 54,065 | ~13,516 |
+
+**Even fully cleaned, index is 2.03× source map at navigation scope.** Why? Source map navigation is intentionally low-density: it returns parse status, namespaces, file shape, and class/member names with line spans, but **omits signatures, hashes, modifiers, and parameter info** at this scope. The index returns full detail at every scope. They're not measuring the same thing.
+
+### When the index actually wins: bulk discovery
+
+If the agent's task needs per-symbol detail (signatures, hashes, stable selectors) **across an entire scope**, the index's one-shot beats source-map's navigate-then-drill:
+
+| Path | Bytes | ~tokens |
+|---|---|---|
+| `query_solution_index(scope:namespace)` (cleaned) | 109,545 | ~27,386 |
+| `get_source_map(navigation)` + 16 × `get_source_map(file, selector)` (~10K each) | 215,432 | ~53,858 |
+
+**For bulk discovery, cleaned index is 49% cheaper than nav+drill.** This is the real niche the index family was designed for and it's a real win once the cleanup ships.
+
+### Refined verdict
+
+- For **"show me the project structure"** (no symbol detail needed): source map or `get_solution_index_tree` wins. The tree returns ~5,400 bytes for the whole 84-file solution — by far the cheapest shape, no signatures, just namespace → file mapping.
+- For **"find symbols matching name X"**: Roslyn `search_symbols` wins (more compact than `find_indexed_symbols` even after AI cleanup, because the AI bloat lives in *signatures* and `search_symbols` returns no signature).
+- For **"give me all symbols + stable keys + signatures in this scope at once"**: cleaned index wins by ~49%. Current dirty index is borderline (eaten by the 20% pollution overhead and budget gaps).
+- For **"inspect this one file"**: source map (selector) wins on data quality (structured `isAsync`, modifiers, parameter names). Index wins on raw bytes but ties or loses once the agent has to string-match signatures.
+
+So the index isn't a slam-dunk loss. It's a tool with a real niche that today's implementation **fails to deliver on** because the response is 20% pollution and has no budget shaping. Clean it up and the bulk-discovery win is real.
+
+### Updated recommendation
+
+Keep two index tools agent-visible:
+
+1. **`get_solution_index_tree`** — cheapest project-shape map, ~5,400 bytes for the whole solution. Genuinely useful when source-map navigation at project scope would be overkill.
+2. **`get_indexed_symbol(stableSymbolKey)`** — cheapest single-symbol lookup primitive.
+
+Demote `query_solution_index` / `find_indexed_symbols` to internal use for now. Before re-exposing them as agent-visible, fix Finding 46 defects (budget shaping + dirty signatures + redundant hash dedup). Once fixed, **they earn their place as the bulk-discovery option that source map navigation can't match.**
+
+Or — preferred — integrate `query_solution_index` as the backend for a new `get_source_map(scope:namespace, mode:detail)` density that exposes the bulk-discovery shape through the existing tool surface. Same budget contract, same trivia/attribute filter rules, no parallel API to learn. Agent picks density via `mode`, engine picks storage source.
