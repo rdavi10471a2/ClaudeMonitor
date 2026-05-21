@@ -12,7 +12,7 @@ using MonitorBaseClaude.AI;
 namespace MonitorBaseClaude.Services;
 
 [AIFileContext("SolutionIndexService.cs", "Builds and queries the monitor-owned SQLite index for watched C# solution structure.")]
-[FileVersion("1.6")]
+[FileVersion("1.7")]
 public sealed class SolutionIndexService
 {
     private static readonly string[] ExcludedDirectoryNames =
@@ -98,6 +98,7 @@ public sealed class SolutionIndexService
         using SqliteTransaction transaction = connection.BeginTransaction();
         ExecuteNonQuery(connection, transaction, "delete from call_sites;");
         ExecuteNonQuery(connection, transaction, "delete from symbol_references;");
+        ExecuteNonQuery(connection, transaction, "delete from partial_type_members;");
         ExecuteNonQuery(connection, transaction, "delete from diagnostics;");
         ExecuteNonQuery(connection, transaction, "delete from symbols;");
         ExecuteNonQuery(connection, transaction, "delete from files;");
@@ -133,6 +134,8 @@ public sealed class SolutionIndexService
                 indexedDiagnostics++;
             }
         }
+
+        InsertPartialTypeMembers(connection, transaction, files, symbolIdsByStableKey);
 
         foreach (IndexedReferenceBuild reference in references)
         {
@@ -429,6 +432,17 @@ public sealed class SolutionIndexService
                 snippet text not null
             );
 
+            create table if not exists partial_type_members (
+                id integer primary key autoincrement,
+                canonical_stable_key text not null,
+                member_symbol_id integer not null references symbols(id) on delete cascade,
+                member_stable_key text not null,
+                namespace text not null,
+                containing_type text,
+                kind text not null,
+                name text not null
+            );
+
             create index if not exists ix_files_relative_path on files(relative_path);
             create index if not exists ix_symbols_stable_key on symbols(stable_key);
             create index if not exists ix_symbols_name on symbols(name);
@@ -438,6 +452,8 @@ public sealed class SolutionIndexService
             create index if not exists ix_symbol_references_file on symbol_references(file_id);
             create index if not exists ix_call_sites_callee on call_sites(callee_symbol_id);
             create index if not exists ix_call_sites_caller on call_sites(caller_symbol_id);
+            create index if not exists ix_partial_type_members_member_key on partial_type_members(member_stable_key);
+            create index if not exists ix_partial_type_members_canonical_key on partial_type_members(canonical_stable_key);
             """);
         EnsureColumn(connection, "symbols", "text_hash", "text not null default ''");
         EnsureColumn(connection, "symbols", "start_column", "integer not null default 1");
@@ -562,6 +578,50 @@ public sealed class SolutionIndexService
         command.Parameters.AddWithValue("$column", reference.Column);
         command.Parameters.AddWithValue("$snippet", reference.Snippet);
         command.ExecuteNonQuery();
+    }
+
+    private static void InsertPartialTypeMembers(
+        SqliteConnection connection,
+        SqliteTransaction transaction,
+        IReadOnlyList<IndexedFileBuild> files,
+        IReadOnlyDictionary<string, long> symbolIdsByStableKey)
+    {
+        var partialGroups = files
+            .SelectMany(file => file.Symbols)
+            .Where(symbol => symbol.IsPartial && IsPartialTypeKind(symbol.Kind))
+            .GroupBy(symbol => new PartialTypeIdentity(symbol.Namespace, symbol.ContainingType, symbol.Kind, symbol.Name))
+            .Where(group => group.Count() > 1);
+
+        foreach (IGrouping<PartialTypeIdentity, IndexedSymbolBuild> group in partialGroups)
+        {
+            string canonicalStableKey = group
+                .Select(symbol => symbol.StableKey)
+                .OrderBy(stableKey => stableKey, StringComparer.Ordinal)
+                .First();
+            foreach (IndexedSymbolBuild symbol in group)
+            {
+                if (!symbolIdsByStableKey.TryGetValue(symbol.StableKey, out long symbolId))
+                {
+                    continue;
+                }
+
+                using SqliteCommand command = connection.CreateCommand();
+                command.Transaction = transaction;
+                command.CommandText =
+                    """
+                    insert into partial_type_members(canonical_stable_key, member_symbol_id, member_stable_key, namespace, containing_type, kind, name)
+                    values ($canonicalStableKey, $memberSymbolId, $memberStableKey, $namespace, $containingType, $kind, $name);
+                    """;
+                command.Parameters.AddWithValue("$canonicalStableKey", canonicalStableKey);
+                command.Parameters.AddWithValue("$memberSymbolId", symbolId);
+                command.Parameters.AddWithValue("$memberStableKey", symbol.StableKey);
+                command.Parameters.AddWithValue("$namespace", symbol.Namespace);
+                command.Parameters.AddWithValue("$containingType", (object?)symbol.ContainingType ?? DBNull.Value);
+                command.Parameters.AddWithValue("$kind", symbol.Kind);
+                command.Parameters.AddWithValue("$name", symbol.Name);
+                command.ExecuteNonQuery();
+            }
+        }
     }
 
     private static void InsertCallSite(
@@ -833,6 +893,39 @@ public sealed class SolutionIndexService
                         isCallSite: true);
                 }
             }
+
+            foreach (MethodDeclarationSyntax method in file.Root.DescendantNodes().OfType<MethodDeclarationSyntax>())
+            {
+                if (model.GetDeclaredSymbol(method) is not { } methodSymbol)
+                {
+                    continue;
+                }
+
+                AddSymbolReference(
+                    references,
+                    seen,
+                    filesByRelativePath,
+                    file,
+                    method,
+                    method.Identifier.Span,
+                    methodSymbol.OverriddenMethod,
+                    "override",
+                    isCallSite: false);
+
+                foreach (ISymbol interfaceMember in GetImplementedInterfaceMembers(methodSymbol))
+                {
+                    AddSymbolReference(
+                        references,
+                        seen,
+                        filesByRelativePath,
+                        file,
+                        method,
+                        method.Identifier.Span,
+                        interfaceMember,
+                        "interface_implementation",
+                        isCallSite: false);
+                }
+            }
         }
 
         return references;
@@ -940,6 +1033,27 @@ public sealed class SolutionIndexService
             if (member is IMethodSymbol { Parameters.Length: 0 })
             {
                 yield return member;
+            }
+        }
+    }
+
+    private static IEnumerable<ISymbol> GetImplementedInterfaceMembers(IMethodSymbol methodSymbol)
+    {
+        if (methodSymbol.ContainingType is null)
+        {
+            yield break;
+        }
+
+        foreach (INamedTypeSymbol interfaceType in methodSymbol.ContainingType.AllInterfaces)
+        {
+            foreach (ISymbol interfaceMember in interfaceType.GetMembers())
+            {
+                ISymbol? implementation = methodSymbol.ContainingType.FindImplementationForInterfaceMember(interfaceMember);
+                if (implementation is IMethodSymbol implementationMethod
+                    && SymbolEqualityComparer.Default.Equals(implementationMethod, methodSymbol))
+                {
+                    yield return interfaceMember;
+                }
             }
         }
     }
@@ -1815,7 +1929,50 @@ public sealed class SolutionIndexService
             limit $limit;
             """;
         BindScopeParameters(command, scope, value, maxSymbols);
-        return ReadSymbols(command);
+        return CollapsePartialTypeSymbols(connection, ReadSymbols(command));
+    }
+
+    private static IReadOnlyList<SolutionIndexSymbol> CollapsePartialTypeSymbols(
+        SqliteConnection connection,
+        IReadOnlyList<SolutionIndexSymbol> symbols)
+    {
+        if (symbols.Count == 0 || !TableExists(connection, "partial_type_members"))
+        {
+            return symbols;
+        }
+
+        HashSet<string> stableKeys = symbols
+            .Select(symbol => symbol.StableSymbolKey)
+            .ToHashSet(StringComparer.Ordinal);
+        HashSet<string> nonCanonicalPartialKeys = [];
+        using SqliteCommand command = connection.CreateCommand();
+        command.CommandText =
+            """
+            select member_stable_key, canonical_stable_key
+            from partial_type_members
+            order by member_stable_key collate nocase;
+            """;
+        using SqliteDataReader reader = command.ExecuteReader();
+        while (reader.Read())
+        {
+            string memberStableKey = reader.GetString(0);
+            string canonicalStableKey = reader.GetString(1);
+            if (!memberStableKey.Equals(canonicalStableKey, StringComparison.Ordinal)
+                && stableKeys.Contains(memberStableKey)
+                && stableKeys.Contains(canonicalStableKey))
+            {
+                nonCanonicalPartialKeys.Add(memberStableKey);
+            }
+        }
+
+        if (nonCanonicalPartialKeys.Count == 0)
+        {
+            return symbols;
+        }
+
+        return symbols
+            .Where(symbol => !nonCanonicalPartialKeys.Contains(symbol.StableSymbolKey))
+            .ToArray();
     }
 
     private static IReadOnlyList<SolutionIndexSymbol> ReadSymbols(SqliteCommand command)
@@ -1866,29 +2023,34 @@ public sealed class SolutionIndexService
             return [];
         }
 
+        IReadOnlyList<string> targetStableKeys = ResolvePartialGroupStableKeys(connection, stableSymbolKey);
+        string keyFilter = BuildInParameterList("stableKey", targetStableKeys.Count);
         using SqliteCommand command = connection.CreateCommand();
         command.CommandText = onlyCallSites
-            ? """
+            ? $"""
               select target.stable_key, location.relative_path, location.sha256, caller.stable_key, caller.name, 'invocation', c.line, c.column, c.snippet
               from call_sites c
               join symbols target on target.id = c.callee_symbol_id
               join files location on location.id = c.file_id
               left join symbols caller on caller.id = c.caller_symbol_id
-              where target.stable_key = $stableKey
+              where target.stable_key in ({keyFilter})
               order by location.relative_path collate nocase, c.line, c.column
               limit $limit;
               """
-            : """
+            : $"""
               select target.stable_key, location.relative_path, location.sha256, caller.stable_key, caller.name, r.reference_kind, r.line, r.column, r.snippet
               from symbol_references r
               join symbols target on target.id = r.target_symbol_id
               join files location on location.id = r.file_id
               left join symbols caller on caller.id = r.caller_symbol_id
-              where target.stable_key = $stableKey
+              where target.stable_key in ({keyFilter})
               order by location.relative_path collate nocase, r.line, r.column
               limit $limit;
               """;
-        command.Parameters.AddWithValue("$stableKey", stableSymbolKey);
+        for (int index = 0; index < targetStableKeys.Count; index++)
+        {
+            command.Parameters.AddWithValue($"$stableKey{index}", targetStableKeys[index]);
+        }
         command.Parameters.AddWithValue("$limit", maxResults);
         List<SolutionIndexReference> references = [];
         using SqliteDataReader reader = command.ExecuteReader();
@@ -1906,7 +2068,89 @@ public sealed class SolutionIndexService
                 reader.GetString(8)));
         }
 
+        if (!onlyCallSites && TableExists(connection, "partial_type_members"))
+        {
+            references.AddRange(QueryPartialDeclarationRows(connection, stableSymbolKey, Math.Max(0, maxResults - references.Count)));
+        }
+
         return references;
+    }
+
+    private static IReadOnlyList<string> ResolvePartialGroupStableKeys(SqliteConnection connection, string stableSymbolKey)
+    {
+        if (!TableExists(connection, "partial_type_members"))
+        {
+            return [stableSymbolKey];
+        }
+
+        using SqliteCommand command = connection.CreateCommand();
+        command.CommandText =
+            """
+            select member_stable_key
+            from partial_type_members
+            where canonical_stable_key = (
+                select canonical_stable_key
+                from partial_type_members
+                where member_stable_key = $stableKey
+                limit 1
+            )
+            order by member_stable_key collate nocase;
+            """;
+        command.Parameters.AddWithValue("$stableKey", stableSymbolKey);
+        List<string> keys = [];
+        using SqliteDataReader reader = command.ExecuteReader();
+        while (reader.Read())
+        {
+            keys.Add(reader.GetString(0));
+        }
+
+        return keys.Count == 0 ? [stableSymbolKey] : keys;
+    }
+
+    private static IReadOnlyList<SolutionIndexReference> QueryPartialDeclarationRows(SqliteConnection connection, string stableSymbolKey, int maxResults)
+    {
+        if (maxResults <= 0)
+        {
+            return [];
+        }
+
+        using SqliteCommand command = connection.CreateCommand();
+        command.CommandText =
+            """
+            select $stableKey, location.relative_path, location.sha256, null, null, 'partial_declaration', member.start_line, member.start_column, member.signature
+            from partial_type_members selected
+            join partial_type_members sibling on sibling.canonical_stable_key = selected.canonical_stable_key
+            join symbols member on member.id = sibling.member_symbol_id
+            join files location on location.id = member.file_id
+            where selected.member_stable_key = $stableKey
+              and sibling.member_stable_key <> $stableKey
+            order by location.relative_path collate nocase, member.start_line, member.start_column
+            limit $limit;
+            """;
+        command.Parameters.AddWithValue("$stableKey", stableSymbolKey);
+        command.Parameters.AddWithValue("$limit", maxResults);
+        List<SolutionIndexReference> references = [];
+        using SqliteDataReader reader = command.ExecuteReader();
+        while (reader.Read())
+        {
+            references.Add(new SolutionIndexReference(
+                reader.GetString(0),
+                reader.GetString(1),
+                reader.GetString(2),
+                null,
+                null,
+                reader.GetString(5),
+                reader.GetInt32(6),
+                reader.GetInt32(7),
+                reader.GetString(8)));
+        }
+
+        return references;
+    }
+
+    private static string BuildInParameterList(string prefix, int count)
+    {
+        return string.Join(", ", Enumerable.Range(0, count).Select(index => $"${prefix}{index}"));
     }
 
     private static void BindScopeParameters(SqliteCommand command, string scope, string? value, int limit)
@@ -2133,6 +2377,17 @@ public sealed class SolutionIndexService
     {
         return path.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
     }
+
+    private static bool IsPartialTypeKind(string kind)
+    {
+        return kind is "class" or "struct" or "interface" or "record";
+    }
+
+    private sealed record PartialTypeIdentity(
+        string Namespace,
+        string? ContainingType,
+        string Kind,
+        string Name);
 
     private sealed record IndexedFileBuild(
         string FullPath,

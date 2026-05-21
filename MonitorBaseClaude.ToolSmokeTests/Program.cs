@@ -213,7 +213,7 @@ internal static class Program
         MatrixCheck[] checks = BuildFixtureMatrixChecks();
         IReadOnlyDictionary<string, RoslynMatrixCounts> roslynCounts = BuildRoslynFixtureMatrix(observedRoot, checks);
         SolutionIndexQueryResult index = indexService.Query("solution", maxFiles: 500, maxSymbols: 5000);
-        IReadOnlyList<ModelFeatureProbeResult> featureProbeResults = BuildModelFeatureProbeResults(observedRoot, index);
+        IReadOnlyList<ModelFeatureProbeResult> featureProbeResults = BuildModelFeatureProbeResults(observedRoot, index, indexService);
         List<MatrixResult> results = [];
         foreach (MatrixCheck check in checks)
         {
@@ -226,7 +226,8 @@ internal static class Program
             results.Add(new MatrixResult(check, roslynCounts.GetValueOrDefault(check.StableKey), callers, references));
         }
 
-        bool passed = results.All(result => result.Passed);
+        bool passed = results.All(result => result.Passed)
+            && featureProbeResults.All(result => result.MonitorIndexed == result.ExpectedMonitorIndexed);
         string summary = BuildFixtureMatrixSummary(build, results, featureProbeResults, passed);
         string summaryPath = Path.Combine(runRoot, "summary.md");
         File.WriteAllText(summaryPath, summary);
@@ -845,7 +846,7 @@ internal static class Program
             new("RaiseProbeCompleted()", Key("McpCallerProbeTarget", "method", "RaiseProbeCompleted()"), 1, 1),
             new("McpCallerProbeTarget()", Key("McpCallerProbeTarget", "constructor", "McpCallerProbeTarget()"), 1, 1),
             new("McpCallerProbeTarget(string)", Key("McpCallerProbeTarget", "constructor", "McpCallerProbeTarget(string)"), 3, 3),
-            new("IMcpProbeService.InterfaceProbe(int)", Key("IMcpProbeService", "method", "InterfaceProbe(int)"), 2, 2),
+            new("IMcpProbeService.InterfaceProbe(int)", Key("IMcpProbeService", "method", "InterfaceProbe(int)"), 2, 4),
             new("McpProbeServiceImpl.InterfaceProbe(int)", Key("McpProbeServiceImpl", "method", "InterfaceProbe(int)"), 1, 1),
             new("McpProbeServiceImpl()", Key("McpProbeServiceImpl", "constructor", "McpProbeServiceImpl()"), 1, 1),
             new("ToProbeDoubled(this int)", Key("McpProbeExtensions", "method", "ToProbeDoubled(this int)"), 1, 1),
@@ -869,12 +870,12 @@ internal static class Program
             new("McpMetadataOnlyTarget.MetadataMethod()", Key("McpMetadataOnlyTarget", "method", "MetadataMethod()"), 0, 1),
             // Additional rows added by Claude on 2026-05-21 to extend matrix coverage of fixture-declared symbols
             new("IMcpFeatureContract", Key(string.Empty, "interface", "IMcpFeatureContract"), null, 2),
-            new("IMcpFeatureContract.ContractProbe()", Key("IMcpFeatureContract", "method", "ContractProbe()"), 1, 1),
+            new("IMcpFeatureContract.ContractProbe()", Key("IMcpFeatureContract", "method", "ContractProbe()"), 1, 2),
             new("McpFeatureContractImpl", Key(string.Empty, "class", "McpFeatureContractImpl"), null, 1),
             new("McpFeatureContractImpl.ContractProbe()", Key("McpFeatureContractImpl", "method", "ContractProbe()"), 0, 0),
             new("McpVirtualBase", Key(string.Empty, "class", "McpVirtualBase"), null, 4),
             new("McpVirtualDerived", Key(string.Empty, "class", "McpVirtualDerived"), null, 1),
-            new("McpVirtualBase.VirtualProbe()", Key("McpVirtualBase", "method", "VirtualProbe()"), 2, 2),
+            new("McpVirtualBase.VirtualProbe()", Key("McpVirtualBase", "method", "VirtualProbe()"), 2, 3),
             new("McpVirtualDerived.VirtualProbe()", Key("McpVirtualDerived", "method", "VirtualProbe()"), 0, 0),
             new("McpDerivedProbe", Key(string.Empty, "class", "McpDerivedProbe"), null, 0),
             new("McpFeatureEnum", Key(string.Empty, "enum", "McpFeatureEnum"), null, 2),
@@ -1103,6 +1104,43 @@ internal static class Program
                 if (seenReferences.Add($"{targetKey}|{siteKey}"))
                 {
                     referenceCounts[targetKey]++;
+                }
+            }
+
+            foreach (MethodDeclarationSyntax method in root.DescendantNodes().OfType<MethodDeclarationSyntax>())
+            {
+                if (model.GetDeclaredSymbol(method) is not { } methodSymbol)
+                {
+                    continue;
+                }
+
+                AddRoslynReference(
+                    NormalizeSymbol(methodSymbol.OverriddenMethod),
+                    targetSymbols,
+                    referenceCounts,
+                    callerCounts,
+                    seenReferences,
+                    seenCallers,
+                    relativePath,
+                    tree,
+                    method.Identifier.Span,
+                    "override",
+                    isCaller: false);
+
+                foreach (ISymbol interfaceMember in GetImplementedInterfaceMembers(methodSymbol))
+                {
+                    AddRoslynReference(
+                        NormalizeSymbol(interfaceMember),
+                        targetSymbols,
+                        referenceCounts,
+                        callerCounts,
+                        seenReferences,
+                        seenCallers,
+                        relativePath,
+                        tree,
+                        method.Identifier.Span,
+                        "interface_implementation",
+                        isCaller: false);
                 }
             }
         }
@@ -1433,9 +1471,31 @@ internal static class Program
         }
     }
 
+    private static IEnumerable<ISymbol> GetImplementedInterfaceMembers(IMethodSymbol methodSymbol)
+    {
+        if (methodSymbol.ContainingType is null)
+        {
+            yield break;
+        }
+
+        foreach (INamedTypeSymbol interfaceType in methodSymbol.ContainingType.AllInterfaces)
+        {
+            foreach (ISymbol interfaceMember in interfaceType.GetMembers())
+            {
+                ISymbol? implementation = methodSymbol.ContainingType.FindImplementationForInterfaceMember(interfaceMember);
+                if (implementation is IMethodSymbol implementationMethod
+                    && SymbolEqualityComparer.Default.Equals(implementationMethod, methodSymbol))
+                {
+                    yield return interfaceMember;
+                }
+            }
+        }
+    }
+
     private static IReadOnlyList<ModelFeatureProbeResult> BuildModelFeatureProbeResults(
         string observedRoot,
-        SolutionIndexQueryResult index)
+        SolutionIndexQueryResult index,
+        SolutionIndexService indexService)
     {
         SyntaxTree[] trees = Directory.EnumerateFiles(observedRoot, "*.cs", SearchOption.AllDirectories)
             .Select(path => CSharpSyntaxTree.ParseText(File.ReadAllText(path), path: path))
@@ -1473,6 +1533,16 @@ internal static class Program
             method.Identifier.ValueText == "VirtualProbe"
             && method.Modifiers.Any(SyntaxKind.OverrideKeyword)));
         bool roslynInterfaceImplementation = HasImplicitInterfaceImplementation(compilation, "IMcpFeatureContract", "McpFeatureContractImpl", "ContractProbe");
+        const string featureFileA = "McpIndexProbes/McpCallerProbeFixture.A.cs";
+        bool monitorPartialDeclarationRefs = indexService
+            .FindReferences($"{featureFileA}::SchemaStudio.SemanticModel.Tests::::class::McpPartialProbe", 20)
+            .Any(row => row.ReferenceKind.Equals("partial_declaration", StringComparison.OrdinalIgnoreCase));
+        bool monitorOverrideRelationship = indexService
+            .FindReferences($"{featureFileA}::SchemaStudio.SemanticModel.Tests::McpVirtualBase::method::VirtualProbe()", 20)
+            .Any(row => row.ReferenceKind.Equals("override", StringComparison.OrdinalIgnoreCase));
+        bool monitorInterfaceImplementation = indexService
+            .FindReferences($"{featureFileA}::SchemaStudio.SemanticModel.Tests::IMcpFeatureContract::method::ContractProbe()", 20)
+            .Any(row => row.ReferenceKind.Equals("interface_implementation", StringComparison.OrdinalIgnoreCase));
 
         return
         [
@@ -1482,10 +1552,11 @@ internal static class Program
             new("enum member declaration", roslynEnumMember, HasSymbol("enum_member", "FeatureAlpha"), true, "Enum members are now indexed as first-class symbol kind `enum_member`."),
             new("local function declaration", roslynLocalFunction, HasSymbol("local_function", "McpLocalProbe"), true, "LocalFunctionStatementSyntax is now indexed as first-class symbol kind `local_function`."),
             new("lambda caller identity", roslynLambda, index.Symbols.Any(symbol => symbol.Kind.Equals("lambda", StringComparison.OrdinalIgnoreCase)), true, "Lambda bodies are now indexed with source-position stable caller identity."),
-            new("partial declaration merge", roslynPartial, index.Symbols.Count(symbol => symbol.Name == "McpPartialProbe") == 1, false, "Two partial declarations exist; current Monitor stores physical declarations, not one merged type row."),
+            new("partial declaration merge", roslynPartial, index.Symbols.Count(symbol => symbol.Name == "McpPartialProbe") == 1, true, "Two partial declarations exist; Monitor should expose one merged type identity for search-model completeness."),
+            new("partial declaration references", roslynPartial, monitorPartialDeclarationRefs, true, "FindReferences on a physical partial type now returns sibling partial declarations as `partial_declaration` rows."),
             new("generated-file policy", roslynGenerated, index.Files.Any(file => file.RelativePath.Contains("McpGeneratedProbe.g.cs", StringComparison.OrdinalIgnoreCase)), true, "Generated-looking file is included today; this row locks current behavior until a generated policy exists."),
-            new("override relationship row", roslynOverride, false, false, "Override method exists; current Monitor records references/callers, not override relationship rows."),
-            new("interface implementation relationship row", roslynInterfaceImplementation, false, false, "Implicit interface implementation exists; current Monitor records references/callers, not implementation relationship rows.")
+            new("override relationship row", roslynOverride, monitorOverrideRelationship, true, "Override method exists; Monitor exposes override relationship rows in references."),
+            new("interface implementation relationship row", roslynInterfaceImplementation, monitorInterfaceImplementation, true, "Implicit interface implementation exists; Monitor exposes implementation relationship rows in references.")
         ];
     }
 
