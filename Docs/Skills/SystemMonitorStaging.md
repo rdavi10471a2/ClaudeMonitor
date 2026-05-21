@@ -15,6 +15,7 @@ The active safety mechanism is session overlay validation plus gated serial diff
 - Record the Operator decision with `record_diff_decision`.
 - Stop on `dirty-unexpected`; recovery is explicit refresh/rebase/restage or Operator reconcile.
 - A Working candidate persists across sessions when the watched-source baseline hash is unchanged. If the first edit in a new pass inherits prior in-progress candidate content, either continue deliberately or discard the Working mirror/state before starting a clean test.
+- Cached source-map or solution-index selectors are advisory only. Before `submit_symbol`, `remove_symbol`, or related submit/remove operations, refresh the file selector map with live `get_source_map(scope: "file", mode: "selector")` or verify the file with `check_file_hash`, then call `get_symbol`.
 
 ## Choose The Staging Mode
 
@@ -80,6 +81,8 @@ Use `get_source_map(scope: "namespace", namespaceName: "...")` when a file's `us
 If overlay/build diagnostics reveal a missed or broken call site that Roslyn did not surface, text search is allowed as a diagnostic fallback. Use it to locate the missed file or literal call site, then confirm structure where possible and stage the corrected file into the same monitor session before retrying review. Do not use grep as the first-pass way to understand C# code.
 
 For whole-file staging, use Roslyn shape plus `get_file`; skip `get_source_map` unless you need stable selectors or structure. For symbol staging, use Roslyn shape plus `get_source_map`/`get_symbol`; skip `get_file` unless symbol context is insufficient.
+
+If a candidate target came from `get_solution_index`, `get_solution_index_tree`, or cached compact index JSON, treat that target as discovery only. Refresh the file selector/hash in the current session before body read and mutation; if the live selector is missing, ambiguous, or hash-drifted, refresh/rebuild the selector data and restart the narrow edit path.
 
 Long reference: `Docs/AgentToolCallPlaybook.md`.
 

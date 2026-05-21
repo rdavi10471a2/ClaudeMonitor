@@ -153,6 +153,10 @@ This prevents Accept and Reject from collapsing into the same raw hash state.
 | session staged edit visibility | `list_session_staged_records` | scaffolded |
 | session file hash tracking | `check_file_hash`, `get_file.sessionId` | scaffolded |
 | token-saving outline reads | `get_file_outline`, `get_symbol` | scaffolded |
+| watched solution index rebuild | `refresh_solution_index` | implemented |
+| watched solution index status | `get_solution_index_status` | implemented |
+| watched solution index file refresh | `refresh_solution_index_file`, `refresh_file_and_index` | implemented |
+| watched solution index queries | `get_solution_index`, `get_solution_index_tree`, `query_solution_index`, `find_indexed_symbols`, `get_indexed_symbol` | implemented |
 | Working mirror full-file candidate | `submit_file` | implemented |
 | Working mirror member candidates | `add_symbol`, `add_field`, `add_method`, `add_property`, `add_constructor`, `add_nested_type` | implemented |
 | Working candidate review snapshot | `stage_candidate_for_review` | implemented |
@@ -339,6 +343,42 @@ Arguments:
 
 - `path`: watched source file path, absolute or relative to the watched solution folder.
 
+### `refresh_solution_index`
+
+Rebuilds the monitor-owned SQLite index for the watched solution folder. The first implementation indexes C# files, file hashes, syntax diagnostics, namespaces, declared symbols, signatures, line spans, and stable symbol keys. It is local-only and does not upload index data.
+
+### `refresh_solution_index_file`
+
+Refreshes one watched C# file in the monitor-owned SQLite index without rebuilding the whole solution index. Use this after a watched file changes and the client only needs to reload that file's indexed selector slice.
+
+### `refresh_file_and_index`
+
+Refreshes the monitor-owned Working copy from the watched source file, then refreshes the same file in the SQLite solution index. This is the one-call path for "reload this file and its index slice."
+
+### `get_solution_index_status`
+
+Returns the local SQLite database path, watched solution path, observed root key, last indexed time, file count, symbol count, diagnostic count, and stale file count.
+
+### `get_solution_index`
+
+Returns the indexed file and symbol JSON for the watched solution. Use `maxFiles` and `maxSymbols` to budget the payload. Symbol rows include `fileHash` and `symbolTextHash` so clients can verify freshness before using a cached stable key for edit targeting.
+
+### `get_solution_index_tree`
+
+Returns compact solution tree JSON: solution index status, namespaces, and files. Use this as the cheapest whole-project map before requesting symbol details.
+
+### `query_solution_index`
+
+Returns indexed files and symbols from the monitor-owned SQLite index without reparsing the watched solution. Supported scopes are `solution`, `namespace`, `folder`, and `file`. Folder scopes use descendant path matching; namespace scope accepts `(global)` as the UI display value for the empty/global namespace.
+
+### `find_indexed_symbols`
+
+Searches indexed declarations by symbol name text with optional kind and namespace filters.
+
+### `get_indexed_symbol`
+
+Returns one indexed declaration by stable symbol key.
+
 ### `get_source_map`
 
 Returns a read-only Roslyn-derived source map for a C# file, folder, namespace, or the watched project.
@@ -348,7 +388,7 @@ Arguments:
 - `path`: optional watched source file/folder path, or namespace text when `scope=namespace`. Omit for project scope.
 - `scope`: `auto`, `file`, `folder`, `namespace`, or `project`.
 - `mode`: `auto`, `navigation`, `selector`, `detail`, or `full`.
-- `namespaceName`: optional namespace text when `scope=namespace`. If omitted, `path` is treated as the namespace.
+- `namespaceName`: optional namespace text when `scope=namespace`. If omitted, `path` is treated as the namespace. Calls that provide `namespaceName` with any other scope are rejected.
 
 Mode defaults:
 
