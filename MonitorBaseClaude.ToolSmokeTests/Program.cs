@@ -7,7 +7,7 @@ using MonitorBaseClaude.McpServer;
 using MonitorBaseClaude.Services;
 
 [module: AIFileContext("Program.cs", "Single-file console smoke harness for monitor tool integration checks.")]
-[module: FileVersion("1.2")]
+[module: FileVersion("1.1")]
 
 namespace MonitorBaseClaude.ToolSmokeTests;
 
@@ -17,29 +17,12 @@ internal static class Program
     {
         if (args.Contains("--dbv2-index-callers", StringComparer.OrdinalIgnoreCase))
         {
-            return RunIndexedCallerSmoke(
-                "dbv2-index-callers",
-                null,
-                IsRepositoryOrDiscoveryMember,
-                requireDbv2KnownCallerChecks: true);
+            return RunDbv2IndexCallers("dbv2-index-callers", IsRepositoryOrDiscoveryMember, requireKnownCallerChecks: true);
         }
 
         if (args.Contains("--dbv2-index-callers-all", StringComparer.OrdinalIgnoreCase))
         {
-            return RunIndexedCallerSmoke(
-                "dbv2-index-callers-all",
-                null,
-                IsIndexedCallable,
-                requireDbv2KnownCallerChecks: true);
-        }
-
-        if (args.Contains("--webviewer-index-callers-all", StringComparer.OrdinalIgnoreCase))
-        {
-            return RunIndexedCallerSmoke(
-                "webviewer-index-callers-all",
-                @"C:\SchemaStudioWebViewer\SchemaStudioWebViewer.sln",
-                IsIndexedCallable,
-                requireDbv2KnownCallerChecks: false);
+            return RunDbv2IndexCallers("dbv2-index-callers-all", IsIndexedCallable, requireKnownCallerChecks: true);
         }
 
         Console.WriteLine("MonitorBaseClaude tool smoke tests");
@@ -47,19 +30,16 @@ internal static class Program
         Console.WriteLine("Available modes:");
         Console.WriteLine("  --dbv2-index-callers        Cross-check repository/discovery callers.");
         Console.WriteLine("  --dbv2-index-callers-all    Cross-check every indexed method/constructor in DBV2.");
-        Console.WriteLine("  --webviewer-index-callers-all    Cross-check every indexed method/constructor in C:\\SchemaStudioWebViewer.");
         return 2;
     }
 
-    private static int RunIndexedCallerSmoke(
+    private static int RunDbv2IndexCallers(
         string modeName,
-        string? solutionPathOverride,
         Func<SolutionIndexSymbol, bool> targetPredicate,
-        bool requireDbv2KnownCallerChecks)
+        bool requireKnownCallerChecks)
     {
         MonitorServerSettings settings = MonitorServerSettings.Load();
-        string watchedSolutionPath = solutionPathOverride ?? settings.WatchedSolutionPath;
-        string observedRoot = Path.GetDirectoryName(watchedSolutionPath)
+        string observedRoot = Path.GetDirectoryName(settings.WatchedSolutionPath)
             ?? throw new InvalidOperationException("Watched solution has no containing folder.");
         string runRoot = Path.Combine(
             settings.UiRoot,
@@ -70,19 +50,19 @@ internal static class Program
             modeName);
         Directory.CreateDirectory(runRoot);
 
-        if (!File.Exists(watchedSolutionPath))
+        if (!File.Exists(settings.WatchedSolutionPath))
         {
-            Console.WriteLine($"Watched solution not found: {watchedSolutionPath}");
+            Console.WriteLine($"Watched solution not found: {settings.WatchedSolutionPath}");
             return 1;
         }
 
-        Console.WriteLine("MonitorBaseClaude indexed caller smoke");
+        Console.WriteLine("MonitorBaseClaude DBV2 indexed caller smoke");
         Console.WriteLine($"Mode: {modeName}");
-        Console.WriteLine($"Watched solution: {watchedSolutionPath}");
+        Console.WriteLine($"Watched solution: {settings.WatchedSolutionPath}");
         Console.WriteLine($"Log root: {runRoot}");
         Console.WriteLine();
 
-        SolutionIndexService indexService = new(settings.UiRoot, watchedSolutionPath);
+        SolutionIndexService indexService = new(settings.UiRoot, settings.WatchedSolutionPath);
         SolutionIndexBuildResult build = indexService.Rebuild();
         SolutionIndexQueryResult index = indexService.Query("solution", maxFiles: 5000, maxSymbols: 50000);
         IReadOnlyList<SolutionIndexSymbol> targets = index.Symbols
@@ -107,7 +87,7 @@ internal static class Program
             comparisons.Add(new Comparison(target, expectedRows, actualRows, missing, unexpected));
         }
 
-        bool knownCallersPassed = !requireDbv2KnownCallerChecks || KnownCallerChecksPass(indexService);
+        bool knownCallersPassed = !requireKnownCallerChecks || KnownCallerChecksPass(indexService);
         bool passed = targets.Count > 0
             && knownCallersPassed
             && dirtySignatureSymbols.Count == 0
@@ -465,7 +445,7 @@ internal static class Program
             {FormatActual(item.Unexpected)}
             """));
         return $"""
-            # Indexed Caller Smoke
+            # DBV2 Indexed Caller Smoke
 
             Mode: `{modeName}`
 
