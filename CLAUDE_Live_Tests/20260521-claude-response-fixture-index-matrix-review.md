@@ -116,3 +116,83 @@ Alternatively if hand-pinning is intentional (i.e. the smoke is meant to detect 
 `68c06ba` looks ready to consider merged. Both Finding 52 gaps are closed in semantically correct ways, the fixture-matrix smoke provides a durable regression check for the closure plus a clearly-named locking surface for the 10 known model limitations, and the Roslyn comparator is independent enough at the resolution layer.
 
 The DBV2 smoke divergence I observed does not indicate any index problem; it indicates the smoke's hand-pinned expected list has drifted from the watched checkout. Worth a separate followup if you want the smoke to be CI-stable across heterogeneous DBV2 states.
+
+## Update — extended matrix (50/50 pass on second run)
+
+Per the Operator's observation that the fixture declares far more matrix-worthy surface than the 34 original rows cover, I extended `BuildFixtureMatrixChecks()` with 16 additional `MatrixCheck` rows targeting symbols the original matrix didn't score. After fixing two of my own answer-key off-by-ones (caught by the in-process Roslyn comparator — exactly the value-add of the three-leg design), all 50 rows pass with 0 failures, 0 Roslyn target resolution failures, 0 current-model-feature-probe expectation failures.
+
+This widens the verified-correct surface for the post-`68c06ba` indexer to include: interface-dispatch vs impl-method resolution, virtual-vs-override dispatch, partial-class members across physical files, generated-file inclusion semantics, struct property write-in-ctor + read-from-receiver, base-class list references, extension class type as an unreferenced static class, and several 0-count shapes.
+
+Both Finding 52 gap closures stay verified at this widened surface (target-typed `new(...)` ctor invocations correctly counted on `McpCallerProbeTarget(string)`, attribute usages correctly counted on `McpProbeMarkAttribute`).
+
+### How the run went
+
+First run: 50 attempted, **48 passed, 2 failed**. Both failures were my answer-key errors — in-process Roslyn and Monitor index agreed on the actual count, my expected number was wrong:
+
+- `McpVirtualBase` — I expected refs=1, both engines returned 2. I missed `McpCallerProbeFixture.A.cs:82 public sealed class McpVirtualDerived : McpVirtualBase` (base-class list reference) in addition to the field type at `B:24`.
+- `McpProbeStruct.Value` — I expected refs=1, both engines returned 2. I missed `McpCallerProbeFixture.A.cs:41 Value = value;` (the auto-property write inside the struct ctor body) in addition to the read at `B:48 _struct.Value`.
+
+Both errors corrected to refs=2. Second run: **50 passed, 0 failed.**
+
+This is what the smoke is *for* — the third leg (in-process Roslyn comparator) prevented a 2-leg bug where a wrong answer key would have flagged the Monitor index as broken when it was correct.
+
+### The 16 new rows (verbatim, for Codex to lift into the product commit)
+
+These were added below the existing `McpMetadataOnlyTarget.MetadataMethod()` row in `BuildFixtureMatrixChecks()` in `MonitorBaseClaude.ToolSmokeTests/Program.cs`. Also requires three local consts (`fileB`, `fileG`) and two helper functions (`KeyB`, `KeyG`) at the top of the method:
+
+```csharp
+const string fileA = "McpIndexProbes/McpCallerProbeFixture.A.cs";
+const string fileB = "McpIndexProbes/McpCallerProbeFixture.B.cs";
+const string fileG = "McpIndexProbes/McpGeneratedProbe.g.cs";
+string Key(string containingType, string kind, string name)
+{
+    return $"{fileA}::SchemaStudio.SemanticModel.Tests::{containingType}::{kind}::{name}";
+}
+string KeyB(string containingType, string kind, string name)
+{
+    return $"{fileB}::SchemaStudio.SemanticModel.Tests::{containingType}::{kind}::{name}";
+}
+string KeyG(string containingType, string kind, string name)
+{
+    return $"{fileG}::SchemaStudio.SemanticModel.Tests::{containingType}::{kind}::{name}";
+}
+```
+
+New rows (post-correction):
+
+```csharp
+new("IMcpFeatureContract", Key(string.Empty, "interface", "IMcpFeatureContract"), null, 2),
+new("IMcpFeatureContract.ContractProbe()", Key("IMcpFeatureContract", "method", "ContractProbe()"), 1, 1),
+new("McpFeatureContractImpl", Key(string.Empty, "class", "McpFeatureContractImpl"), null, 1),
+new("McpFeatureContractImpl.ContractProbe()", Key("McpFeatureContractImpl", "method", "ContractProbe()"), 0, 0),
+new("McpVirtualBase", Key(string.Empty, "class", "McpVirtualBase"), null, 2),
+new("McpVirtualDerived", Key(string.Empty, "class", "McpVirtualDerived"), null, 1),
+new("McpVirtualBase.VirtualProbe()", Key("McpVirtualBase", "method", "VirtualProbe()"), 1, 1),
+new("McpVirtualDerived.VirtualProbe()", Key("McpVirtualDerived", "method", "VirtualProbe()"), 0, 0),
+new("McpDerivedProbe", Key(string.Empty, "class", "McpDerivedProbe"), null, 0),
+new("McpFeatureEnum", Key(string.Empty, "enum", "McpFeatureEnum"), null, 2),
+new("McpProbeStruct.Value", Key("McpProbeStruct", "property", "Value"), null, 2),
+new("McpPartialProbe.PartA()", Key("McpPartialProbe", "method", "PartA()"), 1, 1),
+new("McpPartialProbe.PartB()", KeyB("McpPartialProbe", "method", "PartB()"), 1, 1),
+new("McpGeneratedProbe", KeyG(string.Empty, "class", "McpGeneratedProbe"), null, 0),
+new("McpGeneratedProbe.GeneratedMethod()", KeyG("McpGeneratedProbe", "method", "GeneratedMethod()"), 0, 0),
+new("McpProbeExtensions", Key(string.Empty, "class", "McpProbeExtensions"), null, 0)
+```
+
+### Items potentially still outstanding (declared in fixture, not yet matrix-rowed)
+
+Going through the generated fixture sources, here is what is declared but not scored even after my 16 additions:
+
+- **Fields on `McpCallerProbeCallers`** — `_target`, `_targetExplicit`, `_targetTargetTyped`, `_impl`, `_via`, `_struct`, `_record`, `_delegate`, `_indexer`, `_operatorLeft`, `_operatorRight`, `_contract`, `_virtual` (13 fields). Counting refs for each is straightforward but adds 13 row-flavor rows whose signal-to-noise is low — most just count how many times each field is read or written in the same file. I left these off the matrix; if a future change is suspected to regress field-reference counting, these would be cheap to add.
+- **`McpPartialProbe` (the type, in either physical file)** — I avoided adding a matrix row for the partial type itself because the current model decision (locked by the `partial declaration merge` feature probe) is "Monitor stores physical declarations" rather than a merged row. A row pinned to `fileA` would presumably get the type-refs Roslyn discovers, but it would be sensitive to which physical declaration Monitor uses as the resolution target. Worth deciding policy first, then adding.
+- **`McpFeatureEnum.FeatureAlpha` / `FeatureNone` (enum members)** — explicitly locked at "Monitor indexed: False" by the `enum member declaration` feature probe. Not a useful matrix row until that policy changes.
+- **Indexer / operator overload / conversion operator declarations on `McpIndexerProbe`, `McpOperatorProbe`** — explicitly locked at "Monitor indexed: False" by their respective feature probes.
+- **`McpVirtualDerived` as a derived-of `McpVirtualBase`** — base/derived relationship rows are explicitly locked at "Monitor indexed: False" by the `override relationship row` and `interface implementation relationship row` feature probes.
+
+In other words, the only matrix-worthy declared-symbol surface in the current fixture that I deliberately *didn't* turn into rows is either (a) the 13 caller-class fields (low signal), or (b) symbols that are already covered by the 10 current-model feature probes as locked "Monitor=False" cases.
+
+The Operator's intuition that the fixture "contains pretty much full coverage of what can be added to a class declaration wise" looks correct after this exercise. The remaining gap is in the *matrix* (which symbols are scored vs which are merely declared), not in the *fixture* (which class-declaration shapes are exercised).
+
+### Local Program.cs state
+
+The 16-row addition and three-const + two-helper change live in `MonitorBaseClaude.ToolSmokeTests/Program.cs` on my local checkout, uncommitted (this notes branch is markdown-only per `CLAUDE.md`). Codex can `git diff` against `origin/main` in my checkout if helpful, or lift the row block above into a product commit on `main` directly. Build clean, all 50 + 10 = 60 checks (matrix + probes) pass.
