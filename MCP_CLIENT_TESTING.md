@@ -86,7 +86,7 @@ The expected C# context loop is:
 find_file -> get_source_map(mode: navigation) -> get_source_map(mode: selector) -> get_symbol -> get_file only when needed
 ```
 
-For index-first navigation, compact index artifacts are advisory discovery data, not edit authority. If selector data comes from `get_solution_index`, `get_solution_index_tree`, or cached compact index JSON, make a same-session freshness hop before composing an edit:
+For index-first navigation, compact index artifacts are advisory discovery data, not edit authority. Reference and caller rows from `find_indexed_references` / `find_indexed_callers` are persisted SQLite rows computed by the Monitor's in-process Roslyn index rebuild, not live Roslyn MCP `find_references` results. If selector data comes from `get_solution_index`, `get_solution_index_tree`, indexed reference/caller rows, or cached compact index JSON, make a same-session freshness hop before composing an edit:
 
 ```text
 get_solution_index or compact index -> choose file/symbol -> get_source_map(scope: "file", mode: "selector") or check_file_hash -> get_symbol -> submit/stage

@@ -163,6 +163,24 @@ public sealed class MonitorTools
     }
 
     [McpServerTool]
+    [Description("Return persisted indexed reference sites for one stable C# symbol key. This uses the monitor-owned SQLite index, not the live Roslyn MCP reference tool.")]
+    public IReadOnlyList<SolutionIndexReference> FindIndexedReferences(
+        [Description("Stable symbol key returned by query_solution_index, find_indexed_symbols, get_indexed_symbol, or get_source_map.")] string stableSymbolKey,
+        [Description("Maximum reference rows to return.")] int maxResults = 500)
+    {
+        return Track(nameof(FindIndexedReferences), new { stableSymbolKey, maxResults }, () => solutionIndexService.FindReferences(stableSymbolKey, maxResults));
+    }
+
+    [McpServerTool]
+    [Description("Return persisted indexed invocation call sites for one stable C# method or constructor symbol key. This uses the monitor-owned SQLite index, not the live Roslyn MCP callers tool.")]
+    public IReadOnlyList<SolutionIndexReference> FindIndexedCallers(
+        [Description("Stable method or constructor symbol key returned by query_solution_index, find_indexed_symbols, get_indexed_symbol, or get_source_map.")] string stableSymbolKey,
+        [Description("Maximum caller rows to return.")] int maxResults = 500)
+    {
+        return Track(nameof(FindIndexedCallers), new { stableSymbolKey, maxResults }, () => solutionIndexService.FindCallers(stableSymbolKey, maxResults));
+    }
+
+    [McpServerTool]
     [Description("Create a durable monitor session handle. Handles are explicit state references that clients should pass through later calls.")]
     public MonitorSessionState StartMonitorSession(
         [Description("Short purpose for this monitor session, such as 'local Ollama tool exploration' or 'Claude feature edit'.")] string purpose = "monitor workflow")

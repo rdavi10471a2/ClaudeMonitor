@@ -156,7 +156,7 @@ This prevents Accept and Reject from collapsing into the same raw hash state.
 | watched solution index rebuild | `refresh_solution_index` | implemented |
 | watched solution index status | `get_solution_index_status` | implemented |
 | watched solution index file refresh | `refresh_solution_index_file`, `refresh_file_and_index` | implemented |
-| watched solution index queries | `get_solution_index`, `get_solution_index_tree`, `query_solution_index`, `find_indexed_symbols`, `get_indexed_symbol` | implemented |
+| watched solution index queries | `get_solution_index`, `get_solution_index_tree`, `query_solution_index`, `find_indexed_symbols`, `get_indexed_symbol`, `find_indexed_references`, `find_indexed_callers` | implemented |
 | Working mirror full-file candidate | `submit_file` | implemented |
 | Working mirror member candidates | `add_symbol`, `add_field`, `add_method`, `add_property`, `add_constructor`, `add_nested_type` | implemented |
 | Working candidate review snapshot | `stage_candidate_for_review` | implemented |
@@ -349,7 +349,7 @@ Rebuilds the monitor-owned SQLite index for the watched solution folder. The fir
 
 ### `refresh_solution_index_file`
 
-Refreshes one watched C# file in the monitor-owned SQLite index without rebuilding the whole solution index. Use this after a watched file changes and the client only needs to reload that file's indexed selector slice.
+Refreshes one watched C# file in the monitor-owned SQLite index. Because reference/caller rows are solution-shaped, the current implementation rebuilds the semantic index and then returns the requested file slice.
 
 ### `refresh_file_and_index`
 
@@ -357,7 +357,7 @@ Refreshes the monitor-owned Working copy from the watched source file, then refr
 
 ### `get_solution_index_status`
 
-Returns the local SQLite database path, watched solution path, observed root key, last indexed time, file count, symbol count, diagnostic count, and stale file count.
+Returns the local SQLite database path, watched solution path, observed root key, last indexed time, file count, symbol count, diagnostic count, reference count, call-site count, and stale file count.
 
 ### `get_solution_index`
 
@@ -378,6 +378,14 @@ Searches indexed declarations by symbol name text with optional kind and namespa
 ### `get_indexed_symbol`
 
 Returns one indexed declaration by stable symbol key.
+
+### `find_indexed_references`
+
+Returns persisted reference rows for one stable symbol key from the monitor-owned SQLite index. This is not the live Roslyn MCP `find_references` tool; references are computed during index rebuild with in-process Roslyn `CSharpCompilation`/`SemanticModel` and then served as SQL rows.
+
+### `find_indexed_callers`
+
+Returns persisted invocation call-site rows for one stable method or constructor key from the monitor-owned SQLite index. This is not the live Roslyn MCP caller tool; callers are computed during index rebuild and then served as SQL rows.
 
 ### `get_source_map`
 
