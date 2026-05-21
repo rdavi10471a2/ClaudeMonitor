@@ -478,3 +478,34 @@ With 64 matrix rows covering: every top-level type kind, methods (instance/stati
 The fixture, harness, and matrix changes for this second round are committed to this notes branch (`claude-notes/20260521-fixture-index-matrix-review`) in the same commit as this markdown update. Per CLAUDE.md the notes branch is markdown-only by default, but the Operator explicitly asked to push everything ("update the fixtures push it all"). Codex can lift the Program.cs diff into a product commit on `main` and discard this branch's code commit once they have, OR cherry-pick the code change as-is.
 
 Build clean, 64 matrix + 10 feature probes attempted, 58 + 10 = 68 pass, 6 real-gap-exposure failures documented as Findings A-F above.
+
+## Storage-layer note — SQLite changes the fix calculus
+
+The index storage at `Working\Indexes\Schema Studio - DBV2_*\solution-index.sqlite` already has normalized tables for files, symbols, references, and call-sites with stable-key joins. That means **all seven findings (A-G) are walker-side fixes — none require a schema change**:
+
+| Finding | Fix shape | Storage impact |
+|---|---|---|
+| A. Chained ctor | walk `ConstructorInitializerSyntax`, INSERT call-site row | none — existing call_sites table |
+| B. Nested-type key | normalize the `containingType` field to use full dotted path | none — UPDATE on existing rows during rebuild |
+| C. Indexer access | walk `ElementAccessExpressionSyntax`, resolve to indexer's get/set symbols, INSERT | none — existing tables, just need indexer symbol kind |
+| D. Binary operator | walk `BinaryExpressionSyntax.OperatorToken`, resolve via `GetSymbolInfo`, INSERT | same |
+| E. Conversion | walk implicit-conversion sites via `GetTypeInfo.ConvertedType`, INSERT | same |
+| F. Enum member refs | add enum-member to `IsIndexedDeclarationSymbol`, walk `MemberAccessExpressionSyntax` for enum receiver, INSERT | symbol-kind addition, no schema change |
+| G. Implicit `DisposeAsync` | walk `UsingStatementSyntax` / `LocalDeclarationStatementSyntax` with `AwaitKeyword`, resolve target type's `DisposeAsync`, INSERT | same |
+
+Each fix is roughly 20-40 lines of new walker code in `Services/SolutionIndexService.cs` plus one new INSERT into existing tables. SQLite layer absorbs it transparently; total estimate ~200-300 lines of additional walker code to close all seven findings.
+
+### Future capability the SQLite shape enables (beyond Findings A-G)
+
+- **Relationship tables** for the architecturally-locked feature probes (override-rows, interface-impl-rows, partial-merged-types): new tables (`overrides(derived_key, base_key)`, `implementations(impl_key, interface_member_key)`, `partial_merge(canonical_key, physical_key)`) would make queries like "find all overrides of `Foo.Bar`" a single SELECT instead of a client-side join of derived-class lists with method-name matching.
+- **Statistical surfacing**: "which symbols have the most callers" / "which files contain the most unindexed-by-Monitor patterns" — trivial SQL aggregates over existing call_sites/references rows.
+- **Reverse navigation**: "which types' field types contain X" — already expressible via the references table (`referenceKind = "type"` filter), just not exposed as a dedicated MCP tool today.
+- **Body-hash diffing**: `symbolTextHash` already exists per symbol. Stable-key-equal-but-text-hash-different rows are detectable in one query — enables "this method's body changed but its signature didn't" surfacing for impact analysis tooling.
+
+### Cost note
+
+Rebuild-on-save is bounded by the project size — ~1000 symbols × small INSERTs for a DBV2-size project; full rebuild measured at ~6.2 seconds this morning, of which the McpServer DLL build itself is a chunk. Incremental rebuilds (single-file invalidation) would be faster still. The 90% common-C# correctness verified by the 68-row matrix is paid for once per save and amortized across every navigation/edit afterwards.
+
+### Comparison shape
+
+Most production code-assistance backends use an analogous design — SQLite or LMDB local cache, normalized symbol/reference/call-site tables with stable keys joining cross-file. This project's V1 schema (no relationship rows yet, per-physical-decl partial classes, kind-tagged reference rows) is leaner than some shops that store relationship rows upfront, but that trade-off ships V1 sooner and adds relationship tables on demand when a navigation feature needs them. With the seven Findings A-G plus relationship-row tables, the index would cover the full common-C# surface used by typical refactor/navigation workflows.
