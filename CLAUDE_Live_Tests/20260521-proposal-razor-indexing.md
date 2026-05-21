@@ -9,6 +9,8 @@ resolution:
 resolutionCommit:
 ---
 
+> **Status note**: this proposal is OPEN but the Operator (2026-05-21) flagged it as added complexity that may not be needed — the current workflow handles .razor as text and the overlay-compile catches @code parse errors via the Razor SDK during staging. Pending real-world testing of whether the index's blindness to Razor-injected-property dispatch causes practical friction. See the closing "Operator's observation" section at the bottom.
+
 # Proposal — Razor indexing (close the WebViewer Finding 3 class of gaps)
 
 ## Goal
@@ -125,3 +127,17 @@ Closes the architectural shape concern. Ships in a week. After landing, the Razo
 - The fixture-index-matrix already proves that the C# semantic engine handles property-receiver dispatch correctly (matrix row 13: `IMcpProbeService.InterfaceProbe(int)` via the `_via` interface variable passes). Razor just hides the property declaration in a non-`.cs` file; the dispatch resolution itself isn't the problem.
 - The 4 hand-picked WebViewer target files used in `--webviewer-file-by-file` would automatically improve their Monitor caller/ref counts under either V1 or V2 — re-running that smoke after landing Razor support would be the natural regression check.
 - This proposal is independent of the source-truth corpus proposal (`20260521-proposal-source-truth-corpus-smoke.md`). The corpus proposal could itself be extended to a Razor sub-corpus once Razor support lands, but they're separable.
+
+## Operator's observation — may not be needed
+
+The Operator (2026-05-21) flagged that they've been working on the WebViewer codebase without any Razor-specific tooling from Codex and the existing workflow holds up:
+
+- AI edits `.razor` files as text. If the `@code` block parses, fine. If it doesn't, fine — overlay-compile catches it during staging.
+- CSS files come through Monitor as regular text files. The same model applies to Razor: it's just another text format the overlay can validate semantically when it matters.
+- Accept / reject / iterate is the standard loop. Razor errors surface in the overlay-compile diagnostics like any other compile error. The operator doesn't need the index to resolve Razor-declared symbols to make the edit workflow work.
+
+So this proposal is **added complexity that may not be needed** — pending real-world testing of whether the index's blindness to Razor-injected-property dispatch actually causes practical friction.
+
+The specific known limitation is: the index can't answer "find all callers of method X when callers go through an `@inject`-declared property in a `.razor` file." Whether that's a friction point depends on how often Claude/Codex/the Operator runs that query in practice. If real workflow testing shows it's hit frequently and the grep fallback is awkward, that's the trigger to revisit this proposal. If it rarely matters, the proposal stays parked.
+
+Practical operating rule (saved to memory): when Claude is working on a Blazor project and `find_indexed_callers` returns 0 on a public method that the operator believes is used, suspect a Razor-injected-property call path. Grep the method name on `.razor` files in addition to `.cs` files before concluding the method is dead.
