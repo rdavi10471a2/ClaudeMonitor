@@ -1,3 +1,5 @@
+using System.Text;
+using System.Text.RegularExpressions;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
@@ -30,13 +32,162 @@ internal static class Program
             return RunFixtureIndexMatrix();
         }
 
+        if (args.Contains("--webviewer-file-by-file", StringComparer.OrdinalIgnoreCase))
+        {
+            return RunWebViewerFileByFile();
+        }
+
         Console.WriteLine("MonitorBaseClaude tool smoke tests");
         Console.WriteLine();
         Console.WriteLine("Available modes:");
-        Console.WriteLine("  --dbv2-index-callers        Cross-check repository/discovery callers.");
-        Console.WriteLine("  --dbv2-index-callers-all    Cross-check every indexed method/constructor in DBV2.");
-        Console.WriteLine("  --fixture-index-matrix      Build a generated fixture and verify symbol caller/reference matrix.");
+        Console.WriteLine("  --dbv2-index-callers         Cross-check repository/discovery callers.");
+        Console.WriteLine("  --dbv2-index-callers-all     Cross-check every indexed method/constructor in DBV2.");
+        Console.WriteLine("  --fixture-index-matrix       Build a generated fixture and verify symbol caller/reference matrix.");
+        Console.WriteLine("  --webviewer-file-by-file     Per-file Monitor index vs grep ground-truth comparison on selected WebViewer files.");
         return 2;
+    }
+
+    private static int RunWebViewerFileByFile()
+    {
+        const string solutionPath = @"C:\SchemaStudioWebViewer\SchemaStudioWebViewer.sln";
+        const string observedRoot = @"C:\SchemaStudioWebViewer";
+        string[] targetFiles =
+        [
+            @"Components\Pages\ManageViewsNext\ManageViewsNext.razor.cs",
+            @"Components\Pages\DomainObjectModeler\DomainObjectModeler.Selection.cs",
+            @"SchemaStudio.Data\Repositories\DatabaseRepository.cs",
+            @"SchemaStudio.Data\Repositories\DatabaseRelationshipRepository.cs",
+        ];
+
+        if (!File.Exists(solutionPath))
+        {
+            Console.Error.WriteLine($"Solution not found: {solutionPath}");
+            return 2;
+        }
+
+        MonitorServerSettings settings = MonitorServerSettings.Load();
+        string runRoot = Path.Combine(
+            settings.UiRoot,
+            "Working",
+            "History",
+            "ToolSmokeTests",
+            DateTime.Now.ToString("yyyyMMdd_HHmmss"),
+            "webviewer-file-by-file");
+        Directory.CreateDirectory(runRoot);
+
+        Console.WriteLine($"Building solution index against {solutionPath}...");
+        SolutionIndexService indexService = new(settings.UiRoot, solutionPath);
+        SolutionIndexBuildResult build = indexService.Rebuild();
+        Console.WriteLine($"  Indexed: {build.IndexedFileCount} files, {build.IndexedSymbolCount} symbols, {build.IndexedReferenceCount} refs, {build.IndexedCallSiteCount} call sites");
+
+        string[] grepCorpus = Directory.EnumerateFiles(observedRoot, "*.cs", SearchOption.AllDirectories)
+            .Where(f => !f.Contains(@"\bin\", StringComparison.OrdinalIgnoreCase)
+                     && !f.Contains(@"\obj\", StringComparison.OrdinalIgnoreCase)
+                     && !f.Contains(@"\SourceBackups\", StringComparison.OrdinalIgnoreCase)
+                     && !f.Contains(@"\.git\", StringComparison.OrdinalIgnoreCase))
+            .ToArray();
+        Console.WriteLine($"  Grep corpus: {grepCorpus.Length} .cs files");
+
+        StringBuilder summary = new();
+        summary.AppendLine("# WebViewer File-by-File Comparison Smoke");
+        summary.AppendLine();
+        summary.AppendLine($"Solution: `{solutionPath}`");
+        summary.AppendLine($"Observed root: `{observedRoot}`");
+        summary.AppendLine();
+        summary.AppendLine($"- Indexed files: `{build.IndexedFileCount}`");
+        summary.AppendLine($"- Indexed symbols: `{build.IndexedSymbolCount}`");
+        summary.AppendLine($"- Indexed references: `{build.IndexedReferenceCount}`");
+        summary.AppendLine($"- Indexed call sites: `{build.IndexedCallSiteCount}`");
+        summary.AppendLine($"- Grep corpus .cs files: `{grepCorpus.Length}`");
+        summary.AppendLine();
+        summary.AppendLine("Columns:");
+        summary.AppendLine("- **Monitor callers / refs**: result of `FindCallers` / `FindReferences` against the symbol's stable key.");
+        summary.AppendLine("- **Grep total**: identifier text occurrences across the .cs corpus (declaration + uses; whole-word match).");
+        summary.AppendLine("- **Grep in declaring file**: identifier text occurrences in the symbol's own file (typically 1 for the declaration + N intra-file uses).");
+        summary.AppendLine("- **Grep extra-file ≈ external refs**: (Grep total − Grep in declaring file). Compare against Monitor refs as a rough sanity check.");
+        summary.AppendLine();
+
+        foreach (string relativePath in targetFiles)
+        {
+            summary.AppendLine($"## `{relativePath}`");
+            summary.AppendLine();
+            SolutionIndexQueryResult fileQuery = indexService.Query("file", value: relativePath, maxFiles: 5, maxSymbols: 500);
+            IReadOnlyList<SolutionIndexSymbol> symbols = fileQuery.Symbols ?? [];
+            if (symbols.Count == 0)
+            {
+                summary.AppendLine("(no symbols indexed for this path)");
+                summary.AppendLine();
+                continue;
+            }
+
+            string declFileFullPath = Path.Combine(observedRoot, relativePath);
+            summary.AppendLine("| Line | Kind | Symbol | Monitor callers | Monitor refs | Grep total | Grep in decl file | Grep extra-file |");
+            summary.AppendLine("|---|---|---|---|---|---|---|---|");
+            foreach (SolutionIndexSymbol symbol in symbols.OrderBy(s => s.StartLine))
+            {
+                IReadOnlyList<SolutionIndexReference> callers = indexService.FindCallers(symbol.StableSymbolKey, maxResults: 500);
+                IReadOnlyList<SolutionIndexReference> refs = indexService.FindReferences(symbol.StableSymbolKey, maxResults: 500);
+                int grepTotal = CountGrepOccurrences(grepCorpus, symbol.Name);
+                int grepInDeclFile = CountGrepOccurrencesInFile(declFileFullPath, symbol.Name);
+                int grepExtraFile = Math.Max(0, grepTotal - grepInDeclFile);
+
+                string nameCell = string.IsNullOrEmpty(symbol.Signature)
+                    ? $"`{symbol.Name}`"
+                    : $"`{symbol.Name}` <sub>{EscapeForMarkdown(symbol.Signature)}</sub>";
+                summary.AppendLine($"| {symbol.StartLine} | `{symbol.Kind}` | {nameCell} | {callers.Count} | {refs.Count} | {grepTotal} | {grepInDeclFile} | {grepExtraFile} |");
+            }
+            summary.AppendLine();
+        }
+
+        string summaryPath = Path.Combine(runRoot, "summary.md");
+        File.WriteAllText(summaryPath, summary.ToString());
+        Console.WriteLine();
+        Console.WriteLine(summary.ToString());
+        Console.WriteLine($"Summary: {summaryPath}");
+        return 0;
+    }
+
+    private static int CountGrepOccurrences(string[] files, string identifier)
+    {
+        if (string.IsNullOrEmpty(identifier))
+        {
+            return 0;
+        }
+
+        Regex pattern = new($@"\b{Regex.Escape(identifier)}\b", RegexOptions.Compiled);
+        int total = 0;
+        foreach (string file in files)
+        {
+            try
+            {
+                string text = File.ReadAllText(file);
+                total += pattern.Matches(text).Count;
+            }
+            catch
+            {
+            }
+        }
+
+        return total;
+    }
+
+    private static int CountGrepOccurrencesInFile(string filePath, string identifier)
+    {
+        if (string.IsNullOrEmpty(identifier) || !File.Exists(filePath))
+        {
+            return 0;
+        }
+
+        Regex pattern = new($@"\b{Regex.Escape(identifier)}\b", RegexOptions.Compiled);
+        return pattern.Matches(File.ReadAllText(filePath)).Count;
+    }
+
+    private static string EscapeForMarkdown(string value)
+    {
+        return value
+            .Replace("|", "\\|", StringComparison.Ordinal)
+            .Replace("\n", " ", StringComparison.Ordinal)
+            .Replace("\r", "", StringComparison.Ordinal);
     }
 
     private static int RunFixtureIndexMatrix()
