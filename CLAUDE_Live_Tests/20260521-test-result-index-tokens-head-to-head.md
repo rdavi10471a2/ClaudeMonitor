@@ -153,3 +153,53 @@ Keep two index tools agent-visible:
 Demote `query_solution_index` / `find_indexed_symbols` to internal use for now. Before re-exposing them as agent-visible, fix Finding 46 defects (budget shaping + dirty signatures + redundant hash dedup). Once fixed, **they earn their place as the bulk-discovery option that source map navigation can't match.**
 
 Or — preferred — integrate `query_solution_index` as the backend for a new `get_source_map(scope:namespace, mode:detail)` density that exposes the bulk-discovery shape through the existing tool surface. Same budget contract, same trivia/attribute filter rules, no parallel API to learn. Agent picks density via `mode`, engine picks storage source.
+
+## Addendum 2 — apples-to-apples comparison (the operator's "doesn't Claude need the attributes" check)
+
+Operator follow-up: *doesn't Claude need to know the attributes on a field/class?*
+
+Yes. The earlier "strip all attribute brackets" recommendation was wrong and is retracted. Decorative-looking attributes like `[Browsable]`, `[Category]`, `[DisplayName]`, `[PropertyOrder]`, `[Description]`, `[Required]`, `[ValueRequired]`, `[Key]`, `[Column]`, `[Obsolete]`, `[ReadOnly]`, etc. are part of the symbol's contract:
+
+- PropertyGrid behavior depends on `[Browsable]`, `[Category]`, `[DisplayName]`, `[PropertyOrder]`, `[Description]`. Adding a new property without these (when the file's convention uses them) produces a property that displays incorrectly.
+- Validation depends on `[Required]`, `[StringLength]`, `[ValueRequired]`, `[TextLength]`, `[Range]`. Adding a property without the right validation contract changes runtime behavior.
+- ORM mapping depends on `[Key]`, `[Column]`, `[NotMapped]`, `[ForeignKey]`, `[DBIgnore]`. Wrong attribute → wrong column → silent persistence bug.
+- Deprecation depends on `[Obsolete]`. An agent calling an obsolete member without warning is a real bug.
+- CLAUDE.md specifically requires `[AIFileContext]` and `[FileVersion]` to be preserved and updated.
+
+So an agent reading a file before mutation needs to see these attributes. Stripping them would make the index unsafe for mutation prep.
+
+Source-map's documented rule (from the tool manifest) is correct and narrower than what I initially recommended:
+
+> "Durable file-header metadata such as `AIFileContext` and `FileVersion` remains visible in source-map output; legacy workflow-history attributes such as `AIChange`, `AIHistory`, `AIInstructions`, and `UserHistory` are omitted. All attributes remain untouched in source files…"
+
+So source map keeps **all** attributes EXCEPT the four workflow-history ones (`AIChange`, `AIHistory`, `AIInstructions`, `UserHistory`). My earlier byte tally lumped `[Browsable]/[Category]/…` (8,123 bytes) into "pollution" — those are not pollution and should NOT be stripped. The honest cleanup is much narrower:
+
+| Cleanup (revised) | Bytes saved | % |
+|---|---|---|
+| `AIChange` / `AIHistory` / `AIInstructions` / `UserHistory` attribute argument text | ~586 (the AIChange 397 + AIHistory 189 measured earlier; `AIFileContext` 1,454 STAYS per the manifest) | 0.4% |
+| Trivia leaked into signatures (`#region`, leading `//` comments, commented-out code extracted as a symbol) | ~600 bytes (small but high-impact for parser correctness) | 0.4% |
+| ` { ... }` body placeholders (debatable — keep for visual readability or strip for tokens) | 1,184 | 0.9% |
+| Redundant per-symbol `fileHash` (same hash already in `files[].sha256`) | 16,863 | 12.2% |
+| **Total defensible cleanup** | **~19,233** | **~14%** |
+
+Revised cleaned index size: ~118,714 bytes (~29,679 tokens). Not 109,545.
+
+### Apples-to-apples comparison
+
+For the *real* equivalent — both tools returning per-symbol detail with contract attributes preserved at namespace scope:
+
+| Tool | Bytes / tokens | Notes |
+|---|---|---|
+| Cleaned `query_solution_index(scope:namespace)` (with defects fixed, attributes preserved) | ~118,714 / **~29,679 tok** | Single call |
+| `get_source_map(scope:namespace, mode:detail)` | **refuses to render — `wasTruncated:true`** | Reports `estimatedTokenProxy: 40531` against `budgetLimit: 20000`. Returns `suggestedNarrowing` with 10 high-symbol files instead. Agent would need to drill those 10 files individually. |
+
+When source map's budget refusal is followed (drill the 10 narrowed files individually, ~2,500-5,000 tokens each at detail mode), total Path B is ~30k-50k tokens — comparable to or worse than the cleaned index's single call.
+
+**So the verdict updates to:** for the bulk-detail use case (give me all symbols with full contract data in this scope), **the index is actually the right answer** — it has the bandwidth source map's detail mode can't fit in its budget. The defects in Finding 46 (no budget shaping, redundant hashes, trivia in signatures) are the blockers; fix those and the index has a clear niche that source map doesn't compete on.
+
+### Revised recommendation
+
+1. Keep `get_solution_index_tree` agent-visible (cheap project structure, ~5,400 bytes for whole solution).
+2. Keep `get_indexed_symbol(stableSymbolKey)` agent-visible (cheap single-symbol lookup).
+3. **Keep `query_solution_index` and `find_indexed_symbols` agent-visible** after fixing Finding 46 defects (budget shaping, trivia stripping, fileHash dedup; keep contract attributes). The earlier "demote to internal" recommendation was based on assuming we'd strip contract attributes — that's not safe.
+4. The integration path (`get_source_map(detail)` backed by the index) is still attractive but is now a "consistency / one-surface" choice rather than a "fix the budget overrun" necessity, since cleaned `query_solution_index` is already inside a fixable budget envelope.

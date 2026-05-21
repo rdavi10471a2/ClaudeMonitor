@@ -11,12 +11,14 @@ resolutionCommit:
 
 ## Summary
 
-The index family (`query_solution_index`, `find_indexed_symbols`, `get_solution_index`, `get_solution_index_tree`) returns responses that are **larger and dirtier than the equivalent source-map call** for the same scope. Two defects in combination cause this:
+The index family (`query_solution_index`, `find_indexed_symbols`, `get_solution_index`, `get_solution_index_tree`) returns responses that have **token-budget and signature-extraction defects** absent from the equivalent source-map call:
 
-1. **No token-budget shaping.** Index responses do not include `estimatedTokenProxy`, `budgetLimit`, `wasTruncated`, or `suggestedNarrowing`. Capping via `maxSymbols` / `maxFiles` silently truncates without signal to the agent. By contrast, `get_source_map` budgets responses against an explicit `budgetLimit` and reports `wasTruncated` plus a narrowing path.
-2. **Signatures are dirty.** Indexed symbol signatures include text that source maps consistently filter out: `AIFileContext` and `AIChange` attribute argument text, `#region` directives, leading comment blocks, and (worst case) commented-out code that gets extracted as a real symbol. Source maps honour the CLAUDE.md rule "AIFileContext and FileVersion remains visible; AIChange, AIHistory, AIInstructions, UserHistory are omitted." The index does not.
+1. **No token-budget shaping.** Index responses do not include `estimatedTokenProxy`, `budgetLimit`, `wasTruncated`, or `suggestedNarrowing`. Capping via `maxSymbols` / `maxFiles` silently truncates without signal to the agent. By contrast, `get_source_map` budgets responses against an explicit `budgetLimit` and reports `wasTruncated` plus a `suggestedNarrowing` list.
+2. **Signatures contain extraction trivia and redundant data.** Specifically: `#region` / `#endregion` directives leaked into signatures; leading `//` comment blocks concatenated into signatures; commented-out code occasionally extracted as a real indexed symbol; and `AIChange` / `AIHistory` workflow attributes that source map strips per CLAUDE.md. There is also one redundancy issue — the 64-char `fileHash` is emitted on every symbol row even though the same hash is already in `files[].sha256` (12% of the response).
 
-The combination means an agent following the documented "use the index for cheap discovery" guidance will spend more tokens than the existing path on the most common discovery scopes.
+**Important correction from an earlier draft of this finding:** the decorative `[Browsable]`, `[Category]`, `[DisplayName]`, `[PropertyOrder]`, `[ValueRequired]`, `[TextLength]`, `[Required]`, `[Key]`, `[Obsolete]`, etc. attributes are **contract**, not pollution. Source map keeps them; the index should too. An agent doing mutation needs to see them to follow file conventions (PropertyGrid ordering, validation rules, ORM mapping). The earlier recommendation to "strip all attribute brackets" was wrong and is retracted in the "Expected" section.
+
+With these defects, the documented "use the index for cheap discovery" guidance can mislead. At narrow scopes (file, single-symbol) the index is competitive or cheaper. At broad scopes (namespace, solution) the index returns more data than `get_source_map(navigation)` because the source map's navigation mode intentionally strips signatures for that scope — they're measuring different things. The fair contrast is `query_solution_index(namespace)` vs `get_source_map(scope:namespace, mode:detail)`. When that contrast is run (see the test result note), the source map refuses to render at all (`wasTruncated:true` against the 20k budget, would have been ~40,531 tokens) — proving that **for full per-symbol detail in a namespace, the index's one-shot is the right shape**, just with the defects above blocking it from being usable.
 
 ## Repro
 
@@ -58,10 +60,13 @@ Confirmed against the same content via `get_source_map` (see `20260521-test-resu
 For the index to deliver its design intent ("cheap discovery via SQLite"), index responses should:
 
 1. Include `estimatedTokenProxy`, `budgetLimit`, `wasTruncated`, and `suggestedNarrowing` fields with the same semantics as `get_source_map`. Cap namespace/solution responses against an explicit budget rather than the `maxSymbols`/`maxFiles` integer caps.
-2. Strip `AIFileContext` and `AIChange`/`AIHistory`/`AIInstructions`/`UserHistory` attribute argument text from indexed signatures, identically to source map.
+2. Strip the **AI workflow-history attributes only** — `AIChange`, `AIHistory`, `AIInstructions`, `UserHistory` — from indexed signatures, identically to source map. Per the manifest, source map already strips these. AI attributes are only ~1.5% of the response so this is small, but the principle matters for parity.
 3. Strip `#region` / `#endregion` directives from signatures.
 4. Strip leading comment blocks (`//` and `/* */`) that precede a symbol declaration.
 5. Not extract commented-out code as a separate indexed symbol. The Roslyn syntax tree distinguishes a trivia-attached comment from a real declaration; the index extractor evidently uses a looser pass.
+6. **Dedupe redundant per-symbol `fileHash`** — the file-level `sha256` in `files[]` already carries this value; emitting it again on every symbol row costs ~16,863 bytes (12% of the response) for zero new information.
+
+**What NOT to strip:** keep **contract attributes** — `[Browsable]`, `[Category]`, `[DisplayName]`, `[Description]`, `[PropertyOrder]`, `[ValueRequired]`, `[TextLength]`, `[Required]`, `[Key]`, `[Column]`, `[NotMapped]`, `[DBIgnore]`, `[Obsolete]`, `[TypeConverter]`, `[DefaultProperty]`, `[ReadOnly]`, `[CallerMemberName]`, `[AIFileContext]`, `[FileVersion]`, etc. These are part of the symbol's API contract and an agent doing mutation needs to see them to follow convention (PropertyGrid ordering, validation, ORM mapping). Source map keeps these. The index should too. An earlier draft of this finding recommended stripping all attribute brackets — that was wrong and is retracted here.
 
 ## Actual
 
@@ -90,9 +95,9 @@ Option 1 is the strict minimum to make the standalone index a defensible choice.
 
 ## Severity
 
-**confusing** — the tool surface is misleading. An agent reading the CLAUDE-memory entry `project_solution_index_tools.md` and the tool manifest would reasonably conclude the index is the cheap discovery layer. The measured reality on common scopes is that it costs more tokens than the existing path. The tool will not return wrong information (signatures are dirty but truthful; truncation is silent but the rows returned are real); it will silently return more tokens than necessary and hide truncation from the agent.
+**confusing** — the tool surface has fixable defects (budget shaping + trivia in signatures + redundant fileHash). The data returned is truthful; truncation is silent but the rows returned are real. Fix-the-defects rather than abandon-the-API is the right move. The bulk-discovery niche the index was designed for is real (per the test-result addendum, source-map detail-mode refuses to render the same scope because it would cost ~40k tokens; the index could fit it in ~29k after the defects are fixed).
 
-Promoting severity to **blocker** would be appropriate if the next round of work was going to depend on the index in production agent paths. For doc-only and rehearsal passes (Pass 21 included), the existing fallback to `get_source_map` is a safe out.
+Promoting severity to **blocker** would be appropriate if the next round of work was going to depend on naïve namespace-scope index queries in production agent paths. For Pass 21's index-first chain at file scope, the index is already usable end-to-end (the freshness hop works, the stable selectors compile against `get_symbol` + `submit_symbol`, the staging chain works).
 
 ## Notes
 
