@@ -9,18 +9,19 @@ resolution:
 resolutionCommit:
 ---
 
-# Task: Verify Indexed Callers After `55f5108`
+# Task: Verify Indexed Callers After `23a421e`
 
-Pull latest `main` and verify commit `55f5108` or newer is present.
+Pull latest `main` and verify commit `23a421e` or newer is present.
 
 ```powershell
 git pull origin main
 git rev-parse --short HEAD
 dotnet build .\MonitorBaseClaude.slnx /p:UseAppHost=false
 dotnet run --project .\MonitorBaseClaude.ToolSmokeTests\MonitorBaseClaude.ToolSmokeTests.csproj -- --dbv2-index-callers
+dotnet run --project .\MonitorBaseClaude.ToolSmokeTests\MonitorBaseClaude.ToolSmokeTests.csproj -- --dbv2-index-callers-all
 ```
 
-Expected smoke result:
+Expected focused repository/discovery smoke result:
 
 ```text
 Passed: True
@@ -29,10 +30,24 @@ Fully matched target count: 30
 Failure count: 0
 ```
 
+Expected whole-solution callable smoke result:
+
+```text
+Passed: True
+Target method/constructor count: 146
+Fully matched target count: 146
+Failure count: 0
+Expected caller rows checked: 211
+Actual caller rows checked: 211
+Dirty comment/region signatures: 0
+```
+
 This smoke rebuilds the DBV2 solution index, independently walks DBV2 source with Roslyn semantic binding, and compares expected call sites against SQLite-backed `FindCallers` results for:
 
 - `Data/*Repository.cs` methods and constructors
 - `Services/SchemaDiscovery.cs` methods and constructors
+
+The `--dbv2-index-callers-all` mode repeats the same independent comparison for every indexed method/constructor in the watched solution. Its summary should include a cross section for root, `AI`, `AITools`, `Configuration`, `Data`, `EditorSurface`, `Models`, `Services`, and `UI`.
 
 There is no parser library present in the current DBV2 checkout, so do not block this verification on parser-specific files.
 

@@ -12,7 +12,7 @@ using MonitorBaseClaude.AI;
 namespace MonitorBaseClaude.Services;
 
 [AIFileContext("SolutionIndexService.cs", "Builds and queries the monitor-owned SQLite index for watched C# solution structure.")]
-[FileVersion("1.2")]
+[FileVersion("1.3")]
 public sealed class SolutionIndexService
 {
     private static readonly string[] ExcludedDirectoryNames =
@@ -744,20 +744,117 @@ public sealed class SolutionIndexService
 
     private static string BuildSignature(MemberDeclarationSyntax member)
     {
-        string text = member.NormalizeWhitespace(elasticTrivia: false).ToFullString().Trim();
-        int bodyIndex = text.IndexOf('{', StringComparison.Ordinal);
-        if (bodyIndex >= 0)
+        return member.WithoutLeadingTrivia() switch
         {
-            text = text[..bodyIndex].TrimEnd() + " { ... }";
-        }
+            MethodDeclarationSyntax method => BuildMethodSignature(method),
+            ConstructorDeclarationSyntax constructor => BuildConstructorSignature(constructor),
+            PropertyDeclarationSyntax property => BuildPropertySignature(property),
+            FieldDeclarationSyntax field => BuildFieldSignature(field),
+            EventFieldDeclarationSyntax eventField => BuildEventFieldSignature(eventField),
+            EventDeclarationSyntax evt => BuildEventSignature(evt),
+            DelegateDeclarationSyntax del => BuildDelegateSignature(del),
+            BaseTypeDeclarationSyntax type => BuildTypeSignature(type),
+            _ => member.WithoutLeadingTrivia().NormalizeWhitespace().ToFullString().Replace(Environment.NewLine, " ", StringComparison.Ordinal).Trim()
+        };
+    }
 
-        int accessorIndex = text.IndexOf("=>", StringComparison.Ordinal);
-        if (accessorIndex >= 0)
+    private static string BuildMethodSignature(MethodDeclarationSyntax method)
+    {
+        string prefix = BuildModifierPrefix(method.Modifiers);
+        return $"{prefix}{method.ReturnType} {method.Identifier.ValueText}({BuildParameterList(method.ParameterList.Parameters)})";
+    }
+
+    private static string BuildConstructorSignature(ConstructorDeclarationSyntax constructor)
+    {
+        string prefix = BuildModifierPrefix(constructor.Modifiers);
+        return $"{prefix}{constructor.Identifier.ValueText}({BuildParameterList(constructor.ParameterList.Parameters)})";
+    }
+
+    private static string BuildPropertySignature(PropertyDeclarationSyntax property)
+    {
+        string prefix = BuildModifierPrefix(property.Modifiers);
+        string accessorText = property.AccessorList is null
+            ? "{ get; }"
+            : "{ " + string.Join(" ", property.AccessorList.Accessors.Select(BuildAccessorSignature)) + " }";
+        string initializer = property.Initializer is null ? string.Empty : $" {property.Initializer}";
+        string terminator = property.Initializer is null ? string.Empty : ";";
+        return $"{prefix}{property.Type} {property.Identifier.ValueText} {accessorText}{initializer}{terminator}";
+    }
+
+    private static string BuildFieldSignature(FieldDeclarationSyntax field)
+    {
+        string prefix = BuildModifierPrefix(field.Modifiers);
+        return $"{prefix}{field.Declaration.Type} {BuildVariableList(field.Declaration.Variables)}";
+    }
+
+    private static string BuildEventFieldSignature(EventFieldDeclarationSyntax eventField)
+    {
+        string prefix = BuildModifierPrefix(eventField.Modifiers);
+        return $"{prefix}event {eventField.Declaration.Type} {BuildVariableList(eventField.Declaration.Variables)}";
+    }
+
+    private static string BuildEventSignature(EventDeclarationSyntax evt)
+    {
+        string prefix = BuildModifierPrefix(evt.Modifiers);
+        return $"{prefix}event {evt.Type} {evt.Identifier.ValueText}";
+    }
+
+    private static string BuildDelegateSignature(DelegateDeclarationSyntax del)
+    {
+        string prefix = BuildModifierPrefix(del.Modifiers);
+        return $"{prefix}delegate {del.ReturnType} {del.Identifier.ValueText}({BuildParameterList(del.ParameterList.Parameters)})";
+    }
+
+    private static string BuildTypeSignature(BaseTypeDeclarationSyntax type)
+    {
+        string prefix = BuildModifierPrefix(type.Modifiers);
+        return $"{prefix}{GetTypeDeclarationKeyword(type)} {type.Identifier.ValueText}{BuildBaseListSuffix(type)}";
+    }
+
+    private static string BuildParameterList(SeparatedSyntaxList<ParameterSyntax> parameters)
+    {
+        return string.Join(", ", parameters.Select(parameter =>
         {
-            text = text[..accessorIndex].TrimEnd() + " => ...";
-        }
+            string prefix = BuildModifierPrefix(parameter.Modifiers);
+            string defaultValue = parameter.Default is null ? string.Empty : $" = {parameter.Default.Value}";
+            return $"{prefix}{parameter.Type} {parameter.Identifier.ValueText}{defaultValue}";
+        }));
+    }
 
-        return text.Replace(Environment.NewLine, " ").Replace("\r", " ").Replace("\n", " ");
+    private static string BuildVariableList(SeparatedSyntaxList<VariableDeclaratorSyntax> variables)
+    {
+        return string.Join(", ", variables.Select(variable => variable.ToString()));
+    }
+
+    private static string BuildAccessorSignature(AccessorDeclarationSyntax accessor)
+    {
+        string prefix = BuildModifierPrefix(accessor.Modifiers);
+        return $"{prefix}{accessor.Keyword.ValueText};";
+    }
+
+    private static string BuildBaseListSuffix(BaseTypeDeclarationSyntax type)
+    {
+        return type.BaseList is null ? string.Empty : $" {type.BaseList}";
+    }
+
+    private static string GetTypeDeclarationKeyword(BaseTypeDeclarationSyntax type)
+    {
+        return type switch
+        {
+            ClassDeclarationSyntax => "class",
+            StructDeclarationSyntax => "struct",
+            InterfaceDeclarationSyntax => "interface",
+            RecordDeclarationSyntax record => record.ClassOrStructKeyword.ValueText.Length == 0
+                ? "record"
+                : $"record {record.ClassOrStructKeyword.ValueText}",
+            _ => type.Kind().ToString()
+        };
+    }
+
+    private static string BuildModifierPrefix(SyntaxTokenList modifiers)
+    {
+        string text = modifiers.ToFullString().Trim();
+        return string.IsNullOrWhiteSpace(text) ? string.Empty : $"{text} ";
     }
 
     private static string BuildParameterSuffix(ParameterListSyntax? parameterList)

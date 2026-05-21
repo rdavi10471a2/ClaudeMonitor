@@ -1340,27 +1340,30 @@ public sealed partial class MonitorWorkflowService
         if (members.Count == 0)
         {
             return newMember
+                .WithoutLeadingTrivia()
                 .WithLeadingTrivia(SyntaxFactory.Whitespace("        "))
                 .WithTrailingTrivia(SyntaxFactory.CarriageReturnLineFeed);
         }
 
-        SyntaxTriviaList leadingTrivia;
-        if (insertIndex < members.Count && SymbolKind(newMember).Equals(SymbolKind(members[insertIndex]), StringComparison.OrdinalIgnoreCase))
-        {
-            leadingTrivia = members[insertIndex].GetLeadingTrivia();
-        }
-        else if (insertIndex > 0)
-        {
-            leadingTrivia = members[insertIndex - 1].GetLeadingTrivia();
-        }
-        else
-        {
-            leadingTrivia = members[insertIndex].GetLeadingTrivia();
-        }
+        MemberDeclarationSyntax indentationSource = insertIndex < members.Count
+            ? members[insertIndex]
+            : members[^1];
+        string indentation = GetDeclarationIndentation(indentationSource);
 
         return newMember
-            .WithLeadingTrivia(leadingTrivia)
+            .WithoutLeadingTrivia()
+            .WithLeadingTrivia(SyntaxFactory.CarriageReturnLineFeed, SyntaxFactory.Whitespace(indentation))
             .WithTrailingTrivia(SyntaxFactory.CarriageReturnLineFeed);
+    }
+
+    private static string GetDeclarationIndentation(MemberDeclarationSyntax member)
+    {
+        string leadingText = member.GetLeadingTrivia().ToFullString();
+        int lineStart = Math.Max(leadingText.LastIndexOf('\n'), leadingText.LastIndexOf('\r'));
+        string indentation = lineStart >= 0 ? leadingText[(lineStart + 1)..] : leadingText;
+        return !string.IsNullOrEmpty(indentation) && indentation.All(char.IsWhiteSpace)
+            ? indentation
+            : "        ";
     }
 
     private static int GetArity(MemberDeclarationSyntax member)

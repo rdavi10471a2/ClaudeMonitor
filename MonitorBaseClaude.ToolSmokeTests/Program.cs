@@ -7,7 +7,7 @@ using MonitorBaseClaude.McpServer;
 using MonitorBaseClaude.Services;
 
 [module: AIFileContext("Program.cs", "Single-file console smoke harness for monitor tool integration checks.")]
-[module: FileVersion("1.0")]
+[module: FileVersion("1.1")]
 
 namespace MonitorBaseClaude.ToolSmokeTests;
 
@@ -17,17 +17,26 @@ internal static class Program
     {
         if (args.Contains("--dbv2-index-callers", StringComparer.OrdinalIgnoreCase))
         {
-            return RunDbv2IndexCallers();
+            return RunDbv2IndexCallers("dbv2-index-callers", IsRepositoryOrDiscoveryMember, requireKnownCallerChecks: true);
+        }
+
+        if (args.Contains("--dbv2-index-callers-all", StringComparer.OrdinalIgnoreCase))
+        {
+            return RunDbv2IndexCallers("dbv2-index-callers-all", IsIndexedCallable, requireKnownCallerChecks: true);
         }
 
         Console.WriteLine("MonitorBaseClaude tool smoke tests");
         Console.WriteLine();
         Console.WriteLine("Available modes:");
-        Console.WriteLine("  --dbv2-index-callers    Rebuild DBV2 solution index and cross-check repository/discovery callers.");
+        Console.WriteLine("  --dbv2-index-callers        Cross-check repository/discovery callers.");
+        Console.WriteLine("  --dbv2-index-callers-all    Cross-check every indexed method/constructor in DBV2.");
         return 2;
     }
 
-    private static int RunDbv2IndexCallers()
+    private static int RunDbv2IndexCallers(
+        string modeName,
+        Func<SolutionIndexSymbol, bool> targetPredicate,
+        bool requireKnownCallerChecks)
     {
         MonitorServerSettings settings = MonitorServerSettings.Load();
         string observedRoot = Path.GetDirectoryName(settings.WatchedSolutionPath)
@@ -38,7 +47,7 @@ internal static class Program
             "History",
             "ToolSmokeTests",
             DateTime.Now.ToString("yyyyMMdd_HHmmss"),
-            "dbv2-index-callers");
+            modeName);
         Directory.CreateDirectory(runRoot);
 
         if (!File.Exists(settings.WatchedSolutionPath))
@@ -48,6 +57,7 @@ internal static class Program
         }
 
         Console.WriteLine("MonitorBaseClaude DBV2 indexed caller smoke");
+        Console.WriteLine($"Mode: {modeName}");
         Console.WriteLine($"Watched solution: {settings.WatchedSolutionPath}");
         Console.WriteLine($"Log root: {runRoot}");
         Console.WriteLine();
@@ -56,12 +66,13 @@ internal static class Program
         SolutionIndexBuildResult build = indexService.Rebuild();
         SolutionIndexQueryResult index = indexService.Query("solution", maxFiles: 5000, maxSymbols: 50000);
         IReadOnlyList<SolutionIndexSymbol> targets = index.Symbols
-            .Where(IsRepositoryOrDiscoveryMember)
+            .Where(targetPredicate)
             .OrderBy(symbol => symbol.RelativePath, StringComparer.OrdinalIgnoreCase)
             .ThenBy(symbol => symbol.StartLine)
             .ToArray();
 
         Dictionary<string, List<ExpectedCaller>> expected = BuildExpectedCallers(observedRoot, index.Symbols, targets);
+        IReadOnlyList<SolutionIndexSymbol> dirtySignatureSymbols = FindDirtySignatureSymbols(index.Symbols);
         List<Comparison> comparisons = [];
         foreach (SolutionIndexSymbol target in targets)
         {
@@ -76,11 +87,12 @@ internal static class Program
             comparisons.Add(new Comparison(target, expectedRows, actualRows, missing, unexpected));
         }
 
-        bool knownCallersPassed = KnownCallerChecksPass(indexService);
+        bool knownCallersPassed = !requireKnownCallerChecks || KnownCallerChecksPass(indexService);
         bool passed = targets.Count > 0
             && knownCallersPassed
+            && dirtySignatureSymbols.Count == 0
             && comparisons.All(item => item.Missing.Count == 0 && item.Unexpected.Count == 0);
-        string summary = BuildSummary(build, targets, comparisons, knownCallersPassed, passed);
+        string summary = BuildSummary(modeName, build, targets, dirtySignatureSymbols, comparisons, knownCallersPassed, passed);
         string summaryPath = Path.Combine(runRoot, "summary.md");
         File.WriteAllText(summaryPath, summary);
 
@@ -100,6 +112,32 @@ internal static class Program
         return (path.StartsWith("Data/", StringComparison.OrdinalIgnoreCase)
                 && path.EndsWith("Repository.cs", StringComparison.OrdinalIgnoreCase))
             || path.Equals("Services/SchemaDiscovery.cs", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static bool IsIndexedCallable(SolutionIndexSymbol symbol)
+    {
+        return symbol.Kind is "method" or "constructor";
+    }
+
+    private static IReadOnlyList<SolutionIndexSymbol> FindDirtySignatureSymbols(IReadOnlyList<SolutionIndexSymbol> symbols)
+    {
+        return symbols
+            .Where(symbol => HasDirtySignatureTrivia(symbol.Signature))
+            .OrderBy(symbol => symbol.RelativePath, StringComparer.OrdinalIgnoreCase)
+            .ThenBy(symbol => symbol.StartLine)
+            .ToArray();
+    }
+
+    private static bool HasDirtySignatureTrivia(string signature)
+    {
+        string trimmed = signature.TrimStart();
+        return trimmed.StartsWith("//", StringComparison.Ordinal)
+            || trimmed.StartsWith("/*", StringComparison.Ordinal)
+            || trimmed.StartsWith("///", StringComparison.Ordinal)
+            || trimmed.StartsWith("#region", StringComparison.OrdinalIgnoreCase)
+            || trimmed.StartsWith("#endregion", StringComparison.OrdinalIgnoreCase)
+            || signature.Contains("#region", StringComparison.OrdinalIgnoreCase)
+            || signature.Contains("#endregion", StringComparison.OrdinalIgnoreCase);
     }
 
     private static Dictionary<string, List<ExpectedCaller>> BuildExpectedCallers(
@@ -383,13 +421,20 @@ internal static class Program
     }
 
     private static string BuildSummary(
+        string modeName,
         SolutionIndexBuildResult build,
         IReadOnlyList<SolutionIndexSymbol> targets,
+        IReadOnlyList<SolutionIndexSymbol> dirtySignatureSymbols,
         IReadOnlyList<Comparison> comparisons,
         bool knownCallersPassed,
         bool passed)
     {
         IEnumerable<Comparison> failures = comparisons.Where(item => item.Missing.Count > 0 || item.Unexpected.Count > 0);
+        string coverageRows = string.Join(Environment.NewLine, comparisons
+            .GroupBy(item => GetTopLevelFolder(item.Target.RelativePath), StringComparer.OrdinalIgnoreCase)
+            .OrderBy(group => group.Key, StringComparer.OrdinalIgnoreCase)
+            .Select(group => $"- `{group.Key}`: targets `{group.Count()}`, expected callers `{group.Sum(item => item.Expected.Count)}`, actual callers `{group.Sum(item => item.Actual.Count)}`"));
+        string dirtyRows = FormatDirtySignatures(dirtySignatureSymbols);
         string failureRows = string.Join(Environment.NewLine + Environment.NewLine, failures.Select(item => $"""
             ## `{item.Target.StableSymbolKey}`
 
@@ -402,6 +447,8 @@ internal static class Program
         return $"""
             # DBV2 Indexed Caller Smoke
 
+            Mode: `{modeName}`
+
             Passed: `{passed}`
 
             - Indexed files: `{build.IndexedFileCount}`
@@ -412,9 +459,34 @@ internal static class Program
             - Known hand-picked caller checks passed: `{knownCallersPassed}`
             - Fully matched target count: `{comparisons.Count(item => item.Missing.Count == 0 && item.Unexpected.Count == 0)}`
             - Failure count: `{comparisons.Count(item => item.Missing.Count > 0 || item.Unexpected.Count > 0)}`
+            - Expected caller rows checked: `{comparisons.Sum(item => item.Expected.Count)}`
+            - Actual caller rows checked: `{comparisons.Sum(item => item.Actual.Count)}`
+            - Dirty comment/region signatures: `{dirtySignatureSymbols.Count}`
+
+            ## Cross Section
+
+            {coverageRows}
+
+            ## Dirty Signatures
+
+            {dirtyRows}
 
             {failureRows}
             """;
+    }
+
+    private static string FormatDirtySignatures(IReadOnlyList<SolutionIndexSymbol> symbols)
+    {
+        return symbols.Count == 0
+            ? "- none"
+            : string.Join(Environment.NewLine, symbols.Take(25).Select(symbol => $"- `{symbol.RelativePath}:{symbol.StartLine}` `{symbol.Signature}`"));
+    }
+
+    private static string GetTopLevelFolder(string relativePath)
+    {
+        string normalized = NormalizeRelativePath(relativePath);
+        int slashIndex = normalized.IndexOf('/');
+        return slashIndex <= 0 ? "(root)" : normalized[..slashIndex];
     }
 
     private static string FormatExpected(IReadOnlyList<ExpectedCaller> rows)
