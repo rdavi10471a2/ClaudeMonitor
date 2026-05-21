@@ -9,9 +9,9 @@ resolution:
 resolutionCommit:
 ---
 
-# Task: Verify Indexed Callers After `23a421e`
+# Task: Verify Indexed Callers After `cb1ae3d`
 
-Pull latest `main` and verify commit `23a421e` or newer is present.
+Pull latest `main` and verify commit `cb1ae3d` or newer is present.
 
 ```powershell
 git pull origin main
@@ -42,12 +42,16 @@ Actual caller rows checked: 211
 Dirty comment/region signatures: 0
 ```
 
+After the local/non-indexed symbol fix, the local DBV2 checkout may report `210` expected/actual caller rows instead of `211`; the removed row is a delegate/local invocation such as `action()` and is not a source method caller.
+
 This smoke rebuilds the DBV2 solution index, independently walks DBV2 source with Roslyn semantic binding, and compares expected call sites against SQLite-backed `FindCallers` results for:
 
 - `Data/*Repository.cs` methods and constructors
 - `Services/SchemaDiscovery.cs` methods and constructors
 
 The `--dbv2-index-callers-all` mode repeats the same independent comparison for every indexed method/constructor in the watched solution. Its summary should include a cross section for root, `AI`, `AITools`, `Configuration`, `Data`, `EditorSurface`, `Models`, `Services`, and `UI`.
+
+Different DBV2 checkouts may have different file/symbol counts. Backup folders named `SourceBakups` or `SourceBackups` should not appear in the index.
 
 There is no parser library present in the current DBV2 checkout, so do not block this verification on parser-specific files.
 

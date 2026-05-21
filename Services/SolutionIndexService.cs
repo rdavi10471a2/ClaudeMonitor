@@ -12,7 +12,7 @@ using MonitorBaseClaude.AI;
 namespace MonitorBaseClaude.Services;
 
 [AIFileContext("SolutionIndexService.cs", "Builds and queries the monitor-owned SQLite index for watched C# solution structure.")]
-[FileVersion("1.3")]
+[FileVersion("1.4")]
 public sealed class SolutionIndexService
 {
     private static readonly string[] ExcludedDirectoryNames =
@@ -21,7 +21,9 @@ public sealed class SolutionIndexService
         ".vs",
         "bin",
         "obj",
-        "node_modules"
+        "node_modules",
+        "SourceBakups",
+        "SourceBackups"
     ];
 
     private readonly string uiRoot;
@@ -918,6 +920,11 @@ public sealed class SolutionIndexService
         }
 
         symbol = NormalizeSymbol(symbol);
+        if (!IsIndexedDeclarationSymbol(symbol))
+        {
+            return null;
+        }
+
         SyntaxReference? syntaxReference = symbol.DeclaringSyntaxReferences.FirstOrDefault();
         if (syntaxReference is null)
         {
@@ -949,6 +956,15 @@ public sealed class SolutionIndexService
             (expectedKind is null || candidate.Kind.Equals(expectedKind, StringComparison.OrdinalIgnoreCase))
             && SymbolNameMatches(candidate.Name, expectedName));
         return (exact ?? candidates.FirstOrDefault())?.StableKey;
+    }
+
+    private static bool IsIndexedDeclarationSymbol(ISymbol symbol)
+    {
+        return symbol is IMethodSymbol
+            or INamedTypeSymbol
+            or IPropertySymbol
+            or IFieldSymbol
+            or IEventSymbol;
     }
 
     private static ISymbol NormalizeSymbol(ISymbol symbol)

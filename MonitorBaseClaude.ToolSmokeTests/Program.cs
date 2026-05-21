@@ -263,6 +263,11 @@ internal static class Program
         IReadOnlyDictionary<string, SolutionIndexSymbol> symbolsByAnchor)
     {
         symbol = NormalizeSymbol(symbol);
+        if (symbol is null || !IsIndexedDeclarationSymbol(symbol))
+        {
+            return null;
+        }
+
         SyntaxReference? syntaxReference = symbol?.DeclaringSyntaxReferences.FirstOrDefault();
         if (syntaxReference is null)
         {
@@ -316,6 +321,15 @@ internal static class Program
             null => null,
             _ => symbol.OriginalDefinition
         };
+    }
+
+    private static bool IsIndexedDeclarationSymbol(ISymbol symbol)
+    {
+        return symbol is IMethodSymbol
+            or INamedTypeSymbol
+            or IPropertySymbol
+            or IFieldSymbol
+            or IEventSymbol;
     }
 
     private static InvocationExpressionSyntax? GetInvocationForName(SimpleNameSyntax name)
