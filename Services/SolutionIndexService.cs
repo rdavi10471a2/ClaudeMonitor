@@ -1,6 +1,7 @@
 using System.ComponentModel;
 using System.Security.Cryptography;
 using System.Text;
+using System.Text.Json;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
@@ -104,7 +105,7 @@ public sealed class SolutionIndexService
         IReadOnlyList<IndexedFileBuild> files = EnumerateSourceFiles(observedRoot)
             .Select(sourceFilePath => BuildFileIndex(observedRoot, sourceFilePath))
             .ToArray();
-        IReadOnlyList<IndexedReferenceBuild> references = BuildReferenceIndex(files);
+        IReadOnlyList<IndexedReferenceBuild> references = BuildReferenceIndex(observedRoot, files);
 
         Dictionary<string, long> fileIdsByRelativePath = new(StringComparer.OrdinalIgnoreCase);
         Dictionary<string, long> symbolIdsByStableKey = new(StringComparer.Ordinal);
@@ -262,7 +263,7 @@ public sealed class SolutionIndexService
         using SqliteCommand command = connection.CreateCommand();
         StringBuilder sql = new(
             """
-            select s.stable_key, f.relative_path, f.sha256, s.text_hash, s.namespace, s.containing_type, s.kind, s.name, s.signature, s.start_line, s.end_line
+            select s.stable_key, f.relative_path, f.sha256, s.text_hash, s.namespace, s.containing_type, s.kind, s.name, s.signature, s.start_line, s.end_line, s.start_column, s.end_column, s.text_span_start, s.text_span_length, s.source_anchor, s.selector_json
             from symbols s
             join files f on f.id = s.file_id
             where s.name like $text escape '\'
@@ -298,7 +299,7 @@ public sealed class SolutionIndexService
         using SqliteCommand command = connection.CreateCommand();
         command.CommandText =
             """
-            select s.stable_key, f.relative_path, f.sha256, s.text_hash, s.namespace, s.containing_type, s.kind, s.name, s.signature, s.start_line, s.end_line
+            select s.stable_key, f.relative_path, f.sha256, s.text_hash, s.namespace, s.containing_type, s.kind, s.name, s.signature, s.start_line, s.end_line, s.start_column, s.end_column, s.text_span_start, s.text_span_length, s.source_anchor, s.selector_json
             from symbols s
             join files f on f.id = s.file_id
             where s.stable_key = $stableKey
@@ -382,7 +383,13 @@ public sealed class SolutionIndexService
                 signature text not null,
                 start_line integer not null,
                 end_line integer not null,
-                text_hash text not null default ''
+                text_hash text not null default '',
+                start_column integer not null default 1,
+                end_column integer not null default 1,
+                text_span_start integer not null default 0,
+                text_span_length integer not null default 0,
+                source_anchor text not null default '',
+                selector_json text not null default ''
             );
 
             create table if not exists diagnostics (
@@ -427,6 +434,12 @@ public sealed class SolutionIndexService
             create index if not exists ix_call_sites_caller on call_sites(caller_symbol_id);
             """);
         EnsureColumn(connection, "symbols", "text_hash", "text not null default ''");
+        EnsureColumn(connection, "symbols", "start_column", "integer not null default 1");
+        EnsureColumn(connection, "symbols", "end_column", "integer not null default 1");
+        EnsureColumn(connection, "symbols", "text_span_start", "integer not null default 0");
+        EnsureColumn(connection, "symbols", "text_span_length", "integer not null default 0");
+        EnsureColumn(connection, "symbols", "source_anchor", "text not null default ''");
+        EnsureColumn(connection, "symbols", "selector_json", "text not null default ''");
     }
 
     private static long InsertIndexRun(SqliteConnection connection, SqliteTransaction transaction, string observedRoot, string observedRootKey, string watchedSolutionPath, DateTimeOffset indexedAt)
@@ -473,8 +486,8 @@ public sealed class SolutionIndexService
         command.Transaction = transaction;
         command.CommandText =
             """
-            insert into symbols(file_id, stable_key, namespace, containing_type, kind, name, signature, start_line, end_line, text_hash)
-            values ($fileId, $stableKey, $namespace, $containingType, $kind, $name, $signature, $startLine, $endLine, $textHash);
+            insert into symbols(file_id, stable_key, namespace, containing_type, kind, name, signature, start_line, end_line, text_hash, start_column, end_column, text_span_start, text_span_length, source_anchor, selector_json)
+            values ($fileId, $stableKey, $namespace, $containingType, $kind, $name, $signature, $startLine, $endLine, $textHash, $startColumn, $endColumn, $textSpanStart, $textSpanLength, $sourceAnchor, $selectorJson);
             select last_insert_rowid();
             """;
         command.Parameters.AddWithValue("$fileId", fileId);
@@ -487,6 +500,12 @@ public sealed class SolutionIndexService
         command.Parameters.AddWithValue("$startLine", symbol.StartLine);
         command.Parameters.AddWithValue("$endLine", symbol.EndLine);
         command.Parameters.AddWithValue("$textHash", symbol.TextHash);
+        command.Parameters.AddWithValue("$startColumn", symbol.StartColumn);
+        command.Parameters.AddWithValue("$endColumn", symbol.EndColumn);
+        command.Parameters.AddWithValue("$textSpanStart", symbol.TextSpanStart);
+        command.Parameters.AddWithValue("$textSpanLength", symbol.TextSpanLength);
+        command.Parameters.AddWithValue("$sourceAnchor", symbol.SourceAnchor);
+        command.Parameters.AddWithValue("$selectorJson", symbol.SelectorJson);
         return (long)command.ExecuteScalar()!;
     }
 
@@ -587,7 +606,7 @@ public sealed class SolutionIndexService
             diagnostics);
     }
 
-    private static IReadOnlyList<IndexedReferenceBuild> BuildReferenceIndex(IReadOnlyList<IndexedFileBuild> files)
+    private static IReadOnlyList<IndexedReferenceBuild> BuildReferenceIndex(string observedRoot, IReadOnlyList<IndexedFileBuild> files)
     {
         if (files.Count == 0)
         {
@@ -599,7 +618,7 @@ public sealed class SolutionIndexService
         CSharpCompilation compilation = CSharpCompilation.Create(
             "MonitorBaseClaudeSolutionIndex",
             files.Select(file => file.SyntaxTree),
-            GetTrustedPlatformReferences(),
+            GetMetadataReferences(observedRoot),
             new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary));
 
         List<IndexedReferenceBuild> references = [];
@@ -660,6 +679,11 @@ public sealed class SolutionIndexService
         {
             FileLinePositionSpan span = tree.GetLineSpan(member.Span);
             string stableKey = $"{relativeKeyPath}::{@namespace}::{containingType ?? string.Empty}::{item.Kind}::{item.KeyName}{item.ParameterSuffix}";
+            int startLine = span.StartLinePosition.Line + 1;
+            int endLine = span.EndLinePosition.Line + 1;
+            int startColumn = span.StartLinePosition.Character + 1;
+            int endColumn = span.EndLinePosition.Character + 1;
+            string sourceAnchor = $"{relativeKeyPath}:{startLine}:{startColumn}-{endLine}:{endColumn}";
             yield return new IndexedSymbolBuild(
                 stableKey,
                 @namespace,
@@ -668,8 +692,14 @@ public sealed class SolutionIndexService
                 item.Name,
                 item.Signature,
                 textHash,
-                span.StartLinePosition.Line + 1,
-                span.EndLinePosition.Line + 1);
+                startLine,
+                endLine,
+                startColumn,
+                endColumn,
+                member.SpanStart,
+                member.Span.Length,
+                sourceAnchor,
+                BuildSelectorJson(stableKey, relativeKeyPath, @namespace, containingType, item.Kind, item.Name, GetParameterTypes(member)));
         }
     }
 
@@ -752,6 +782,39 @@ public sealed class SolutionIndexService
         string type = parameter.Type?.ToString() ?? string.Empty;
         string modifier = parameter.Modifiers.ToFullString().Trim();
         return string.IsNullOrWhiteSpace(modifier) ? type : $"{modifier} {type}";
+    }
+
+    private static IReadOnlyList<string> GetParameterTypes(MemberDeclarationSyntax member)
+    {
+        ParameterListSyntax? parameterList = member switch
+        {
+            BaseMethodDeclarationSyntax method => method.ParameterList,
+            DelegateDeclarationSyntax del => del.ParameterList,
+            RecordDeclarationSyntax record => record.ParameterList,
+            _ => null
+        };
+        return parameterList?.Parameters.Select(GetStableKeyParameterType).ToArray() ?? [];
+    }
+
+    private static string BuildSelectorJson(
+        string stableKey,
+        string relativePath,
+        string namespaceName,
+        string? containingType,
+        string kind,
+        string name,
+        IReadOnlyList<string> parameterTypes)
+    {
+        return JsonSerializer.Serialize(new
+        {
+            stableSymbolKey = stableKey,
+            relativePath,
+            memberKind = kind,
+            name,
+            containingNamespace = namespaceName,
+            containingType,
+            parameterTypes
+        });
     }
 
     private static string? GetStableKeyForSymbol(ISymbol? symbol, IReadOnlyDictionary<string, IndexedFileBuild> filesByRelativePath)
@@ -932,19 +995,90 @@ public sealed class SolutionIndexService
         return line.ToString().Trim();
     }
 
-    private static IReadOnlyList<MetadataReference> GetTrustedPlatformReferences()
+    private static IReadOnlyList<MetadataReference> GetMetadataReferences(string observedRoot)
     {
+        Dictionary<string, MetadataReference> references = new(StringComparer.OrdinalIgnoreCase);
         string? trustedAssemblies = AppContext.GetData("TRUSTED_PLATFORM_ASSEMBLIES") as string;
-        if (string.IsNullOrWhiteSpace(trustedAssemblies))
+        if (!string.IsNullOrWhiteSpace(trustedAssemblies))
         {
-            return [MetadataReference.CreateFromFile(typeof(object).Assembly.Location)];
+            foreach (string path in trustedAssemblies.Split(Path.PathSeparator, StringSplitOptions.RemoveEmptyEntries))
+            {
+                AddReference(references, path);
+            }
         }
 
-        return trustedAssemblies
-            .Split(Path.PathSeparator, StringSplitOptions.RemoveEmptyEntries)
-            .Where(File.Exists)
-            .Select(path => MetadataReference.CreateFromFile(path))
-            .ToArray();
+        foreach (string path in EnumerateObservedBinaryReferences(observedRoot))
+        {
+            AddReference(references, path);
+        }
+
+        foreach (string path in EnumerateWindowsDesktopReferences())
+        {
+            AddReference(references, path);
+        }
+
+        if (references.Count == 0)
+        {
+            AddReference(references, typeof(object).Assembly.Location);
+        }
+
+        return references.Values.ToArray();
+    }
+
+    private static IEnumerable<string> EnumerateObservedBinaryReferences(string observedRoot)
+    {
+        string binRoot = Path.Combine(observedRoot, "bin");
+        if (!Directory.Exists(binRoot))
+        {
+            yield break;
+        }
+
+        foreach (string dllPath in Directory.EnumerateFiles(binRoot, "*.dll", SearchOption.AllDirectories))
+        {
+            yield return dllPath;
+        }
+    }
+
+    private static IEnumerable<string> EnumerateWindowsDesktopReferences()
+    {
+        string desktopRoot = Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles),
+            "dotnet",
+            "shared",
+            "Microsoft.WindowsDesktop.App");
+        if (!Directory.Exists(desktopRoot))
+        {
+            yield break;
+        }
+
+        DirectoryInfo? latest = Directory.EnumerateDirectories(desktopRoot)
+            .Select(path => new DirectoryInfo(path))
+            .OrderByDescending(dir => dir.Name, StringComparer.OrdinalIgnoreCase)
+            .FirstOrDefault();
+        if (latest is null)
+        {
+            yield break;
+        }
+
+        foreach (string dllPath in Directory.EnumerateFiles(latest.FullName, "*.dll"))
+        {
+            yield return dllPath;
+        }
+    }
+
+    private static void AddReference(Dictionary<string, MetadataReference> references, string path)
+    {
+        try
+        {
+            if (File.Exists(path))
+            {
+                references[Path.GetFullPath(path)] = MetadataReference.CreateFromFile(path);
+            }
+        }
+        catch
+        {
+            // A bad binary reference should not prevent index rebuild for source files.
+        }
     }
 
     private static string GetContainingNamespace(SyntaxNode node)
@@ -1016,7 +1150,7 @@ public sealed class SolutionIndexService
         using SqliteCommand command = connection.CreateCommand();
         command.CommandText =
             """
-            select s.stable_key, f.relative_path, f.sha256, s.text_hash, s.namespace, s.containing_type, s.kind, s.name, s.signature, s.start_line, s.end_line
+            select s.stable_key, f.relative_path, f.sha256, s.text_hash, s.namespace, s.containing_type, s.kind, s.name, s.signature, s.start_line, s.end_line, s.start_column, s.end_column, s.text_span_start, s.text_span_length, s.source_anchor, s.selector_json
             from symbols s
             join files f on f.id = s.file_id
             where ($scope = 'solution')
@@ -1047,7 +1181,13 @@ public sealed class SolutionIndexService
                 reader.GetString(7),
                 reader.GetString(8),
                 reader.GetInt32(9),
-                reader.GetInt32(10)));
+                reader.GetInt32(10),
+                reader.GetInt32(11),
+                reader.GetInt32(12),
+                reader.GetInt32(13),
+                reader.GetInt32(14),
+                reader.GetString(15),
+                reader.GetString(16)));
         }
 
         return symbols;
@@ -1346,7 +1486,13 @@ public sealed class SolutionIndexService
         string Signature,
         string TextHash,
         int StartLine,
-        int EndLine);
+        int EndLine,
+        int StartColumn,
+        int EndColumn,
+        int TextSpanStart,
+        int TextSpanLength,
+        string SourceAnchor,
+        string SelectorJson);
 
     private sealed record IndexedDiagnosticBuild(
         string Severity,
@@ -1440,7 +1586,13 @@ public sealed record SolutionIndexSymbol(
     string Name,
     string Signature,
     int StartLine,
-    int EndLine);
+    int EndLine,
+    int StartColumn,
+    int EndColumn,
+    int TextSpanStart,
+    int TextSpanLength,
+    string SourceAnchor,
+    string SelectorJson);
 
 [Description("Indexed C# reference or call-site metadata from the watched solution index.")]
 public sealed record SolutionIndexReference(

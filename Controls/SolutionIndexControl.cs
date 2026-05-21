@@ -258,6 +258,7 @@ public sealed class SolutionIndexControl : UserControl
             SolutionIndexQueryResult result = indexService.Query(scopeBox.Text, valueBox.Text, 500, (int)maxSymbolsBox.Value);
             filesGrid.DataSource = result.Files.ToList();
             symbolsGrid.DataSource = result.Symbols.ToList();
+            FormatSymbolsGrid();
             referencesGrid.DataSource = null;
             ApplyStatus(indexService.GetStatus());
         }
@@ -316,6 +317,7 @@ public sealed class SolutionIndexControl : UserControl
                 ? indexService.FindCallers(stableKey)
                 : indexService.FindReferences(stableKey);
             referencesGrid.DataSource = rows.ToList();
+            FormatReferencesGrid();
             SolutionIndexStatus status = indexService.GetStatus();
             ApplyStatus(status);
             statusLabel.Text += onlyCallers
@@ -492,6 +494,40 @@ public sealed class SolutionIndexControl : UserControl
             BackgroundColor = SystemColors.Window,
             BorderStyle = BorderStyle.FixedSingle
         };
+    }
+
+    private void FormatSymbolsGrid()
+    {
+        SetDisplayIndex(symbolsGrid, nameof(SolutionIndexSymbol.RelativePath), 0);
+        SetDisplayIndex(symbolsGrid, nameof(SolutionIndexSymbol.Name), 1);
+        SetDisplayIndex(symbolsGrid, nameof(SolutionIndexSymbol.Kind), 2);
+        SetDisplayIndex(symbolsGrid, nameof(SolutionIndexSymbol.ContainingType), 3);
+        SetDisplayIndex(symbolsGrid, nameof(SolutionIndexSymbol.Signature), 4);
+        SetDisplayIndex(symbolsGrid, nameof(SolutionIndexSymbol.SourceAnchor), 5);
+        SetDisplayIndex(symbolsGrid, nameof(SolutionIndexSymbol.StableSymbolKey), 6);
+        SetDisplayIndex(symbolsGrid, nameof(SolutionIndexSymbol.SelectorJson), 7);
+        SetDisplayIndex(symbolsGrid, nameof(SolutionIndexSymbol.FileHash), 8);
+        SetDisplayIndex(symbolsGrid, nameof(SolutionIndexSymbol.SymbolTextHash), 9);
+    }
+
+    private void FormatReferencesGrid()
+    {
+        SetDisplayIndex(referencesGrid, nameof(SolutionIndexReference.RelativePath), 0);
+        SetDisplayIndex(referencesGrid, nameof(SolutionIndexReference.Line), 1);
+        SetDisplayIndex(referencesGrid, nameof(SolutionIndexReference.Column), 2);
+        SetDisplayIndex(referencesGrid, nameof(SolutionIndexReference.ReferenceKind), 3);
+        SetDisplayIndex(referencesGrid, nameof(SolutionIndexReference.CallerName), 4);
+        SetDisplayIndex(referencesGrid, nameof(SolutionIndexReference.Snippet), 5);
+        SetDisplayIndex(referencesGrid, nameof(SolutionIndexReference.CallerStableSymbolKey), 6);
+        SetDisplayIndex(referencesGrid, nameof(SolutionIndexReference.TargetStableSymbolKey), 7);
+    }
+
+    private static void SetDisplayIndex(DataGridView grid, string columnName, int displayIndex)
+    {
+        if (grid.Columns[columnName] is DataGridViewColumn column)
+        {
+            column.DisplayIndex = Math.Min(displayIndex, grid.Columns.Count - 1);
+        }
     }
 
     private sealed record IndexTreeTag(string Scope, string? Value);
