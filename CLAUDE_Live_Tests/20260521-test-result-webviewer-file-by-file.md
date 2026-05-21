@@ -135,3 +135,31 @@ Summary written to `Working\History\ToolSmokeTests\<timestamp>\webviewer-file-by
 - The mode hard-codes four target files because the proposal's "syntactic-truth corpus" design is the proper general solution; this smoke is intentionally narrow (validate-on-a-real-codebase) rather than broad (full corpus coverage).
 - The grep ground truth is approximate. For uniquely-named identifiers (e.g., specific method names on a single repo) it's a tight upper bound. For commonly-named identifiers (e.g., `_connectionString`, `View`) it over-counts heavily — which is the whole reason the Monitor index exists.
 - Future expansion: lift the target file list to a CLI argument or config file so the same mode can validate any picked file set without re-coding.
+
+## Follow-up — confirmed Finding 1 is an unchanged architectural state, not a regression
+
+Per Operator request, re-ran the fixture-index-matrix smoke against `2a8537d` with one experimental change: the `partial declaration merge` feature probe's `current expectation` flipped from `False` to `True`. This tested whether Codex's `2a8537d` quietly added partial-class merging.
+
+Result on the flipped probe:
+
+```
+- Matrix checks: 68
+- Fully matched checks: 68
+- Failure count: 0
+- Current model feature probes: 10
+- Current model feature expectation failures: 1
+- `partial declaration merge` Roslyn present `True`, Monitor indexed `False`, current expectation `True`
+```
+
+**Monitor still stores per-physical declarations.** The fixture's two `McpPartialProbe` partial declarations are counted as 2 symbol rows; the probe at `True` fails because Monitor's actual state remains `False`. `2a8537d` did not change this.
+
+The flip was experimental only — reverted, not committed.
+
+**Implication for Finding 1**: the partial-class `ManageViewsNext` showing Monitor refs = 0 with 7 grep extra-file occurrences (the sibling partial declarations in `.Columns.cs`, `.Selection.cs`, etc.) is the **consequence of the per-physical-declaration architectural decision**, not an indexer bug. The current `find_indexed_references` against one partial's stable key returns refs to that specific physical declaration; sibling partials are separate symbols with their own (also empty) ref sets.
+
+Two possible paths to close Finding 1 if the architectural call needs revisiting:
+
+1. **Schema-side**: add a `partial_merge` table mapping each per-physical stable key to a canonical key for the merged type. New API mode that aggregates refs across the group. Bigger change — touches schema, indexer, and query API.
+2. **Query-side workaround**: when `FindReferences` receives a stable key for a partial-class declaration, fetch all sibling partial declarations of the same `namespace::name` and union their reference rows before returning. Smaller change — query layer only, no schema impact, no indexer change. Same caller-visible behavior.
+
+Operator's call whether to file Finding 1 as a real finding requiring a fix, or leave it as a locked architectural decision (the current `partial declaration merge: Monitor=False` feature probe already documents this).
