@@ -341,28 +341,30 @@ Arguments:
 
 ### `get_source_map`
 
-Returns a read-only Roslyn-derived source map for a C# file, folder, or the watched project.
+Returns a read-only Roslyn-derived source map for a C# file, folder, namespace, or the watched project.
 
 Arguments:
 
-- `path`: optional watched source file or folder path, absolute or relative to the watched solution folder. Omit for project scope.
-- `scope`: `auto`, `file`, `folder`, or `project`.
+- `path`: optional watched source file/folder path, or namespace text when `scope=namespace`. Omit for project scope.
+- `scope`: `auto`, `file`, `folder`, `namespace`, or `project`.
 - `mode`: `auto`, `navigation`, `selector`, `detail`, or `full`.
+- `namespaceName`: optional namespace text when `scope=namespace`. If omitted, `path` is treated as the namespace.
 
 Mode defaults:
 
 - `scope=file` -> `mode=selector`
 - `scope=folder` -> `mode=navigation`
+- `scope=namespace` -> `mode=navigation`
 - `scope=project` -> `mode=navigation`
 
 Mode meanings:
 
 - `navigation`: broad orientation. It returns current file/type/member shape, parse status, diagnostic counts, line spans, and lightweight type context. Use it to choose the next file/member without reading bodies.
-- `selector`: target selection. It returns stable lexical symbol keys, normalized symbol text hashes, file hashes, compact contract signatures, parameter types, modifiers, flags, and syntax kinds. Use it to build `get_symbol`, `submit_symbol`, or `remove_symbol` selectors.
+- `selector`: target selection. It returns stable lexical symbol keys, normalized symbol text hashes, file hashes, compact contract signatures, parameter types/names, modifiers, flags, and syntax kinds. Use it to build `get_symbol`, `submit_symbol`, or `remove_symbol` selectors.
 - `detail`: contract detail. It keeps selector identity plus usings, diagnostics when present, parameter names, and non-AI attribute argument summaries. Use it when interface/shape detail matters but full audit fidelity is unnecessary.
 - `full`: audit/debug fidelity. It keeps absolute source paths, diagnostics summaries, usings, empty arrays, and the full source-map schema. Do not use it as broad model context by default.
 
-The response includes `modePurpose`, `estimatedTokenProxy`, `budgetLimit`, `wasTruncated`, optional `suggestedNarrowing`, and ranked `suggestedNextCalls`. `suggestedNextCalls` makes the narrowing hierarchy explicit: navigation responses suggest file-level selector calls; selector responses suggest `get_symbol` calls by structured selector/stable key. Treat them as ranked affordances, not mandatory commands; choose the next call that matches the user's intent.
+The response includes `modePurpose`, `estimatedTokenProxy`, `budgetLimit`, `wasTruncated`, optional `suggestedNarrowing`, and ranked `suggestedNextCalls`. `suggestedNextCalls` makes the narrowing hierarchy explicit: navigation responses suggest file-level selector calls; selector responses suggest `get_symbol` calls by stable-key-only selector JSON and low-rank namespace-surface calls for file `using` directives. Treat them as ranked affordances, not mandatory commands; choose the next call that matches the user's intent.
 
 `budgetLimit` is enforced by the Tool Server. If a shaped response would exceed budget, the Tool Server returns `wasTruncated: true`, omits source-map file payload details, and includes narrowing guidance so the client can retry with less detail.
 
@@ -373,6 +375,7 @@ This is a published Tier 1 tool, not a background artifact. Use it before C# edi
 - see the current source shape without reading every body
 - find the stable selector for `get_symbol`, `submit_symbol`, or `remove_symbol`
 - inspect nearby/related files by folder or project scope
+- inspect a referenced namespace surface with `scope=namespace`
 - detect whether a requested change is local, cross-file, or structural
 - keep the Model anchored to the prior converged pattern before generating code
 

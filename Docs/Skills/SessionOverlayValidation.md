@@ -31,5 +31,6 @@ record decision for file B
 ## Unblock
 
 - Stage a corrected candidate for the same blocked file.
+- If diagnostics identify a missed consumer/call site, add that file to the same monitor session and stage it before retrying review.
 - Or explicitly force-review the blocked item through the Host UI.
 - Or abandon the chain and start a new monitor session for unrelated work.

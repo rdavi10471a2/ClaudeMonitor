@@ -286,18 +286,28 @@ public sealed class McpProxyHubService : IDisposable
 
         Button cancelButton = new()
         {
-            Text = "Cancel Review",
-            DialogResult = DialogResult.Cancel,
+            Text = "Stop For Fix",
             Size = new Size(140, 32),
             Location = new Point(308, 306)
         };
 
         Button forceButton = new()
         {
-            Text = "Force WinMerge Review",
-            DialogResult = DialogResult.OK,
+            Text = "Review Anyway",
             Size = new Size(170, 32),
             Location = new Point(458, 306)
+        };
+
+        cancelButton.Click += (_, _) =>
+        {
+            dialog.DialogResult = DialogResult.Cancel;
+            dialog.Close();
+        };
+
+        forceButton.Click += (_, _) =>
+        {
+            dialog.DialogResult = DialogResult.OK;
+            dialog.Close();
         };
 
         dialog.Controls.Add(icon);
