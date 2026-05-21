@@ -1,5 +1,6 @@
 using System.ComponentModel;
 using System.Diagnostics;
+using System.Globalization;
 using System.Text.Json.Nodes;
 using MonitorBaseClaude.AI;
 
@@ -7,7 +8,7 @@ namespace MonitorBaseClaude.Controls;
 
 [DesignerCategory("Code")]
 [AIFileContext("ClaudeInfoControl.cs", "Code-only Claude Code session usage inspector backed by statusline snapshot JSON.")]
-[FileVersion("1.0")]
+[FileVersion("1.1")]
 public sealed class ClaudeInfoControl : UserControl
 {
     private readonly string snapshotRoot;
@@ -45,20 +46,7 @@ public sealed class ClaudeInfoControl : UserControl
         if (!File.Exists(snapshotPath))
         {
             statusValue.Text = "No Claude statusline snapshot found";
-            updatedValue.Text = "-";
-            sessionValue.Text = "-";
-            modelValue.Text = "-";
-            effortValue.Text = "-";
-            thinkingValue.Text = "-";
-            contextValue.Text = "-";
-            inputTokensValue.Text = "-";
-            outputTokensValue.Text = "-";
-            cacheValue.Text = "-";
-            costValue.Text = "-";
-            rateLimitValue.Text = "-";
-            changesValue.Text = "-";
-            workspaceValue.Text = "-";
-            transcriptValue.Text = "-";
+            ClearSnapshotValues();
             return;
         }
 
@@ -70,12 +58,14 @@ public sealed class ClaudeInfoControl : UserControl
         catch (Exception ex)
         {
             statusValue.Text = $"Snapshot parse failed: {ex.Message}";
+            ClearSnapshotValues();
             return;
         }
 
         if (root is null)
         {
             statusValue.Text = "Snapshot parse failed";
+            ClearSnapshotValues();
             return;
         }
 
@@ -219,7 +209,8 @@ public sealed class ClaudeInfoControl : UserControl
         double? total = cost["total_cost_usd"]?.GetValue<double?>();
         string duration = FormatDuration(cost["total_duration_ms"]?.GetValue<long?>());
         string api = FormatDuration(cost["total_api_duration_ms"]?.GetValue<long?>());
-        return total is null ? $"wall {duration}, API {api}" : $"{total.Value:C4}, wall {duration}, API {api}";
+        string totalText = total is null ? string.Empty : string.Format(CultureInfo.InvariantCulture, "${0:N4} USD, ", total.Value);
+        return total is null ? $"wall {duration}, API {api}" : $"{totalText}wall {duration}, API {api}";
     }
 
     private static string FormatRateLimits(JsonObject? rateLimits)
@@ -272,6 +263,24 @@ public sealed class ClaudeInfoControl : UserControl
     private static string FormatBool(bool? value)
     {
         return value is null ? "-" : value.Value ? "Enabled" : "Disabled";
+    }
+
+    private void ClearSnapshotValues()
+    {
+        updatedValue.Text = "-";
+        sessionValue.Text = "-";
+        modelValue.Text = "-";
+        effortValue.Text = "-";
+        thinkingValue.Text = "-";
+        contextValue.Text = "-";
+        inputTokensValue.Text = "-";
+        outputTokensValue.Text = "-";
+        cacheValue.Text = "-";
+        costValue.Text = "-";
+        rateLimitValue.Text = "-";
+        changesValue.Text = "-";
+        workspaceValue.Text = "-";
+        transcriptValue.Text = "-";
     }
 
     private static Label CreateHeaderLabel(string text)

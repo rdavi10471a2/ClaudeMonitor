@@ -6,7 +6,27 @@ $ErrorActionPreference = 'Stop'
 
 if ([string]::IsNullOrWhiteSpace($OutputRoot)) {
     $repoRoot = Resolve-Path (Join-Path $PSScriptRoot '..\..')
-    $OutputRoot = Join-Path $repoRoot 'Working\History\ClaudeCode'
+    $settingsPath = Join-Path $repoRoot 'appsettings.json'
+    if (-not (Test-Path -LiteralPath $settingsPath)) {
+        $settingsPath = Join-Path $repoRoot 'appsettings.template.json'
+    }
+
+    $uiRoot = $repoRoot.Path
+    if (Test-Path -LiteralPath $settingsPath) {
+        $settingsDirectory = Split-Path -Parent $settingsPath
+        $settings = Get-Content -LiteralPath $settingsPath -Raw | ConvertFrom-Json
+        if ($settings.MonitorClient -and -not [string]::IsNullOrWhiteSpace($settings.MonitorClient.UiRoot)) {
+            $configuredUiRoot = [string]$settings.MonitorClient.UiRoot
+            $uiRoot = if ([System.IO.Path]::IsPathRooted($configuredUiRoot)) {
+                $configuredUiRoot
+            }
+            else {
+                Join-Path $settingsDirectory $configuredUiRoot
+            }
+        }
+    }
+
+    $OutputRoot = Join-Path $uiRoot 'Working\History\ClaudeCode'
 }
 
 New-Item -ItemType Directory -Force -Path $OutputRoot | Out-Null
@@ -19,7 +39,9 @@ if ([string]::IsNullOrWhiteSpace($raw)) {
 
 $latestPath = Join-Path $OutputRoot 'statusline-latest.json'
 $historyPath = Join-Path $OutputRoot 'statusline-history.jsonl'
-Set-Content -LiteralPath $latestPath -Value $raw -Encoding UTF8
+$tempLatestPath = Join-Path $OutputRoot ("statusline-latest.{0:N}.tmp" -f [guid]::NewGuid())
+Set-Content -LiteralPath $tempLatestPath -Value $raw -Encoding UTF8
+Move-Item -LiteralPath $tempLatestPath -Destination $latestPath -Force
 $compact = ($raw | ConvertFrom-Json | ConvertTo-Json -Compress -Depth 64)
 Add-Content -LiteralPath $historyPath -Value $compact -Encoding UTF8
 

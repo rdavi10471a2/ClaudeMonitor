@@ -5,7 +5,7 @@ namespace MonitorBaseClaude.Controls;
 
 [DesignerCategory("Code")]
 [AIFileContext("MonitorDashboardControl.cs", "Code-only monitor shell using deterministic split containers for tool navigation, MCP testing, and telemetry panes.")]
-[FileVersion("2.6")]
+[FileVersion("2.7")]
 public sealed class MonitorDashboardControl : UserControl
 {
     private const int FriendlySplitterWidth = 12;
@@ -26,6 +26,7 @@ public sealed class MonitorDashboardControl : UserControl
     private readonly McpTestBenchControl testBenchControl;
     private readonly TelemetryLogControl telemetryLogControl;
     private readonly TelemetryLogControl monitorMcpTelemetryLogControl;
+    private readonly SolutionIndexControl solutionIndexControl;
     private ClaudeInfoControl? claudeInfoControl;
     private Form? claudeInfoWindow;
     private SessionInspectorControl? sessionInspectorControl;
@@ -80,15 +81,23 @@ public sealed class MonitorDashboardControl : UserControl
             Dock = DockStyle.Fill,
             MinimumSize = new Size(850, 360)
         };
+        solutionIndexControl = new SolutionIndexControl(settings)
+        {
+            Dock = DockStyle.Fill,
+            MinimumSize = new Size(850, 360)
+        };
 
         workspaceSplit.Panel1.Controls.Add(toolNavigatorControl);
         workspaceSplit.Panel2.Controls.Add(testBenchControl);
         TabPage systemMonitorPage = new("System Monitor");
         TabPage roslynToolingPage = new("Roslyn Tooling");
+        TabPage solutionIndexPage = new("Solution Index");
         systemMonitorPage.Controls.Add(monitorMcpTelemetryLogControl);
         roslynToolingPage.Controls.Add(telemetryLogControl);
+        solutionIndexPage.Controls.Add(solutionIndexControl);
         mainTabs.TabPages.Add(systemMonitorPage);
         mainTabs.TabPages.Add(roslynToolingPage);
+        mainTabs.TabPages.Add(solutionIndexPage);
         mainTabs.SelectedIndex = 0;
         verticalSplit.Panel1.Controls.Add(mainTabs);
         verticalSplit.Panel2Collapsed = true;
@@ -136,6 +145,7 @@ public sealed class MonitorDashboardControl : UserControl
         commandBar.AddMenuItem("Proxy", "Refresh Telemetry", (_, _) => RefreshAllTelemetry());
         commandBar.AddMenuItem("View", "System Monitor", (_, _) => mainTabs.SelectedIndex = 0);
         commandBar.AddMenuItem("View", "Roslyn Tooling", (_, _) => mainTabs.SelectedIndex = 1);
+        commandBar.AddMenuItem("View", "Solution Index", (_, _) => mainTabs.SelectedIndex = 2);
         commandBar.AddMenuItem("View", "Current Session", (_, _) => ShowSessionInspectorWindow());
         commandBar.AddMenuItem("View", "Claude Info", (_, _) => ShowClaudeInfoWindow());
         commandBar.AddMenuItem("Tools", "Open CodeLens Telemetry Folder", (_, _) => telemetryLogControl.OpenLogFolder());

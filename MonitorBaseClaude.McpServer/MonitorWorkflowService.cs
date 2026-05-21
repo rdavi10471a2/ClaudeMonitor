@@ -211,10 +211,17 @@ public sealed partial class MonitorWorkflowService
         string? requestedPath = string.IsNullOrWhiteSpace(path) ? null : path;
         string? requestedNamespace = string.IsNullOrWhiteSpace(namespaceName) ? null : namespaceName.Trim();
         string normalizedScope = ResolveEffectiveSourceMapScope(observedRoot, requestedPath, NormalizeSourceMapScope(scope));
+        if (requestedNamespace is not null && !normalizedScope.Equals("namespace", StringComparison.OrdinalIgnoreCase))
+        {
+            throw new InvalidOperationException("namespaceName is only valid when source map scope is namespace.");
+        }
+
         string normalizedMode = ResolveEffectiveSourceMapMode(normalizedScope, mode);
-        string[] sourceFiles = ResolveSourceMapFiles(observedRoot, requestedPath, normalizedScope, requestedNamespace).ToArray();
+        string? effectiveNamespace = ResolveRequestedNamespace(normalizedScope, requestedPath, requestedNamespace);
+        string[] sourceFiles = ResolveSourceMapFiles(observedRoot, requestedPath, normalizedScope).ToArray();
         MonitorSourceMapFile[] files = sourceFiles
             .Select(path => BuildSourceMapFile(observedRoot, path))
+            .Where(file => SourceMapFileMatchesNamespace(file, normalizedScope, effectiveNamespace))
             .Select(file => ShapeSourceMapFile(file, normalizedMode))
             .OrderBy(file => file.RelativeSourcePath, StringComparer.OrdinalIgnoreCase)
             .ToArray();
@@ -229,7 +236,7 @@ public sealed partial class MonitorWorkflowService
             normalizedMode,
             modePurpose,
             requestedPath,
-            ResolveRequestedNamespace(normalizedScope, requestedPath, requestedNamespace),
+            effectiveNamespace,
             watchedProjectAlias,
             sourceRoot,
             files.Length,
@@ -253,7 +260,7 @@ public sealed partial class MonitorWorkflowService
             normalizedMode,
             modePurpose,
             requestedPath,
-            ResolveRequestedNamespace(normalizedScope, requestedPath, requestedNamespace),
+            effectiveNamespace,
             watchedProjectAlias,
             sourceRoot,
             0,
@@ -1468,27 +1475,16 @@ public sealed partial class MonitorWorkflowService
             : "audit-debug";
     }
 
-    private static IEnumerable<string> ResolveSourceMapFiles(string observedRoot, string? path, string scope, string? namespaceName)
+    private static IEnumerable<string> ResolveSourceMapFiles(string observedRoot, string? path, string scope)
     {
         if (scope.Equals("project", StringComparison.OrdinalIgnoreCase) || string.IsNullOrWhiteSpace(path))
         {
-            if (scope.Equals("namespace", StringComparison.OrdinalIgnoreCase))
-            {
-                string requestedNamespace = ResolveRequestedNamespace(scope, path, namespaceName)
-                    ?? throw new InvalidOperationException("Namespace scope requires namespaceName or path.");
-                return EnumerateObservedSourceFiles(observedRoot)
-                    .Where(sourcePath => SourceFileContainsNamespace(sourcePath, requestedNamespace));
-            }
-
             return EnumerateObservedSourceFiles(observedRoot);
         }
 
         if (scope.Equals("namespace", StringComparison.OrdinalIgnoreCase))
         {
-            string requestedNamespace = ResolveRequestedNamespace(scope, path, namespaceName)
-                ?? throw new InvalidOperationException("Namespace scope requires namespaceName or path.");
-            return EnumerateObservedSourceFiles(observedRoot)
-                .Where(sourcePath => SourceFileContainsNamespace(sourcePath, requestedNamespace));
+            return EnumerateObservedSourceFiles(observedRoot);
         }
 
         string targetPath = Path.IsPathRooted(path)
@@ -1526,13 +1522,19 @@ public sealed partial class MonitorWorkflowService
             : string.IsNullOrWhiteSpace(path) ? null : path.Trim();
     }
 
-    private static bool SourceFileContainsNamespace(string sourcePath, string namespaceName)
+    private static bool SourceMapFileMatchesNamespace(MonitorSourceMapFile file, string scope, string? namespaceName)
     {
-        SyntaxTree tree = CSharpSyntaxTree.ParseText(File.ReadAllText(sourcePath), path: sourcePath);
-        CompilationUnitSyntax root = tree.GetCompilationUnitRoot();
-        return root.DescendantNodes()
-            .OfType<BaseNamespaceDeclarationSyntax>()
-            .Any(namespaceDeclaration => namespaceDeclaration.Name.ToString().Equals(namespaceName, StringComparison.Ordinal));
+        if (!scope.Equals("namespace", StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+
+        if (string.IsNullOrWhiteSpace(namespaceName))
+        {
+            throw new InvalidOperationException("Namespace scope requires namespaceName or path.");
+        }
+
+        return file.Symbols.Any(symbol => string.Equals(symbol.Namespace, namespaceName, StringComparison.Ordinal));
     }
 
     private static void EnsurePathIsUnderObservedRoot(string observedRoot, string path)

@@ -2,6 +2,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using ModelContextProtocol.Server;
+using MonitorBaseClaude.Services;
 using System.ComponentModel;
 using System.Text.Json;
 
@@ -13,10 +14,12 @@ internal static class Program
     {
         HostApplicationBuilder builder = Host.CreateApplicationBuilder(args);
         builder.Logging.ClearProviders();
-        builder.Services.AddSingleton(MonitorServerSettings.Load(args));
+        MonitorServerSettings settings = MonitorServerSettings.Load(args);
+        builder.Services.AddSingleton(settings);
         builder.Services.AddSingleton<MonitorWorkflowService>();
         builder.Services.AddSingleton<MonitorSessionService>();
         builder.Services.AddSingleton<MonitorMcpTelemetryService>();
+        builder.Services.AddSingleton(new SolutionIndexService(settings.UiRoot, settings.WatchedSolutionPath));
         builder.Services
             .AddMcpServer()
             .WithStdioServerTransport()
@@ -33,17 +36,20 @@ public sealed class MonitorTools
     private readonly MonitorWorkflowService workflowService;
     private readonly MonitorSessionService sessionService;
     private readonly MonitorMcpTelemetryService telemetryService;
+    private readonly SolutionIndexService solutionIndexService;
 
     public MonitorTools(
         MonitorServerSettings settings,
         MonitorWorkflowService workflowService,
         MonitorSessionService sessionService,
-        MonitorMcpTelemetryService telemetryService)
+        MonitorMcpTelemetryService telemetryService,
+        SolutionIndexService solutionIndexService)
     {
         this.settings = settings;
         this.workflowService = workflowService;
         this.sessionService = sessionService;
         this.telemetryService = telemetryService;
+        this.solutionIndexService = solutionIndexService;
     }
 
     [McpServerTool]
@@ -73,6 +79,87 @@ public sealed class MonitorTools
     public MonitorSelfCheckResult GetSelfCheck()
     {
         return Track(nameof(GetSelfCheck), null, workflowService.GetSelfCheck);
+    }
+
+    [McpServerTool]
+    [Description("Rebuild the monitor-owned SQLite index for the watched solution. This indexes C# files, declared symbols, namespaces, diagnostics, stable keys, and file hashes for cheap later MCP queries.")]
+    public SolutionIndexBuildResult RefreshSolutionIndex()
+    {
+        return Track(nameof(RefreshSolutionIndex), null, solutionIndexService.Rebuild);
+    }
+
+    [McpServerTool]
+    [Description("Refresh one watched C# file in the monitor-owned SQLite solution index without rebuilding the whole solution index.")]
+    public SolutionIndexFileRefreshResult RefreshSolutionIndexFile(
+        [Description("Watched C# file path, absolute or relative to the watched solution folder.")] string path)
+    {
+        return Track(nameof(RefreshSolutionIndexFile), new { path }, () => solutionIndexService.RefreshFile(path));
+    }
+
+    [McpServerTool]
+    [Description("Refresh a watched source file into the monitor-owned Working folder, then refresh that C# file in the monitor-owned SQLite solution index.")]
+    public RefreshFileAndIndexResult RefreshFileAndIndex(
+        [Description("Watched C# file path, absolute or relative to the watched solution folder.")] string sourceFilePath)
+    {
+        return Track(nameof(RefreshFileAndIndex), new { sourceFilePath }, () =>
+        {
+            MonitorFileRefreshResult refresh = workflowService.RefreshFile(sourceFilePath);
+            SolutionIndexFileRefreshResult index = solutionIndexService.RefreshFile(sourceFilePath);
+            return new RefreshFileAndIndexResult(refresh, index);
+        });
+    }
+
+    [McpServerTool]
+    [Description("Return status for the monitor-owned watched solution index, including database path, indexed counts, diagnostics, and stale file count.")]
+    public SolutionIndexStatus GetSolutionIndexStatus()
+    {
+        return Track(nameof(GetSolutionIndexStatus), null, solutionIndexService.GetStatus);
+    }
+
+    [McpServerTool]
+    [Description("Return the monitor-owned watched solution index tree as compact JSON: solution status, namespaces, and files. Use this as the cheap whole-project map.")]
+    public SolutionIndexTree GetSolutionIndexTree()
+    {
+        return Track(nameof(GetSolutionIndexTree), null, solutionIndexService.GetTree);
+    }
+
+    [McpServerTool]
+    [Description("Return the monitor-owned watched solution index as JSON with indexed files and symbols. Use maxFiles/maxSymbols to budget the payload.")]
+    public SolutionIndexQueryResult GetSolutionIndex(
+        [Description("Maximum files to return.")] int maxFiles = 5000,
+        [Description("Maximum symbols to return.")] int maxSymbols = 50000)
+    {
+        return Track(nameof(GetSolutionIndex), new { maxFiles, maxSymbols }, () => solutionIndexService.Query("solution", null, maxFiles, maxSymbols));
+    }
+
+    [McpServerTool]
+    [Description("Query the monitor-owned watched solution index by scope. Scopes: solution, namespace, folder, file. Returns indexed files and symbols without reparsing with Roslyn.")]
+    public SolutionIndexQueryResult QuerySolutionIndex(
+        [Description("Index scope: solution, namespace, folder, or file.")] string scope = "solution",
+        [Description("Namespace text, folder path, or file path for scoped queries. Omit for solution scope.")] string? value = null,
+        [Description("Maximum files to return.")] int maxFiles = 200,
+        [Description("Maximum symbols to return.")] int maxSymbols = 500)
+    {
+        return Track(nameof(QuerySolutionIndex), new { scope, value, maxFiles, maxSymbols }, () => solutionIndexService.Query(scope, value, maxFiles, maxSymbols));
+    }
+
+    [McpServerTool]
+    [Description("Find indexed C# symbols by name text, optional kind, and optional exact namespace using the monitor-owned watched solution index.")]
+    public IReadOnlyList<SolutionIndexSymbol> FindIndexedSymbols(
+        [Description("Symbol name text to search for.")] string text,
+        [Description("Optional exact symbol kind, such as class, method, property, field, constructor, enum, delegate, interface, struct, or record.")] string? kind = null,
+        [Description("Optional exact namespace filter.")] string? namespaceName = null,
+        [Description("Maximum symbols to return.")] int maxResults = 100)
+    {
+        return Track(nameof(FindIndexedSymbols), new { text, kind, namespaceName, maxResults }, () => solutionIndexService.FindSymbols(text, kind, namespaceName, maxResults));
+    }
+
+    [McpServerTool]
+    [Description("Return one indexed C# symbol by stable symbol key from the monitor-owned watched solution index.")]
+    public SolutionIndexSymbol? GetIndexedSymbol(
+        [Description("Stable symbol key returned by query_solution_index, find_indexed_symbols, or get_source_map.")] string stableSymbolKey)
+    {
+        return Track(nameof(GetIndexedSymbol), new { stableSymbolKey }, () => solutionIndexService.GetSymbol(stableSymbolKey));
     }
 
     [McpServerTool]
@@ -175,7 +262,7 @@ public sealed class MonitorTools
         [Description("Optional source file/folder path, or namespace text when scope is namespace. Omit for the watched project.")] string? path = null,
         [Description("Source map scope: auto, file, folder, namespace, or project.")] string scope = "auto",
         [Description("Source map density: auto, navigation, selector, detail, or full. auto means selector for file scope and navigation for folder/project/namespace scope.")] string mode = "auto",
-        [Description("Optional namespace text when scope is namespace. If omitted, path is treated as the namespace.")] string? namespaceName = null)
+        [Description("Optional namespace text when scope is namespace. If omitted, path is treated as the namespace. Rejected when scope is not namespace.")] string? namespaceName = null)
     {
         return Track(nameof(GetSourceMap), new { path, scope, mode, namespaceName }, () => workflowService.GetSourceMap(path, scope, mode, namespaceName));
     }
@@ -536,6 +623,10 @@ public sealed record WatchedProjectInfo(
     string Name,
     string Path,
     IReadOnlyList<string> SolutionFiles);
+
+public sealed record RefreshFileAndIndexResult(
+    MonitorFileRefreshResult Refresh,
+    SolutionIndexFileRefreshResult Index);
 
 public sealed record MonitorServerSettings(
     string UiRoot,

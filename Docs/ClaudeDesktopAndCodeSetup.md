@@ -70,7 +70,7 @@ Claude Code can expose live model, cost, context-window, token, rate-limit, and 
 Configure Claude Code statusline to call the script from this repository:
 
 ```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File C:\VSCodeProjects\MonitorBaseClaude\Tools\ClaudeStatusLine\Write-ClaudeStatusSnapshot.ps1
+powershell -NoProfile -ExecutionPolicy Bypass -File C:/VSCodeProjects/MonitorBaseClaude/Tools/ClaudeStatusLine/Write-ClaudeStatusSnapshot.ps1
 ```
 
 The script writes:
