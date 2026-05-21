@@ -6,7 +6,7 @@ namespace MonitorBaseClaude.Controls;
 
 [DesignerCategory("Code")]
 [AIFileContext("SolutionIndexControl.cs", "Read-only WinForms explorer for the monitor-owned watched solution SQLite index.")]
-[FileVersion("1.1")]
+[FileVersion("1.2")]
 public sealed class SolutionIndexControl : UserControl
 {
     private readonly SolutionIndexService indexService;
@@ -18,10 +18,13 @@ public sealed class SolutionIndexControl : UserControl
     private readonly Button refreshFileButton;
     private readonly Button refreshButton;
     private readonly Button queryButton;
+    private readonly Button referencesButton;
+    private readonly Button callersButton;
     private readonly Label statusLabel;
     private readonly TextBox databasePathBox;
     private readonly DataGridView filesGrid;
     private readonly DataGridView symbolsGrid;
+    private readonly DataGridView referencesGrid;
     private SplitContainer? mainSplit;
 
     public SolutionIndexControl(MonitorClientSettings settings)
@@ -59,6 +62,8 @@ public sealed class SolutionIndexControl : UserControl
         refreshFileButton = new Button { Text = "Refresh File", AutoSize = true };
         refreshButton = new Button { Text = "Refresh Status", AutoSize = true };
         queryButton = new Button { Text = "Query", AutoSize = true };
+        referencesButton = new Button { Text = "References", AutoSize = true };
+        callersButton = new Button { Text = "Callers", AutoSize = true };
         statusLabel = new Label
         {
             Dock = DockStyle.Fill,
@@ -72,6 +77,7 @@ public sealed class SolutionIndexControl : UserControl
         };
         filesGrid = CreateGrid();
         symbolsGrid = CreateGrid();
+        referencesGrid = CreateGrid();
 
         Controls.Add(BuildLayout());
         WireEvents();
@@ -99,8 +105,10 @@ public sealed class SolutionIndexControl : UserControl
         TableLayoutPanel toolbar = new()
         {
             Dock = DockStyle.Fill,
-            ColumnCount = 10
+            ColumnCount = 12
         };
+        toolbar.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+        toolbar.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
         toolbar.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
         toolbar.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
         toolbar.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
@@ -118,9 +126,11 @@ public sealed class SolutionIndexControl : UserControl
         toolbar.Controls.Add(new Label { Text = "Max Symbols", AutoSize = true, TextAlign = ContentAlignment.MiddleLeft, Anchor = AnchorStyles.Left, Margin = new Padding(12, 3, 3, 3) }, 4, 0);
         toolbar.Controls.Add(maxSymbolsBox, 5, 0);
         toolbar.Controls.Add(queryButton, 6, 0);
-        toolbar.Controls.Add(refreshFileButton, 7, 0);
-        toolbar.Controls.Add(refreshButton, 8, 0);
-        toolbar.Controls.Add(rebuildButton, 9, 0);
+        toolbar.Controls.Add(referencesButton, 7, 0);
+        toolbar.Controls.Add(callersButton, 8, 0);
+        toolbar.Controls.Add(refreshFileButton, 9, 0);
+        toolbar.Controls.Add(refreshButton, 10, 0);
+        toolbar.Controls.Add(rebuildButton, 11, 0);
 
         TableLayoutPanel statusRow = new()
         {
@@ -153,6 +163,13 @@ public sealed class SolutionIndexControl : UserControl
             SplitterWidth = 8
         };
 
+        SplitContainer lowerDetailSplit = new()
+        {
+            Dock = DockStyle.Fill,
+            Orientation = Orientation.Horizontal,
+            SplitterWidth = 8
+        };
+
         GroupBox filesGroup = new()
         {
             Text = "Files",
@@ -166,8 +183,17 @@ public sealed class SolutionIndexControl : UserControl
             Dock = DockStyle.Fill
         };
         symbolsGroup.Controls.Add(symbolsGrid);
+
+        GroupBox referencesGroup = new()
+        {
+            Text = "References / Callers",
+            Dock = DockStyle.Fill
+        };
+        referencesGroup.Controls.Add(referencesGrid);
         detailSplit.Panel1.Controls.Add(filesGroup);
-        detailSplit.Panel2.Controls.Add(symbolsGroup);
+        lowerDetailSplit.Panel1.Controls.Add(symbolsGroup);
+        lowerDetailSplit.Panel2.Controls.Add(referencesGroup);
+        detailSplit.Panel2.Controls.Add(lowerDetailSplit);
         mainSplit.Panel1.Controls.Add(treeGroup);
         mainSplit.Panel2.Controls.Add(detailSplit);
 
@@ -182,6 +208,8 @@ public sealed class SolutionIndexControl : UserControl
         refreshButton.Click += (_, _) => RefreshStatus();
         refreshFileButton.Click += (_, _) => RefreshSelectedFile();
         queryButton.Click += (_, _) => QueryIndex();
+        referencesButton.Click += (_, _) => QuerySelectedSymbolReferences();
+        callersButton.Click += (_, _) => QuerySelectedSymbolCallers();
         rebuildButton.Click += async (_, _) => await RebuildIndexAsync();
         indexTree.AfterSelect += (_, args) => QueryTreeNode(args.Node);
         scopeBox.SelectedIndexChanged += (_, _) =>
@@ -230,6 +258,7 @@ public sealed class SolutionIndexControl : UserControl
             SolutionIndexQueryResult result = indexService.Query(scopeBox.Text, valueBox.Text, 500, (int)maxSymbolsBox.Value);
             filesGrid.DataSource = result.Files.ToList();
             symbolsGrid.DataSource = result.Symbols.ToList();
+            referencesGrid.DataSource = null;
             ApplyStatus(indexService.GetStatus());
         }
         catch (Exception ex)
@@ -260,6 +289,59 @@ public sealed class SolutionIndexControl : UserControl
         {
             statusLabel.Text = ex.Message;
         }
+    }
+
+    private void QuerySelectedSymbolReferences()
+    {
+        QuerySelectedSymbolReferenceRows(onlyCallers: false);
+    }
+
+    private void QuerySelectedSymbolCallers()
+    {
+        QuerySelectedSymbolReferenceRows(onlyCallers: true);
+    }
+
+    private void QuerySelectedSymbolReferenceRows(bool onlyCallers)
+    {
+        try
+        {
+            string? stableKey = GetSelectedSymbolStableKey();
+            if (string.IsNullOrWhiteSpace(stableKey))
+            {
+                statusLabel.Text = "Select a symbol row first.";
+                return;
+            }
+
+            IReadOnlyList<SolutionIndexReference> rows = onlyCallers
+                ? indexService.FindCallers(stableKey)
+                : indexService.FindReferences(stableKey);
+            referencesGrid.DataSource = rows.ToList();
+            SolutionIndexStatus status = indexService.GetStatus();
+            ApplyStatus(status);
+            statusLabel.Text += onlyCallers
+                ? $" | Callers shown: {rows.Count}"
+                : $" | References shown: {rows.Count}";
+        }
+        catch (Exception ex)
+        {
+            statusLabel.Text = ex.Message;
+        }
+    }
+
+    private string? GetSelectedSymbolStableKey()
+    {
+        if (symbolsGrid.CurrentRow?.DataBoundItem is SolutionIndexSymbol symbol)
+        {
+            return symbol.StableSymbolKey;
+        }
+
+        if (symbolsGrid.SelectedRows.Count > 0
+            && symbolsGrid.SelectedRows[0].DataBoundItem is SolutionIndexSymbol selected)
+        {
+            return selected.StableSymbolKey;
+        }
+
+        return null;
     }
 
     private string? ResolveSelectedFilePath()
@@ -364,7 +446,7 @@ public sealed class SolutionIndexControl : UserControl
     private void ApplyStatus(SolutionIndexStatus status)
     {
         string indexedText = status.LastIndexedAtUtc?.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss") ?? "not built";
-        statusLabel.Text = $"Indexed: {indexedText} | Files: {status.FileCount} | Symbols: {status.SymbolCount} | Diagnostics: {status.DiagnosticCount} | Stale: {status.StaleFileCount}";
+        statusLabel.Text = $"Indexed: {indexedText} | Files: {status.FileCount} | Symbols: {status.SymbolCount} | References: {status.ReferenceCount} | Calls: {status.CallSiteCount} | Diagnostics: {status.DiagnosticCount} | Stale: {status.StaleFileCount}";
         databasePathBox.Text = status.DatabasePath;
     }
 
@@ -374,6 +456,8 @@ public sealed class SolutionIndexControl : UserControl
         refreshFileButton.Enabled = !busy;
         refreshButton.Enabled = !busy;
         queryButton.Enabled = !busy;
+        referencesButton.Enabled = !busy;
+        callersButton.Enabled = !busy;
         Cursor = busy ? Cursors.WaitCursor : Cursors.Default;
         statusLabel.Text = busy ? "Rebuilding solution index..." : statusLabel.Text;
     }
