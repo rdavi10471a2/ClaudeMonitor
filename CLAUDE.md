@@ -52,7 +52,7 @@ For watched project source edits, use the Monitor MCP workflow:
 2. Use Solution Index tools for project and dependency surfaces before loading source: `get_solution_index_tree` for orientation, `query_solution_index` for namespace/folder/file slices, `find_indexed_symbols` for declarations, `find_indexed_references` / `find_indexed_callers` for impact checks, and `find_indexed_relationships` for partials, inheritance, overrides, and interface implementations.
 3. Read structure with `get_source_map` for C# files, folders, or project slices when live selectors or source-map shapes are needed. Use `mode: navigation` for broad folder/project orientation and `mode: selector` for a chosen file before symbol mutation.
 4. Read the smallest needed body with `get_symbol`.
-5. Use `get_file` only when index/source-map/symbol context is not enough and the file is not large. For any large file, call `refresh_file` first and chunk-read the returned Working file path instead of asking MCP to return the whole file.
+5. Use `get_file` only when index/source-map/symbol context is not enough and the file is below 32KB. For files at or above 32KB, call `refresh_file` first and chunk-read the returned Working file path instead of asking MCP to return the whole file.
 6. Compose a complete Working candidate with `replace_text_in_file`, `replace_span_in_file`, `submit_file`, `submit_symbol`, `add_symbol`, `add_field`, `add_property`, `add_method`, `add_constructor`, `add_nested_type`, `set_type_partial`, `add_using`, `remove_using`, or `remove_symbol`.
 7. Call `stage_candidate_for_review` only after the Working candidate is complete enough for review.
 8. Use `launch_staged_diff`, or let the Host or sidecar open WinMerge between the real watched file and the staged candidate.
@@ -116,7 +116,7 @@ For coupled multi-file C# edits, use one monitor session and stage all affected 
 
 For small Razor, markup, CSS, JSON, config, or other text edits, prefer `replace_text_in_file` with exact `oldText`, `newText`, and `expectedMatches: 1`. Use `replace_span_in_file` when exact line/column bounds are already known. Supply `expectedFileHash` and old-text/hash guards when available. Use full-file `submit_file` only for new files, broad rewrites, or unsafe narrow edits.
 
-For any large file in a cold session, regardless of extension, do not call `get_file`. Call `refresh_file(sourceFilePath)`, then read the returned `workingFilePath` in bounded chunks. If the file is already in context in the current session, do not re-read it; call the narrow edit tool directly with `expectedOldText` or a hash guard from that in-context text.
+For any file at or above 32KB in a cold session, regardless of extension, do not call `get_file`. Call `refresh_file(sourceFilePath)`, then read the returned `workingFilePath` in bounded chunks. If the file is already in context in the current session, do not re-read it; call the narrow edit tool directly with `expectedOldText` or a hash guard from that in-context text.
 
 Do not narrate routine known-good Monitor workflows. Call the needed tool and report only changed file, staged record or next required decision, validation result, and blockers.
 

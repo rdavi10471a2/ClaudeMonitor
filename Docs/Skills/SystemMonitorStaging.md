@@ -11,7 +11,7 @@ The active safety mechanism is session overlay validation plus gated serial diff
 - Reason in the cloud; compose locally. Use Roslyn and Monitor selectors to describe the intended edit, then let the local tooling splice/stage the candidate.
 - Use the Solution Index MCP surface for cheap project context before body reads: `get_solution_index_tree`, `query_solution_index`, `find_indexed_symbols`, `get_indexed_symbol`, `find_indexed_references`, `find_indexed_callers`, and `find_indexed_relationships`.
 - Use the smallest safe edit unit: symbol edit before whole-file replacement.
-- For any large file in a cold session, call `refresh_file` and chunk-read the returned Working file path. Do not use `get_file` when the file is large enough to risk an oversized tool result.
+- For any file at or above 32KB in a cold session, call `refresh_file` and chunk-read the returned Working file path. Do not use `get_file` for that cold-session entry.
 - For warm-session text edits, do not re-read the file. Use the text already in context with `replace_text_in_file` and `expectedMatches: 1`, or `replace_span_in_file` when exact bounds are already known.
 - Stage candidates, let System Monitor validate syntax/overlay compilation, then use Operator review.
 - For coupled multi-file C# edits, stage every required file in one monitor session before the first review launch so overlay validation sees the whole proposed change.
@@ -96,7 +96,7 @@ If overlay/build diagnostics reveal a missed or broken call site that Roslyn did
 
 For whole-file staging, use Roslyn shape plus `get_file`; skip `get_source_map` unless you need stable selectors or structure. For symbol staging, use Roslyn shape plus `get_source_map`/`get_symbol`; skip `get_file` unless symbol context is insufficient.
 
-For large files of any type, the cold-session read path is `refresh_file(sourceFilePath)` followed by bounded chunk reads from the returned Working file path. This prevents oversized MCP results. If the file is already loaded in the current session, skip the read and use the in-context text as the guard for `replace_text_in_file`.
+For files at or above 32KB of any type, the cold-session read path is `refresh_file(sourceFilePath)` followed by bounded chunk reads from the returned Working file path. This prevents oversized MCP results. If the file is already loaded in the current session, skip the read and use the in-context text as the guard for `replace_text_in_file`.
 
 If a candidate target came from `get_solution_index`, `get_solution_index_tree`, `query_solution_index`, `find_indexed_symbols`, `get_indexed_symbol`, `find_indexed_references`, `find_indexed_callers`, `find_indexed_relationships`, or cached compact index JSON, treat that target as discovery only. Refresh the file selector/hash in the current session before body read and mutation; if the live selector is missing, ambiguous, or hash-drifted, refresh/rebuild the selector data and restart the narrow edit path.
 
