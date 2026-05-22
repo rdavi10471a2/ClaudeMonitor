@@ -156,7 +156,7 @@ This prevents Accept and Reject from collapsing into the same raw hash state.
 | watched solution index rebuild | `refresh_solution_index` | implemented |
 | watched solution index status | `get_solution_index_status` | implemented |
 | watched solution index file refresh | `refresh_solution_index_file`, `refresh_file_and_index` | implemented |
-| watched solution index queries | `get_solution_index`, `get_solution_index_tree`, `query_solution_index`, `find_indexed_symbols`, `get_indexed_symbol`, `find_indexed_references`, `find_indexed_callers` | implemented |
+| watched solution index queries | `get_solution_index`, `get_solution_index_tree`, `query_solution_index`, `find_indexed_symbols`, `get_indexed_symbol`, `find_indexed_references`, `find_indexed_callers`, `find_indexed_relationships` | implemented |
 | Working mirror full-file candidate | `submit_file` | implemented |
 | Working mirror verified text/span candidate | `replace_text_in_file`, `find_text_span`, `replace_span_in_file` | implemented |
 | Working mirror member candidates | `add_symbol`, `add_field`, `add_method`, `add_property`, `add_constructor`, `add_nested_type` | implemented |
@@ -389,6 +389,10 @@ Returns persisted reference rows for one stable symbol key from the monitor-owne
 ### `find_indexed_callers`
 
 Returns persisted invocation call-site rows for one stable method or constructor key from the monitor-owned SQLite index. This is not the live Roslyn MCP caller tool; callers are computed during index rebuild and then served as SQL rows.
+
+### `find_indexed_relationships`
+
+Returns first-class relationship rows for one stable symbol key from the monitor-owned SQLite index. Relationship kinds include `partial_declaration`, `inherits_from`, `derived_type`, `overrides`, `overridden_by`, `implements_interface_member`, and `implemented_by`. Use `direction` as `outgoing`, `incoming`, or `both`, and optionally filter by exact relationship kind.
 
 ### `get_source_map`
 

@@ -181,6 +181,20 @@ public sealed class MonitorTools
     }
 
     [McpServerTool]
+    [Description("Return persisted indexed symbol relationships for one stable C# symbol key. Kinds include partial_declaration, inherits_from, derived_type, overrides, overridden_by, implements_interface_member, and implemented_by.")]
+    public IReadOnlyList<SolutionIndexRelationship> FindIndexedRelationships(
+        [Description("Stable symbol key returned by query_solution_index, find_indexed_symbols, get_indexed_symbol, or get_source_map.")] string stableSymbolKey,
+        [Description("Optional exact relationship kind filter, such as inherits_from, overrides, or implemented_by.")] string? relationshipKind = null,
+        [Description("Relationship direction: outgoing, incoming, or both.")] string direction = "both",
+        [Description("Maximum relationship rows to return.")] int maxResults = 500)
+    {
+        return Track(
+            nameof(FindIndexedRelationships),
+            new { stableSymbolKey, relationshipKind, direction, maxResults },
+            () => solutionIndexService.FindRelationships(stableSymbolKey, relationshipKind, direction, maxResults));
+    }
+
+    [McpServerTool]
     [Description("Create a durable monitor session handle. Handles are explicit state references that clients should pass through later calls.")]
     public MonitorSessionState StartMonitorSession(
         [Description("Short purpose for this monitor session, such as 'local Ollama tool exploration' or 'Claude feature edit'.")] string purpose = "monitor workflow")

@@ -2,11 +2,13 @@
 
 This project is a monitor and MCP workflow host. Treat watched source as protected source, not as a scratchpad.
 
+Solution index scope and hard coverage boundaries are documented in `Docs/SolutionIndexScope.md`.
+
 ## Design Principle
 
 Reason in the cloud; edit locally. Use compact context for understanding, then let the local Monitor server perform bounded edits, validation, staging, and review. Optimize both directions:
 
-- Inbound: use the Solution Index MCP surface (`get_solution_index_tree`, `query_solution_index`, `find_indexed_symbols`, `find_indexed_references`, `find_indexed_callers`, `get_indexed_symbol`) plus source maps and symbols before loading bodies.
+- Inbound: use the Solution Index MCP surface (`get_solution_index_tree`, `query_solution_index`, `find_indexed_symbols`, `find_indexed_references`, `find_indexed_callers`, `find_indexed_relationships`, `get_indexed_symbol`) plus source maps and symbols before loading bodies.
 - Outbound: use the smallest safe composition tool. Prefer symbol tools for C#, `replace_text_in_file` for exact text changes, `replace_span_in_file` when exact line/column bounds are already known, and `submit_file` only for new files or deliberate whole-file rewrites.
 
 ## Report And Memory Lanes
@@ -41,7 +43,7 @@ Before pushing a Claude notes branch, run `git diff --name-only main...HEAD`. St
 For watched project source edits, use the Monitor MCP workflow:
 
 1. Find related files with `find_file`.
-2. Use Solution Index tools for project and dependency surfaces before loading source: `get_solution_index_tree` for orientation, `query_solution_index` for namespace/folder/file slices, `find_indexed_symbols` for declarations, and `find_indexed_references` / `find_indexed_callers` for impact checks.
+2. Use Solution Index tools for project and dependency surfaces before loading source: `get_solution_index_tree` for orientation, `query_solution_index` for namespace/folder/file slices, `find_indexed_symbols` for declarations, `find_indexed_references` / `find_indexed_callers` for impact checks, and `find_indexed_relationships` for partials, inheritance, overrides, and interface implementations.
 3. Read structure with `get_source_map` for C# files, folders, or project slices when live selectors or source-map shapes are needed. Use `mode: navigation` for broad folder/project orientation and `mode: selector` for a chosen file before symbol mutation.
 4. Read the smallest needed body with `get_symbol`.
 5. Use `get_file` only when index/source-map/symbol context is not enough and the file is not large. For any large file, call `refresh_file` first and chunk-read the returned Working file path instead of asking MCP to return the whole file.
@@ -70,7 +72,7 @@ Use these sequences as the default learned workflow. Do not skip directly to a b
 User asks for a C# edit
 -> find_file, if the path is uncertain
 -> get_solution_index_tree or query_solution_index for the project/folder/namespace surface
--> find_indexed_symbols for target declarations; find_indexed_references / find_indexed_callers for impact checks
+-> find_indexed_symbols for target declarations; find_indexed_references / find_indexed_callers / find_indexed_relationships for impact checks
 -> get_source_map(path, scope: file, mode: selector)
 -> choose the smallest likely symbol from the source map
 -> get_symbol(path, symbolSelectorJson)
@@ -82,7 +84,7 @@ Example:
 ```text
 User: Add a null guard to LoadTable.
 Expected:
-1. Use `find_indexed_symbols` or `query_solution_index` to locate `LoadTable` and related callers/references.
+1. Use `find_indexed_symbols` or `query_solution_index` to locate `LoadTable` and related callers/references/relationships.
 2. Use `get_source_map` for the containing C# file with `mode: selector` before mutation.
 3. Use `get_symbol` for LoadTable using a structured selector or stableSymbolKey.
 4. Stage a complete candidate only after the body and local impact context are known.

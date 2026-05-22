@@ -12,7 +12,7 @@ using MonitorBaseClaude.AI;
 namespace MonitorBaseClaude.Services;
 
 [AIFileContext("SolutionIndexService.cs", "Builds and queries the monitor-owned SQLite index for watched C# solution structure.")]
-[FileVersion("1.7")]
+[FileVersion("1.8")]
 public sealed class SolutionIndexService
 {
     private static readonly string[] ExcludedDirectoryNames =
@@ -54,7 +54,8 @@ public sealed class SolutionIndexService
                 0,
                 0,
                 0,
-                true);
+                true,
+                0);
         }
 
         using SqliteConnection connection = OpenConnection(dbPath);
@@ -67,6 +68,9 @@ public sealed class SolutionIndexService
             : 0;
         int callSiteCount = TableExists(connection, "call_sites")
             ? ExecuteScalarInt(connection, "select count(*) from call_sites;")
+            : 0;
+        int relationshipCount = TableExists(connection, "symbol_relationships")
+            ? ExecuteScalarInt(connection, "select count(*) from symbol_relationships;")
             : 0;
         int staleFileCount = CountStaleFiles(connection, observedRoot);
         return new SolutionIndexStatus(
@@ -81,7 +85,8 @@ public sealed class SolutionIndexService
             referenceCount,
             callSiteCount,
             staleFileCount,
-            false);
+            false,
+            relationshipCount);
     }
 
     public SolutionIndexBuildResult Rebuild()
@@ -98,6 +103,7 @@ public sealed class SolutionIndexService
         using SqliteTransaction transaction = connection.BeginTransaction();
         ExecuteNonQuery(connection, transaction, "delete from call_sites;");
         ExecuteNonQuery(connection, transaction, "delete from symbol_references;");
+        ExecuteNonQuery(connection, transaction, "delete from symbol_relationships;");
         ExecuteNonQuery(connection, transaction, "delete from partial_type_members;");
         ExecuteNonQuery(connection, transaction, "delete from diagnostics;");
         ExecuteNonQuery(connection, transaction, "delete from symbols;");
@@ -109,6 +115,7 @@ public sealed class SolutionIndexService
             .Select(sourceFilePath => BuildFileIndex(observedRoot, sourceFilePath))
             .ToArray();
         IReadOnlyList<IndexedReferenceBuild> references = BuildReferenceIndex(observedRoot, files);
+        IReadOnlyList<IndexedRelationshipBuild> relationships = BuildRelationshipIndex(observedRoot, files);
 
         Dictionary<string, long> fileIdsByRelativePath = new(StringComparer.OrdinalIgnoreCase);
         Dictionary<string, long> symbolIdsByStableKey = new(StringComparer.Ordinal);
@@ -116,6 +123,7 @@ public sealed class SolutionIndexService
         int indexedDiagnostics = 0;
         int indexedReferences = 0;
         int indexedCallSites = 0;
+        int indexedRelationships = 0;
 
         foreach (IndexedFileBuild file in files)
         {
@@ -136,6 +144,13 @@ public sealed class SolutionIndexService
         }
 
         InsertPartialTypeMembers(connection, transaction, files, symbolIdsByStableKey);
+        foreach (IndexedRelationshipBuild relationship in BuildPartialTypeRelationships(files))
+        {
+            if (InsertSymbolRelationship(connection, transaction, fileIdsByRelativePath, symbolIdsByStableKey, relationship))
+            {
+                indexedRelationships++;
+            }
+        }
 
         foreach (IndexedReferenceBuild reference in references)
         {
@@ -161,6 +176,14 @@ public sealed class SolutionIndexService
             }
         }
 
+        foreach (IndexedRelationshipBuild relationship in relationships)
+        {
+            if (InsertSymbolRelationship(connection, transaction, fileIdsByRelativePath, symbolIdsByStableKey, relationship))
+            {
+                indexedRelationships++;
+            }
+        }
+
         transaction.Commit();
         ExecuteNonQuery(connection, null, "pragma wal_checkpoint(passive);");
 
@@ -175,7 +198,8 @@ public sealed class SolutionIndexService
             indexedSymbols,
             indexedDiagnostics,
             indexedReferences,
-            indexedCallSites);
+            indexedCallSites,
+            indexedRelationships);
     }
 
     public SolutionIndexFileRefreshResult RefreshFile(string path)
@@ -325,6 +349,78 @@ public sealed class SolutionIndexService
         return QueryReferenceRows(stableSymbolKey, onlyCallSites: true, maxResults);
     }
 
+    public IReadOnlyList<SolutionIndexRelationship> FindRelationships(
+        string stableSymbolKey,
+        string? relationshipKind = null,
+        string direction = "both",
+        int maxResults = 500)
+    {
+        stableSymbolKey = NormalizeStableSymbolKey(stableSymbolKey);
+        string dbPath = GetIndexDatabasePath();
+        if (!File.Exists(dbPath) || string.IsNullOrWhiteSpace(stableSymbolKey))
+        {
+            return [];
+        }
+
+        maxResults = Math.Clamp(maxResults, 1, 5000);
+        string normalizedDirection = direction.Trim().ToLowerInvariant() switch
+        {
+            "source" or "out" or "outgoing" => "outgoing",
+            "target" or "in" or "incoming" => "incoming",
+            _ => "both"
+        };
+
+        using SqliteConnection connection = OpenConnection(dbPath);
+        if (!TableExists(connection, "symbol_relationships"))
+        {
+            return [];
+        }
+
+        using SqliteCommand command = connection.CreateCommand();
+        command.CommandText =
+            """
+            select source.stable_key, source.kind, source.name,
+                   target.stable_key, target.kind, target.name,
+                   location.relative_path, location.sha256,
+                   r.relationship_kind, r.line, r.column, r.snippet, r.metadata_json
+            from symbol_relationships r
+            join symbols source on source.id = r.source_symbol_id
+            join symbols target on target.id = r.target_symbol_id
+            join files location on location.id = r.location_file_id
+            where (($direction = 'outgoing' and source.stable_key = $stableKey)
+                or ($direction = 'incoming' and target.stable_key = $stableKey)
+                or ($direction = 'both' and (source.stable_key = $stableKey or target.stable_key = $stableKey)))
+              and ($kind is null or r.relationship_kind = $kind)
+            order by r.relationship_kind collate nocase, location.relative_path collate nocase, r.line, r.column
+            limit $limit;
+            """;
+        command.Parameters.AddWithValue("$stableKey", stableSymbolKey);
+        command.Parameters.AddWithValue("$direction", normalizedDirection);
+        command.Parameters.AddWithValue("$kind", string.IsNullOrWhiteSpace(relationshipKind) ? DBNull.Value : relationshipKind.Trim());
+        command.Parameters.AddWithValue("$limit", maxResults);
+        List<SolutionIndexRelationship> relationships = [];
+        using SqliteDataReader reader = command.ExecuteReader();
+        while (reader.Read())
+        {
+            relationships.Add(new SolutionIndexRelationship(
+                reader.GetString(0),
+                reader.GetString(1),
+                reader.GetString(2),
+                reader.GetString(3),
+                reader.GetString(4),
+                reader.GetString(5),
+                reader.GetString(6),
+                reader.GetString(7),
+                reader.GetString(8),
+                reader.GetInt32(9),
+                reader.GetInt32(10),
+                reader.GetString(11),
+                reader.GetString(12)));
+        }
+
+        return relationships;
+    }
+
     private string GetObservedRoot()
     {
         string? directory = Path.GetDirectoryName(watchedSolutionPath);
@@ -443,6 +539,18 @@ public sealed class SolutionIndexService
                 name text not null
             );
 
+            create table if not exists symbol_relationships (
+                id integer primary key autoincrement,
+                source_symbol_id integer not null references symbols(id) on delete cascade,
+                target_symbol_id integer not null references symbols(id) on delete cascade,
+                location_file_id integer not null references files(id) on delete cascade,
+                relationship_kind text not null,
+                line integer not null,
+                column integer not null,
+                snippet text not null,
+                metadata_json text not null default ''
+            );
+
             create index if not exists ix_files_relative_path on files(relative_path);
             create index if not exists ix_symbols_stable_key on symbols(stable_key);
             create index if not exists ix_symbols_name on symbols(name);
@@ -454,6 +562,9 @@ public sealed class SolutionIndexService
             create index if not exists ix_call_sites_caller on call_sites(caller_symbol_id);
             create index if not exists ix_partial_type_members_member_key on partial_type_members(member_stable_key);
             create index if not exists ix_partial_type_members_canonical_key on partial_type_members(canonical_stable_key);
+            create index if not exists ix_symbol_relationships_source on symbol_relationships(source_symbol_id);
+            create index if not exists ix_symbol_relationships_target on symbol_relationships(target_symbol_id);
+            create index if not exists ix_symbol_relationships_kind on symbol_relationships(relationship_kind);
             """);
         EnsureColumn(connection, "symbols", "text_hash", "text not null default ''");
         EnsureColumn(connection, "symbols", "start_column", "integer not null default 1");
@@ -648,6 +759,39 @@ public sealed class SolutionIndexService
         command.ExecuteNonQuery();
     }
 
+    private static bool InsertSymbolRelationship(
+        SqliteConnection connection,
+        SqliteTransaction transaction,
+        IReadOnlyDictionary<string, long> fileIdsByRelativePath,
+        IReadOnlyDictionary<string, long> symbolIdsByStableKey,
+        IndexedRelationshipBuild relationship)
+    {
+        if (!symbolIdsByStableKey.TryGetValue(relationship.SourceStableKey, out long sourceSymbolId)
+            || !symbolIdsByStableKey.TryGetValue(relationship.TargetStableKey, out long targetSymbolId)
+            || !fileIdsByRelativePath.TryGetValue(relationship.RelativePath, out long locationFileId))
+        {
+            return false;
+        }
+
+        using SqliteCommand command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText =
+            """
+            insert into symbol_relationships(source_symbol_id, target_symbol_id, location_file_id, relationship_kind, line, column, snippet, metadata_json)
+            values ($sourceSymbolId, $targetSymbolId, $locationFileId, $relationshipKind, $line, $column, $snippet, $metadataJson);
+            """;
+        command.Parameters.AddWithValue("$sourceSymbolId", sourceSymbolId);
+        command.Parameters.AddWithValue("$targetSymbolId", targetSymbolId);
+        command.Parameters.AddWithValue("$locationFileId", locationFileId);
+        command.Parameters.AddWithValue("$relationshipKind", relationship.RelationshipKind);
+        command.Parameters.AddWithValue("$line", relationship.Line);
+        command.Parameters.AddWithValue("$column", relationship.Column);
+        command.Parameters.AddWithValue("$snippet", relationship.Snippet);
+        command.Parameters.AddWithValue("$metadataJson", relationship.MetadataJson);
+        command.ExecuteNonQuery();
+        return true;
+    }
+
     private static IndexedFileBuild BuildFileIndex(string observedRoot, string sourceFilePath)
     {
         string text = File.ReadAllText(sourceFilePath);
@@ -730,6 +874,28 @@ public sealed class SolutionIndexService
                     line,
                     column,
                     snippet));
+
+                if (isCallSite && IsDelegateInvocationName(model, name))
+                {
+                    string? sourceSymbolStableKey = GetStableKeyForSymbol(symbol, filesByRelativePath);
+                    if (!string.IsNullOrWhiteSpace(sourceSymbolStableKey)
+                        && !sourceSymbolStableKey.Equals(targetStableKey, StringComparison.Ordinal))
+                    {
+                        string sourceSeenKey = $"{sourceSymbolStableKey}|{NormalizeIndexPath(file.RelativePath)}|{line}|{column}|read";
+                        if (seen.Add(sourceSeenKey))
+                        {
+                            references.Add(new IndexedReferenceBuild(
+                                sourceSymbolStableKey,
+                                callerStableKey,
+                                file.RelativePath,
+                                "read",
+                                false,
+                                line,
+                                column,
+                                snippet));
+                        }
+                    }
+                }
             }
 
             foreach (ImplicitObjectCreationExpressionSyntax creation in file.Root.DescendantNodes().OfType<ImplicitObjectCreationExpressionSyntax>())
@@ -894,6 +1060,29 @@ public sealed class SolutionIndexService
                 }
             }
 
+            foreach (LocalDeclarationStatementSyntax localDeclaration in file.Root.DescendantNodes().OfType<LocalDeclarationStatementSyntax>())
+            {
+                if (!localDeclaration.AwaitKeyword.IsKind(SyntaxKind.AwaitKeyword)
+                    || !localDeclaration.UsingKeyword.IsKind(SyntaxKind.UsingKeyword))
+                {
+                    continue;
+                }
+
+                foreach (ISymbol disposeSymbol in GetAwaitUsingDisposeSymbols(model, localDeclaration))
+                {
+                    AddSymbolReference(
+                        references,
+                        seen,
+                        filesByRelativePath,
+                        file,
+                        localDeclaration,
+                        localDeclaration.AwaitKeyword.Span,
+                        disposeSymbol,
+                        "await_using_dispose",
+                        isCallSite: true);
+                }
+            }
+
             foreach (MethodDeclarationSyntax method in file.Root.DescendantNodes().OfType<MethodDeclarationSyntax>())
             {
                 if (model.GetDeclaredSymbol(method) is not { } methodSymbol)
@@ -929,6 +1118,157 @@ public sealed class SolutionIndexService
         }
 
         return references;
+    }
+
+    private static IReadOnlyList<IndexedRelationshipBuild> BuildRelationshipIndex(string observedRoot, IReadOnlyList<IndexedFileBuild> files)
+    {
+        if (files.Count == 0)
+        {
+            return [];
+        }
+
+        Dictionary<string, IndexedFileBuild> filesByRelativePath = files
+            .ToDictionary(file => NormalizeIndexPath(file.RelativePath), StringComparer.OrdinalIgnoreCase);
+        CSharpCompilation compilation = CSharpCompilation.Create(
+            "MonitorBaseClaudeSolutionRelationshipIndex",
+            files.Select(file => file.SyntaxTree),
+            GetMetadataReferences(observedRoot),
+            new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary));
+
+        List<IndexedRelationshipBuild> relationships = [];
+        HashSet<string> seen = new(StringComparer.Ordinal);
+        foreach (IndexedFileBuild file in files)
+        {
+            SemanticModel model = compilation.GetSemanticModel(file.SyntaxTree, ignoreAccessibility: true);
+            foreach (BaseTypeDeclarationSyntax type in file.Root.DescendantNodes().OfType<BaseTypeDeclarationSyntax>())
+            {
+                ISymbol? sourceSymbol = model.GetDeclaredSymbol(type);
+                string? sourceStableKey = GetStableKeyForSymbol(sourceSymbol, filesByRelativePath);
+                if (string.IsNullOrWhiteSpace(sourceStableKey) || type.BaseList is null)
+                {
+                    continue;
+                }
+
+                foreach (BaseTypeSyntax baseType in type.BaseList.Types)
+                {
+                    ISymbol? targetSymbol = GetBestSymbol(model.GetSymbolInfo(baseType.Type))
+                        ?? model.GetTypeInfo(baseType.Type).Type;
+                    string? targetStableKey = GetStableKeyForSymbol(targetSymbol, filesByRelativePath);
+                    if (string.IsNullOrWhiteSpace(targetStableKey))
+                    {
+                        continue;
+                    }
+
+                    AddRelationship(relationships, seen, file, sourceStableKey, targetStableKey, baseType.Type.Span, "inherits_from", baseType.ToString());
+                    AddRelationship(relationships, seen, file, targetStableKey, sourceStableKey, baseType.Type.Span, "derived_type", baseType.ToString());
+                }
+            }
+
+            foreach (MethodDeclarationSyntax method in file.Root.DescendantNodes().OfType<MethodDeclarationSyntax>())
+            {
+                if (model.GetDeclaredSymbol(method) is not { } methodSymbol)
+                {
+                    continue;
+                }
+
+                string? sourceStableKey = GetStableKeyForSymbol(methodSymbol, filesByRelativePath);
+                if (string.IsNullOrWhiteSpace(sourceStableKey))
+                {
+                    continue;
+                }
+
+                string? overriddenStableKey = GetStableKeyForSymbol(methodSymbol.OverriddenMethod, filesByRelativePath);
+                if (!string.IsNullOrWhiteSpace(overriddenStableKey))
+                {
+                    AddRelationship(relationships, seen, file, sourceStableKey, overriddenStableKey, method.Identifier.Span, "overrides", method.Identifier.ValueText);
+                    AddRelationship(relationships, seen, file, overriddenStableKey, sourceStableKey, method.Identifier.Span, "overridden_by", method.Identifier.ValueText);
+                }
+
+                foreach (ISymbol interfaceMember in GetImplementedInterfaceMembers(methodSymbol))
+                {
+                    string? interfaceStableKey = GetStableKeyForSymbol(interfaceMember, filesByRelativePath);
+                    if (string.IsNullOrWhiteSpace(interfaceStableKey))
+                    {
+                        continue;
+                    }
+
+                    AddRelationship(relationships, seen, file, sourceStableKey, interfaceStableKey, method.Identifier.Span, "implements_interface_member", method.Identifier.ValueText);
+                    AddRelationship(relationships, seen, file, interfaceStableKey, sourceStableKey, method.Identifier.Span, "implemented_by", method.Identifier.ValueText);
+                }
+            }
+        }
+
+        return relationships;
+    }
+
+    private static IReadOnlyList<IndexedRelationshipBuild> BuildPartialTypeRelationships(IReadOnlyList<IndexedFileBuild> files)
+    {
+        List<IndexedRelationshipBuild> relationships = [];
+        HashSet<string> seen = new(StringComparer.Ordinal);
+        var partialGroups = files
+            .SelectMany(file => file.Symbols.Select(symbol => (File: file, Symbol: symbol)))
+            .Where(item => item.Symbol.IsPartial && IsPartialTypeKind(item.Symbol.Kind))
+            .GroupBy(item => new PartialTypeIdentity(item.Symbol.Namespace, item.Symbol.ContainingType, item.Symbol.Kind, item.Symbol.Name))
+            .Where(group => group.Count() > 1);
+
+        foreach (IGrouping<PartialTypeIdentity, (IndexedFileBuild File, IndexedSymbolBuild Symbol)> group in partialGroups)
+        {
+            (IndexedFileBuild File, IndexedSymbolBuild Symbol)[] members = group
+                .OrderBy(item => item.Symbol.StableKey, StringComparer.Ordinal)
+                .ToArray();
+            foreach ((IndexedFileBuild File, IndexedSymbolBuild Symbol) source in members)
+            {
+                foreach ((IndexedFileBuild File, IndexedSymbolBuild Symbol) target in members)
+                {
+                    if (source.Symbol.StableKey.Equals(target.Symbol.StableKey, StringComparison.Ordinal))
+                    {
+                        continue;
+                    }
+
+                    AddRelationship(
+                        relationships,
+                        seen,
+                        target.File,
+                        source.Symbol.StableKey,
+                        target.Symbol.StableKey,
+                        new TextSpan(target.Symbol.TextSpanStart, Math.Max(0, target.Symbol.TextSpanLength)),
+                        "partial_declaration",
+                        target.Symbol.Signature);
+                }
+            }
+        }
+
+        return relationships;
+    }
+
+    private static void AddRelationship(
+        List<IndexedRelationshipBuild> relationships,
+        HashSet<string> seen,
+        IndexedFileBuild file,
+        string sourceStableKey,
+        string targetStableKey,
+        TextSpan anchorSpan,
+        string relationshipKind,
+        string snippet)
+    {
+        FileLinePositionSpan span = file.SyntaxTree.GetLineSpan(anchorSpan);
+        int line = span.StartLinePosition.Line + 1;
+        int column = span.StartLinePosition.Character + 1;
+        string seenKey = $"{sourceStableKey}|{targetStableKey}|{relationshipKind}|{NormalizeIndexPath(file.RelativePath)}|{line}|{column}";
+        if (!seen.Add(seenKey))
+        {
+            return;
+        }
+
+        relationships.Add(new IndexedRelationshipBuild(
+            sourceStableKey,
+            targetStableKey,
+            file.RelativePath,
+            relationshipKind,
+            line,
+            column,
+            string.IsNullOrWhiteSpace(snippet) ? GetLineSnippet(file.SyntaxTree, anchorSpan) : snippet.Trim(),
+            string.Empty));
     }
 
     private static void AddExpressionReference(
@@ -994,6 +1334,16 @@ public sealed class SolutionIndexService
             snippet));
     }
 
+    private static bool IsDelegateInvocationName(SemanticModel model, SimpleNameSyntax name)
+    {
+        if (!IsInvocationName(name, out InvocationExpressionSyntax? invocation) || invocation is null)
+        {
+            return false;
+        }
+
+        return GetBestSymbol(model.GetSymbolInfo(invocation)) is IMethodSymbol { MethodKind: MethodKind.DelegateInvoke };
+    }
+
     private static IEnumerable<ISymbol> GetAwaitUsingDisposeSymbols(SemanticModel model, UsingStatementSyntax usingStatement)
     {
         if (usingStatement.Expression is not null)
@@ -1013,6 +1363,20 @@ public sealed class SolutionIndexService
         {
             ITypeSymbol? type = variable.Initializer is null
                 ? model.GetTypeInfo(usingStatement.Declaration.Type).Type
+                : model.GetTypeInfo(variable.Initializer.Value).Type;
+            foreach (ISymbol symbol in GetDisposeAsyncSymbols(type))
+            {
+                yield return symbol;
+            }
+        }
+    }
+
+    private static IEnumerable<ISymbol> GetAwaitUsingDisposeSymbols(SemanticModel model, LocalDeclarationStatementSyntax localDeclaration)
+    {
+        foreach (VariableDeclaratorSyntax variable in localDeclaration.Declaration.Variables)
+        {
+            ITypeSymbol? type = variable.Initializer is null
+                ? model.GetTypeInfo(localDeclaration.Declaration.Type).Type
                 : model.GetTypeInfo(variable.Initializer.Value).Type;
             foreach (ISymbol symbol in GetDisposeAsyncSymbols(type))
             {
@@ -1703,7 +2067,19 @@ public sealed class SolutionIndexService
             callKind = "invocation";
             ISymbol? invocationSymbol = GetBestSymbol(model.GetSymbolInfo(invocation))
                 ?? GetBestSymbol(model.GetSymbolInfo(name));
-            return GetStableKeyForSymbol(invocationSymbol, filesByRelativePath);
+            string? invocationStableKey = GetStableKeyForSymbol(invocationSymbol, filesByRelativePath);
+            if (!string.IsNullOrWhiteSpace(invocationStableKey))
+            {
+                return invocationStableKey;
+            }
+
+            string? delegateValueStableKey = GetDelegateValueStableKey(model, name, invocationSymbol, filesByRelativePath);
+            if (!string.IsNullOrWhiteSpace(delegateValueStableKey))
+            {
+                return delegateValueStableKey;
+            }
+
+            return GetStableKeyForSymbol(GetBestSymbol(model.GetSymbolInfo(name)), filesByRelativePath);
         }
 
         ObjectCreationExpressionSyntax? objectCreation = name.FirstAncestorOrSelf<ObjectCreationExpressionSyntax>();
@@ -1713,6 +2089,32 @@ public sealed class SolutionIndexService
             ISymbol? constructionSymbol = GetBestSymbol(model.GetSymbolInfo(objectCreation))
                 ?? GetBestSymbol(model.GetSymbolInfo(name));
             return GetStableKeyForSymbol(constructionSymbol, filesByRelativePath);
+        }
+
+        return null;
+    }
+
+    private static string? GetDelegateValueStableKey(
+        SemanticModel model,
+        SimpleNameSyntax name,
+        ISymbol? invocationSymbol,
+        IReadOnlyDictionary<string, IndexedFileBuild> filesByRelativePath)
+    {
+        if (invocationSymbol is not IMethodSymbol { MethodKind: MethodKind.DelegateInvoke })
+        {
+            return null;
+        }
+
+        foreach (ISymbol candidate in model.LookupSymbols(name.SpanStart, name: name.Identifier.ValueText))
+        {
+            if (candidate is IFieldSymbol or IPropertySymbol)
+            {
+                string? stableKey = GetStableKeyForSymbol(candidate, filesByRelativePath);
+                if (!string.IsNullOrWhiteSpace(stableKey))
+                {
+                    return stableKey;
+                }
+            }
         }
 
         return null;
@@ -2437,6 +2839,16 @@ public sealed class SolutionIndexService
         int Line,
         int Column,
         string Snippet);
+
+    private sealed record IndexedRelationshipBuild(
+        string SourceStableKey,
+        string TargetStableKey,
+        string RelativePath,
+        string RelationshipKind,
+        int Line,
+        int Column,
+        string Snippet,
+        string MetadataJson);
 }
 
 [Description("Status for the monitor-owned watched solution index.")]
@@ -2452,7 +2864,8 @@ public sealed record SolutionIndexStatus(
     int ReferenceCount,
     int CallSiteCount,
     int StaleFileCount,
-    bool IsMissing);
+    bool IsMissing,
+    int RelationshipCount = 0);
 
 [Description("Result from rebuilding the monitor-owned watched solution index.")]
 public sealed record SolutionIndexBuildResult(
@@ -2464,7 +2877,8 @@ public sealed record SolutionIndexBuildResult(
     int IndexedSymbolCount,
     int IndexedDiagnosticCount,
     int IndexedReferenceCount,
-    int IndexedCallSiteCount);
+    int IndexedCallSiteCount,
+    int IndexedRelationshipCount = 0);
 
 [Description("Result from refreshing one watched C# file in the monitor-owned solution index.")]
 public sealed record SolutionIndexFileRefreshResult(
@@ -2535,3 +2949,19 @@ public sealed record SolutionIndexReference(
     int Line,
     int Column,
     string Snippet);
+
+[Description("Indexed C# symbol relationship metadata from the watched solution index.")]
+public sealed record SolutionIndexRelationship(
+    string SourceStableSymbolKey,
+    string SourceKind,
+    string SourceName,
+    string TargetStableSymbolKey,
+    string TargetKind,
+    string TargetName,
+    string RelativePath,
+    string FileHash,
+    string RelationshipKind,
+    int Line,
+    int Column,
+    string Snippet,
+    string MetadataJson);
