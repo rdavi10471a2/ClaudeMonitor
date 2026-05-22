@@ -2,20 +2,20 @@
 
 This project is a monitor and MCP workflow host. Treat watched source as protected source, not as a scratchpad.
 
-Solution index scope and hard coverage boundaries are documented in `Docs/SolutionIndexScope.md`.
-
-## Mini Skill Loading
-
-@Docs/Skills/SkillRouter.md
-
-Use `Docs/Skills/SkillRouter.md` as the entrypoint for task-specific MonitorBaseClaude skills. Load only the smallest relevant card for the current task; do not load the whole `Docs/Skills/` set by default. If the active task is a watched-source edit, load `Docs/Skills/SystemMonitorStaging.md` after the router.
-
 ## Design Principle
 
 Reason in the cloud; edit locally. Use compact context for understanding, then let the local Monitor server perform bounded edits, validation, staging, and review. Optimize both directions:
 
 - Inbound: use the Solution Index MCP surface (`get_solution_index_tree`, `query_solution_index`, `find_indexed_symbols`, `find_indexed_references`, `find_indexed_callers`, `find_indexed_relationships`, `get_indexed_symbol`) plus source maps and symbols before loading bodies.
 - Outbound: use the smallest safe composition tool. Prefer symbol tools for C#, `replace_text_in_file` for exact text changes, `replace_span_in_file` when exact line/column bounds are already known, and `submit_file` only for new files or deliberate whole-file rewrites.
+
+Solution index scope and hard coverage boundaries are documented in `Docs/SolutionIndexScope.md`. In short: the index is authoritative for source-owned C# declarations, references, callers, and relationships inside the watched solution; framework/NuGet internals are out of index scope; unchecked generated code and unresolved project conditions must surface diagnostics or partial-confidence signals instead of silent certainty.
+
+## Mini Skill Loading
+
+@Docs/Skills/SkillRouter.md
+
+Common route: for watched-source edits, load `Docs/Skills/SystemMonitorStaging.md`; add `SessionOverlayValidation.md` for coupled multi-file work and `ReviewQueueAndGates.md` when launching or recording reviews. Use `Docs/Skills/SkillRouter.md` as the fallback entrypoint for less common task-specific cards. Load only the smallest relevant card set; do not load all of `Docs/Skills/` by default.
 
 ## Report And Memory Lanes
 
@@ -52,7 +52,7 @@ For watched project source edits, use the Monitor MCP workflow:
 2. Use Solution Index tools for project and dependency surfaces before loading source: `get_solution_index_tree` for orientation, `query_solution_index` for namespace/folder/file slices, `find_indexed_symbols` for declarations, `find_indexed_references` / `find_indexed_callers` for impact checks, and `find_indexed_relationships` for partials, inheritance, overrides, and interface implementations.
 3. Read structure with `get_source_map` for C# files, folders, or project slices when live selectors or source-map shapes are needed. Use `mode: navigation` for broad folder/project orientation and `mode: selector` for a chosen file before symbol mutation.
 4. Read the smallest needed body with `get_symbol`.
-5. Use `get_file` only when index/source-map/symbol context is not enough and the file is below 32KB. For files at or above 32KB, call `refresh_file` first and chunk-read the returned Working file path instead of asking MCP to return the whole file.
+5. Use `get_file` only when index/source-map/symbol context is not enough and the file is below 32KB. For files at or above 32KB, or when unsure in a cold session, call `refresh_file` first and chunk-read the returned Working file path instead of asking MCP to return the whole file.
 6. Compose a complete Working candidate with `replace_text_in_file`, `replace_span_in_file`, `submit_file`, `submit_symbol`, `add_symbol`, `add_field`, `add_property`, `add_method`, `add_constructor`, `add_nested_type`, `set_type_partial`, `add_using`, `remove_using`, or `remove_symbol`.
 7. Call `stage_candidate_for_review` only after the Working candidate is complete enough for review.
 8. Use `launch_staged_diff`, or let the Host or sidecar open WinMerge between the real watched file and the staged candidate.
@@ -112,11 +112,11 @@ Complete candidate prepared
 -> check IndexRefresh; accepted single-file edits refresh immediately, completed multi-file sessions rebuild once
 ```
 
-For coupled multi-file C# edits, use one monitor session and stage all affected files before the first `launch_staged_diff`. Overlay compilation must see the proposed files together; WinMerge review is still serial, one file at a time.
+For coupled multi-file C# edits, use one monitor session and stage all affected files before the first `launch_staged_diff`. Compose later candidates against the full proposed Working overlay, not against an already-accepted watched-source intermediate state. Overlay compilation must see the proposed files together; WinMerge review is still serial, one file at a time.
 
 For small Razor, markup, CSS, JSON, config, or other text edits, prefer `replace_text_in_file` with exact `oldText`, `newText`, and `expectedMatches: 1`. Use `replace_span_in_file` when exact line/column bounds are already known. Supply `expectedFileHash` and old-text/hash guards when available. Use full-file `submit_file` only for new files, broad rewrites, or unsafe narrow edits.
 
-For any file at or above 32KB in a cold session, regardless of extension, do not call `get_file`. Call `refresh_file(sourceFilePath)`, then read the returned `workingFilePath` in bounded chunks. If the file is already in context in the current session, do not re-read it; call the narrow edit tool directly with `expectedOldText` or a hash guard from that in-context text.
+For any file at or above 32KB in a cold session, regardless of extension, do not call `get_file`. When unsure about size or freshness in a cold session, prefer `refresh_file(sourceFilePath)`, then read the returned `workingFilePath` in bounded chunks. If the file is already in context in the current session, do not re-read it; call the narrow edit tool directly with `expectedOldText` or a hash guard from that in-context text.
 
 Do not narrate routine known-good Monitor workflows. Call the needed tool and report only changed file, staged record or next required decision, validation result, and blockers.
 
@@ -140,6 +140,7 @@ The diff is a Host-owned review/save surface, not a manual merge workspace.
 - Do not partially merge hunks.
 - Do not repair the candidate in WinMerge.
 - If the candidate is close but wrong, reject it and generate a new staged candidate.
+- If the wrong candidate or rejection was caused by stale file/index state, call `refresh_file` for the affected source and re-query the solution index/source map before regenerating.
 
 Classification is vote-plus-hash gated:
 

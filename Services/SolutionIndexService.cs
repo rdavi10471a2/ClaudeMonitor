@@ -12,7 +12,7 @@ using MonitorBaseClaude.AI;
 namespace MonitorBaseClaude.Services;
 
 [AIFileContext("SolutionIndexService.cs", "Builds and queries the monitor-owned SQLite index for watched C# solution structure.")]
-[FileVersion("1.8")]
+[FileVersion("1.9")]
 public sealed class SolutionIndexService
 {
     private static readonly string[] ExcludedDirectoryNames =
@@ -419,6 +419,48 @@ public sealed class SolutionIndexService
         }
 
         return relationships;
+    }
+
+    public IReadOnlyList<SolutionIndexDiagnostic> FindDiagnostics(string? relativePath = null, int maxResults = 500)
+    {
+        string dbPath = GetIndexDatabasePath();
+        if (!File.Exists(dbPath))
+        {
+            return [];
+        }
+
+        maxResults = Math.Clamp(maxResults, 1, 5000);
+        string? normalizedPath = string.IsNullOrWhiteSpace(relativePath)
+            ? null
+            : NormalizeRelativePath(relativePath);
+        using SqliteConnection connection = OpenConnection(dbPath);
+        using SqliteCommand command = connection.CreateCommand();
+        command.CommandText =
+            """
+            select f.relative_path, f.sha256, d.severity, d.diagnostic_id, d.message, d.start_line, d.end_line
+            from diagnostics d
+            join files f on f.id = d.file_id
+            where ($relativePath is null or f.relative_path = $relativePath)
+            order by f.relative_path collate nocase, d.start_line, d.end_line, d.diagnostic_id collate nocase
+            limit $limit;
+            """;
+        command.Parameters.AddWithValue("$relativePath", normalizedPath is null ? DBNull.Value : normalizedPath);
+        command.Parameters.AddWithValue("$limit", maxResults);
+        List<SolutionIndexDiagnostic> diagnostics = [];
+        using SqliteDataReader reader = command.ExecuteReader();
+        while (reader.Read())
+        {
+            diagnostics.Add(new SolutionIndexDiagnostic(
+                reader.GetString(0),
+                reader.GetString(1),
+                reader.GetString(2),
+                reader.GetString(3),
+                reader.GetString(4),
+                reader.GetInt32(5),
+                reader.GetInt32(6)));
+        }
+
+        return diagnostics;
     }
 
     private string GetObservedRoot()
@@ -2965,3 +3007,13 @@ public sealed record SolutionIndexRelationship(
     int Column,
     string Snippet,
     string MetadataJson);
+
+[Description("Indexed C# diagnostic metadata from the watched solution index.")]
+public sealed record SolutionIndexDiagnostic(
+    string RelativePath,
+    string FileHash,
+    string Severity,
+    string DiagnosticId,
+    string Message,
+    int StartLine,
+    int EndLine);
