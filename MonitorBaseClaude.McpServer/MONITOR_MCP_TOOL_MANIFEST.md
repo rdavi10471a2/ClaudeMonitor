@@ -642,7 +642,9 @@ Decision behavior is vote-plus-hash agreement:
 
 The Operator report is not authority by itself. The hash is not enough by itself. Final classification is the agreement between the reported decision and the watched file hash. `accepted-normalized` is reserved for byte-shape-only drift such as BOM or line-ending changes from the diff tool; the decision response includes normalized hashes when that path is evaluated.
 
-The response includes hashes, queue status, decision record path, and whether the reported outcome matched the computed classification. It returns no file content.
+For accepted decisions, the tool also refreshes the monitor-owned solution index. A single accepted file refreshes immediately. A multi-file session returns `IndexRefresh.Status = deferred` while other staged records remain pending, then rebuilds the index once when the last pending staged record in that session is decided.
+
+The response includes hashes, queue status, decision record path, index refresh status, and whether the reported outcome matched the computed classification. It returns no file content.
 
 ### `launch_staged_diff`
 

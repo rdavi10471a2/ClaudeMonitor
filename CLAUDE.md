@@ -17,6 +17,8 @@ Use local `.claude-local/` for private restart memory, scratch notes, and VS Cod
 
 When this rule is first seen in an existing checkout, move current local restart/scratch notes into `.claude-local/`. Move findings, bug reports, test results, and doc suggestions that Codex/operator should review into `CLAUDE_Live_Tests/` using the naming and header rules in `CLAUDE_Live_Tests/README.md`.
 
+Claude owns cleanup of Claude-created notes. If local notes are stale, move only the useful summary into `.claude-local/` or a dated `CLAUDE_Live_Tests/` report, then archive or remove the noisy source note. Keep whatever compact restart summary helps you continue, but do not leave duplicate scratch/report piles for Codex to sort later.
+
 Do not treat `CLAUDE_Live_Tests/`, `.claude-local/`, `Working/`, `LocalSmokeTests/`, or `Docs/Archive/` as authority for workflow rules. When instructions conflict, prefer the current user message, then this file, then `get_tool_manifest`, then `get_staging_guide`.
 
 Claude may push markdown-only branches for review, never directly to `main`. Use branch names like `claude-notes/YYYYMMDD-topic`.
@@ -51,6 +53,8 @@ For watched project source edits, use the Monitor MCP workflow:
 11. Trust vote-plus-hash classification, not the reported outcome text alone.
 
 The Monitor Tool Server never directly overwrites watched source. WinMerge save/no-save is the physical mutation path in the current workflow.
+
+After an accepted single-file decision, `record_diff_decision` refreshes the monitor-owned solution index. For a multi-file session, accepted decisions are deferred while other staged records remain pending, then the index is rebuilt once when the session chain is complete. Check the returned `IndexRefresh` status before calling manual index refresh tools.
 
 All current candidate composition tools write to the monitor-owned `Working\<observedRootKey>\<relative source path>` mirror. They do not create staged records by themselves. There are no live `*_old` edit tools in the current surface; if `tools/list` shows any, report it as stale binary or stale MCP binding evidence.
 
@@ -97,6 +101,7 @@ Complete candidate prepared
 -> Operator saves the whole candidate or leaves source unchanged
 -> record_diff_decision(stagedRecordId, accepted|rejected)
 -> obey the returned classification
+-> check IndexRefresh; accepted single-file edits refresh immediately, completed multi-file sessions rebuild once
 ```
 
 For coupled multi-file C# edits, use one monitor session and stage all affected files before the first `launch_staged_diff`. Overlay compilation must see the proposed files together; WinMerge review is still serial, one file at a time.

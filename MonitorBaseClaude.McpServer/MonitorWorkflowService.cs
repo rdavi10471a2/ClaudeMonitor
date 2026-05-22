@@ -10,6 +10,7 @@ using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
 using Microsoft.CodeAnalysis.Formatting;
 using ModelContextProtocol.Server;
+using MonitorBaseClaude.Services;
 
 namespace MonitorBaseClaude.McpServer;
 
@@ -36,11 +37,18 @@ public sealed partial class MonitorWorkflowService
     ];
 
     private readonly MonitorServerSettings settings;
+    private readonly SolutionIndexService? solutionIndexService;
     private readonly Dictionary<string, MonitorOverlayValidationResult> overlayValidationCache = new(StringComparer.Ordinal);
 
     public MonitorWorkflowService(MonitorServerSettings settings)
+        : this(settings, null)
+    {
+    }
+
+    public MonitorWorkflowService(MonitorServerSettings settings, SolutionIndexService? solutionIndexService)
     {
         this.settings = settings;
+        this.solutionIndexService = solutionIndexService;
     }
 
     public MonitorFileRefreshResult RefreshFile(string sourceFilePath)
@@ -1116,6 +1124,8 @@ public sealed partial class MonitorWorkflowService
         StagedEditRecord updatedRecord = record with { QueueStatus = queueStatus };
         File.WriteAllText(recordPath, JsonSerializer.Serialize(updatedRecord, JsonOptions));
 
+        MonitorIndexRefreshDecisionResult? indexRefresh = RefreshIndexAfterAcceptedDecision(updatedRecord, effectiveSessionId, classificationResult.Classification);
+
         MonitorDiffDecisionResult result = new(
             record.RecordId,
             string.IsNullOrWhiteSpace(effectiveSessionId) ? null : effectiveSessionId,
@@ -1136,12 +1146,124 @@ public sealed partial class MonitorWorkflowService
         {
             OriginalNormalizedHash = classificationResult.OriginalNormalizedHash,
             StagedNormalizedHash = classificationResult.StagedNormalizedHash,
-            CurrentNormalizedHash = classificationResult.CurrentNormalizedHash
+            CurrentNormalizedHash = classificationResult.CurrentNormalizedHash,
+            IndexRefresh = indexRefresh
         };
 
         string decisionRecordPath = WriteDiffDecisionRecord(result);
         ClearCandidateStateAfterCompletedDecision(record, classificationResult.Classification);
         return result with { DecisionRecordPath = decisionRecordPath };
+    }
+
+    private MonitorIndexRefreshDecisionResult? RefreshIndexAfterAcceptedDecision(
+        StagedEditRecord record,
+        string? effectiveSessionId,
+        string classification)
+    {
+        if (solutionIndexService is null)
+        {
+            return null;
+        }
+
+        if (!IsAcceptedClassification(classification))
+        {
+            return new MonitorIndexRefreshDecisionResult(
+                "not-run",
+                $"Index refresh only runs after accepted decisions; classification was {classification}.",
+                "none",
+                record.SourceFilePath);
+        }
+
+        if (!string.IsNullOrWhiteSpace(effectiveSessionId))
+        {
+            (StagedEditRecord Record, string RecordPath)[] sessionRecords = ReadSessionStagedRecordEntries(effectiveSessionId).ToArray();
+            bool hasPendingRecords = sessionRecords.Any(item => IsPendingReviewQueueStatus(item.Record.QueueStatus));
+            bool sessionHasMultipleRecords = sessionRecords
+                .Select(item => item.Record.RecordId)
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .Skip(1)
+                .Any();
+
+            if (sessionHasMultipleRecords && hasPendingRecords)
+            {
+                return new MonitorIndexRefreshDecisionResult(
+                    "deferred",
+                    "Accepted edit is part of a multi-file session; index refresh will run after the remaining staged records are decided.",
+                    "session",
+                    record.SourceFilePath,
+                    PendingSessionRecordCount: sessionRecords.Count(item => IsPendingReviewQueueStatus(item.Record.QueueStatus)));
+            }
+
+            SolutionIndexBuildResult sessionBuild = solutionIndexService.Rebuild();
+            return BuildIndexRefreshResult(
+                sessionHasMultipleRecords ? "rebuilt-session-complete" : "rebuilt-single-session-file",
+                sessionHasMultipleRecords
+                    ? "All staged records in this session are terminal; rebuilt the solution index once for the completed chain."
+                    : "Accepted single-file session edit; rebuilt the solution index.",
+                sessionHasMultipleRecords ? "session" : "file",
+                record.SourceFilePath,
+                sessionBuild);
+        }
+
+        if (Path.GetExtension(record.SourceFilePath).Equals(".cs", StringComparison.OrdinalIgnoreCase))
+        {
+            SolutionIndexFileRefreshResult fileRefresh = solutionIndexService.RefreshFile(record.SourceFilePath);
+            return new MonitorIndexRefreshDecisionResult(
+                "refreshed-file",
+                "Accepted single C# file edit; refreshed the solution index for the accepted file.",
+                "file",
+                record.SourceFilePath,
+                fileRefresh.Status.FileCount,
+                fileRefresh.Status.SymbolCount,
+                fileRefresh.Status.DiagnosticCount,
+                fileRefresh.Status.ReferenceCount,
+                fileRefresh.Status.CallSiteCount,
+                fileRefresh.Status.StaleFileCount,
+                fileRefresh.Status.LastIndexedAtUtc);
+        }
+
+        SolutionIndexBuildResult build = solutionIndexService.Rebuild();
+        return BuildIndexRefreshResult(
+            "rebuilt-non-csharp-accept",
+            "Accepted non-C# file edit; rebuilt the solution index so monitor-owned index state is fresh.",
+            "solution",
+            record.SourceFilePath,
+            build);
+    }
+
+    private static MonitorIndexRefreshDecisionResult BuildIndexRefreshResult(
+        string status,
+        string reason,
+        string scope,
+        string sourceFilePath,
+        SolutionIndexBuildResult build)
+    {
+        return new MonitorIndexRefreshDecisionResult(
+            status,
+            reason,
+            scope,
+            sourceFilePath,
+            build.IndexedFileCount,
+            build.IndexedSymbolCount,
+            build.IndexedDiagnosticCount,
+            build.IndexedReferenceCount,
+            build.IndexedCallSiteCount,
+            build.Status.StaleFileCount,
+            build.Status.LastIndexedAtUtc,
+            build.DurationMilliseconds);
+    }
+
+    private static bool IsAcceptedClassification(string classification)
+    {
+        return classification.Equals("accepted", StringComparison.OrdinalIgnoreCase)
+            || classification.Equals("accepted-normalized", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static bool IsPendingReviewQueueStatus(string queueStatus)
+    {
+        return queueStatus.Equals("staged", StringComparison.OrdinalIgnoreCase)
+            || queueStatus.Equals("force-review-launched", StringComparison.OrdinalIgnoreCase)
+            || queueStatus.Equals("blocked-overlay-validation", StringComparison.OrdinalIgnoreCase);
     }
 
     private void ClearCandidateStateAfterCompletedDecision(StagedEditRecord record, string classification)
@@ -4158,7 +4280,23 @@ public sealed record MonitorDiffDecisionResult(
     string? DecisionRecordPath = null,
     string? OriginalNormalizedHash = null,
     string? StagedNormalizedHash = null,
-    string? CurrentNormalizedHash = null);
+    string? CurrentNormalizedHash = null,
+    MonitorIndexRefreshDecisionResult? IndexRefresh = null);
+
+public sealed record MonitorIndexRefreshDecisionResult(
+    string Status,
+    string Reason,
+    string Scope,
+    string SourceFilePath,
+    int? FileCount = null,
+    int? SymbolCount = null,
+    int? DiagnosticCount = null,
+    int? ReferenceCount = null,
+    int? CallSiteCount = null,
+    int? StaleFileCount = null,
+    DateTimeOffset? IndexedAtUtc = null,
+    double? DurationMilliseconds = null,
+    int? PendingSessionRecordCount = null);
 
 public sealed record MonitorStagedDiffLaunchResult(
     string Status,
