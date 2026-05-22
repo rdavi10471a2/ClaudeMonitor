@@ -9,13 +9,14 @@ The active safety mechanism is session overlay validation plus gated serial diff
 - Do not edit watched source directly.
 - All watched-source changes go through System Monitor staging.
 - Reason in the cloud; compose locally. Use Roslyn and Monitor selectors to describe the intended edit, then let the local tooling splice/stage the candidate.
-- Use the Solution Index MCP surface for cheap project context before body reads: `get_solution_index_tree`, `query_solution_index`, `find_indexed_symbols`, `get_indexed_symbol`, `find_indexed_references`, and `find_indexed_callers`.
+- Use the Solution Index MCP surface for cheap project context before body reads: `get_solution_index_tree`, `query_solution_index`, `find_indexed_symbols`, `get_indexed_symbol`, `find_indexed_references`, `find_indexed_callers`, and `find_indexed_relationships`.
 - Use the smallest safe edit unit: symbol edit before whole-file replacement.
 - For any large file in a cold session, call `refresh_file` and chunk-read the returned Working file path. Do not use `get_file` when the file is large enough to risk an oversized tool result.
 - For warm-session text edits, do not re-read the file. Use the text already in context with `replace_text_in_file` and `expectedMatches: 1`, or `replace_span_in_file` when exact bounds are already known.
 - Stage candidates, let System Monitor validate syntax/overlay compilation, then use Operator review.
 - For coupled multi-file C# edits, stage every required file in one monitor session before the first review launch so overlay validation sees the whole proposed change.
 - Record the Operator decision with `record_diff_decision`.
+- After `record_diff_decision`, check the returned `IndexRefresh` status. Accepted single-file edits refresh the monitor-owned solution index immediately; multi-file sessions rebuild the index once the accepted chain is complete.
 - Stop on `dirty-unexpected`; recovery is explicit refresh/rebase/restage or Operator reconcile.
 - A Working candidate persists across sessions when the watched-source baseline hash is unchanged. If the first edit in a new pass inherits prior in-progress candidate content, either continue deliberately or discard the Working mirror/state before starting a clean test.
 - Cached source-map or solution-index selectors are advisory only. Before `submit_symbol`, `remove_symbol`, or related submit/remove operations, refresh the file selector map with live `get_source_map(scope: "file", mode: "selector")` or verify the file with `check_file_hash`, then call `get_symbol`.
@@ -51,6 +52,7 @@ find_file, unless the full path was returned by a Roslyn or Monitor tool in this
 get_solution_index_tree for project orientation, or query_solution_index for folder/namespace/file slices
 find_indexed_symbols / get_indexed_symbol for target declarations
 find_indexed_references / find_indexed_callers before changing public or shared APIs
+find_indexed_relationships when partials, inheritance, overrides, or interface implementations may affect the edit
 get_source_map(scope: "file", mode: "selector")
 get_symbol for the smallest needed body
 submit_symbol / set_type_partial / add_field / add_property / add_method / add_constructor / add_nested_type
@@ -59,6 +61,7 @@ stage_candidate_for_review
 launch_staged_diff or Host/sidecar WinMerge review/save
 Operator review
 record_diff_decision
+check IndexRefresh status before doing more index-dependent work
 ```
 
 For multi-file work:
@@ -74,6 +77,7 @@ launch/review file A
 record decision for file A
 launch/review file B
 record decision for file B
+check final IndexRefresh status after the chain completes
 ```
 
 For coupled edits, briefly name why the files must validate together before review.
@@ -82,7 +86,7 @@ For coupled edits, briefly name why the files must validate together before revi
 
 Empty Roslyn reference/caller results are not proof that no consumers exist. Before treating an API/signature/rename as single-file, cross-check with at least one other signal: diagnostics, symbol search, public API surface, targeted source map, known UI fields/properties, or explicit Operator knowledge.
 
-Prefer Monitor Solution Index queries as the first broad signal. Use `query_solution_index` for namespace/folder/file surfaces, `find_indexed_symbols` for declarations, and `find_indexed_references` / `find_indexed_callers` for indexed impact. These are local SQLite rows built from Roslyn semantics and are cheaper than loading dependency bodies.
+Prefer Monitor Solution Index queries as the first broad signal. Use `query_solution_index` for namespace/folder/file surfaces, `find_indexed_symbols` for declarations, `find_indexed_references` / `find_indexed_callers` for indexed impact, and `find_indexed_relationships` for partial declarations, inheritance, overrides, and interface implementations. These are local SQLite rows built from Roslyn semantics and are cheaper than loading dependency bodies.
 
 Before emitting a call site to a type reached through a `using`, local namespace context, or a known dependency, load that target type's real callable surface first. Use `search_symbols` plus `get_type_overview`, or Monitor source maps/symbol reads for watched-project types. Write calls against actual method names, return types, parameter types, and overloads.
 
@@ -94,7 +98,7 @@ For whole-file staging, use Roslyn shape plus `get_file`; skip `get_source_map` 
 
 For large files of any type, the cold-session read path is `refresh_file(sourceFilePath)` followed by bounded chunk reads from the returned Working file path. This prevents oversized MCP results. If the file is already loaded in the current session, skip the read and use the in-context text as the guard for `replace_text_in_file`.
 
-If a candidate target came from `get_solution_index`, `get_solution_index_tree`, `query_solution_index`, `find_indexed_symbols`, `get_indexed_symbol`, `find_indexed_references`, `find_indexed_callers`, or cached compact index JSON, treat that target as discovery only. Refresh the file selector/hash in the current session before body read and mutation; if the live selector is missing, ambiguous, or hash-drifted, refresh/rebuild the selector data and restart the narrow edit path.
+If a candidate target came from `get_solution_index`, `get_solution_index_tree`, `query_solution_index`, `find_indexed_symbols`, `get_indexed_symbol`, `find_indexed_references`, `find_indexed_callers`, `find_indexed_relationships`, or cached compact index JSON, treat that target as discovery only. Refresh the file selector/hash in the current session before body read and mutation; if the live selector is missing, ambiguous, or hash-drifted, refresh/rebuild the selector data and restart the narrow edit path.
 
 Long reference: `Docs/AgentToolCallPlaybook.md`.
 

@@ -19,6 +19,7 @@ launch/review file A
 record decision for file A
 launch/review file B
 record decision for file B
+check final IndexRefresh status before relying on solution-index queries
 ```
 
 ## Do Not
@@ -27,6 +28,7 @@ record decision for file B
 - Do not treat a clean single-file overlay as enough when another staged file is required for the feature to compile.
 - Do not let empty reference results shrink the session by themselves; cross-check before deciding a change is single-file.
 - Do not continue to later diffs if an earlier staged item is blocked by validation or review-gate state.
+- Do not run manual index refresh tools after each accepted file in a coupled chain; let `record_diff_decision` perform the single rebuild when the chain is complete unless it reports a refresh failure.
 
 ## Unblock
 

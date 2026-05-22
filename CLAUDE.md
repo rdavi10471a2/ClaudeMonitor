@@ -4,6 +4,12 @@ This project is a monitor and MCP workflow host. Treat watched source as protect
 
 Solution index scope and hard coverage boundaries are documented in `Docs/SolutionIndexScope.md`.
 
+## Mini Skill Loading
+
+@Docs/Skills/SkillRouter.md
+
+Use `Docs/Skills/SkillRouter.md` as the entrypoint for task-specific MonitorBaseClaude skills. Load only the smallest relevant card for the current task; do not load the whole `Docs/Skills/` set by default. If the active task is a watched-source edit, load `Docs/Skills/SystemMonitorStaging.md` after the router.
+
 ## Design Principle
 
 Reason in the cloud; edit locally. Use compact context for understanding, then let the local Monitor server perform bounded edits, validation, staging, and review. Optimize both directions:
