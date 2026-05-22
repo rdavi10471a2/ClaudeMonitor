@@ -50,6 +50,7 @@ For watched project source edits, use the Monitor MCP workflow:
 
 1. Find related files with `find_file`.
 2. Use Solution Index tools for project and dependency surfaces before loading source: `get_solution_index_tree` for orientation, `query_solution_index` for namespace/folder/file slices, `find_indexed_symbols` for declarations, `find_indexed_references` / `find_indexed_callers` for impact checks, and `find_indexed_relationships` for partials, inheritance, overrides, and interface implementations.
+   If the relevant file is already known, call `query_solution_index(scope: "file", value: "<relative path>")` first and use the returned symbol row's `StableSymbolKey`; do not manually compose stable keys from text.
 3. Read structure with `get_source_map` for C# files, folders, or project slices when live selectors or source-map shapes are needed. Use `mode: navigation` for broad folder/project orientation and `mode: selector` for a chosen file before symbol mutation.
 4. Read the smallest needed body with `get_symbol`.
 5. Use `get_file` only when index/source-map/symbol context is not enough and the file is below 32KB. For files at or above 32KB, or when unsure in a cold session, call `refresh_file` first and chunk-read the returned Working file path instead of asking MCP to return the whole file.
@@ -78,6 +79,7 @@ Use these sequences as the default learned workflow. Do not skip directly to a b
 User asks for a C# edit
 -> find_file, if the path is uncertain
 -> get_solution_index_tree or query_solution_index for the project/folder/namespace surface
+-> if the file is known, query_solution_index(scope: "file", value: path) and take StableSymbolKey from the returned symbol row
 -> find_indexed_symbols for target declarations; find_indexed_references / find_indexed_callers / find_indexed_relationships for impact checks
 -> get_source_map(path, scope: file, mode: selector)
 -> choose the smallest likely symbol from the source map

@@ -10,6 +10,7 @@ The active safety mechanism is session overlay validation plus gated serial diff
 - All watched-source changes go through System Monitor staging.
 - Reason in the cloud; compose locally. Use Roslyn and Monitor selectors to describe the intended edit, then let the local tooling splice/stage the candidate.
 - Use the Solution Index MCP surface for cheap project context before body reads: `get_solution_index_tree`, `query_solution_index`, `find_indexed_symbols`, `get_indexed_symbol`, `find_indexed_references`, `find_indexed_callers`, and `find_indexed_relationships`.
+- If the target file is already known, call `query_solution_index(scope: "file", value: "<relative path>")` first and use the returned symbol row's `StableSymbolKey`. Do not manually compose stable keys.
 - Use the smallest safe edit unit: symbol edit before whole-file replacement.
 - For any file at or above 32KB in a cold session, call `refresh_file` and chunk-read the returned Working file path. Do not use `get_file` for that cold-session entry.
 - For warm-session text edits, do not re-read the file. Use the text already in context with `replace_text_in_file` and `expectedMatches: 1`, or `replace_span_in_file` when exact bounds are already known.
@@ -50,6 +51,7 @@ get_tool_manifest when discovering the current tool contract
 get_staging_guide when the client needs the staging and session-overlay rules
 find_file, unless the full path was returned by a Roslyn or Monitor tool in this session
 get_solution_index_tree for project orientation, or query_solution_index for folder/namespace/file slices
+query_solution_index(scope: "file", value: path) when the file is already known; use returned StableSymbolKey
 find_indexed_symbols / get_indexed_symbol for target declarations
 find_indexed_references / find_indexed_callers before changing public or shared APIs
 find_indexed_relationships when partials, inheritance, overrides, or interface implementations may affect the edit
