@@ -101,19 +101,33 @@ No skill card covers the warm/cold session distinction for `replace_span_in_file
 
 ### Potential card consolidation
 
-Current 10 cards + README. Some are narrow enough to merge:
-- `AsyncPropagation.md` + `PartialClassRefactor.md` are task-specific patterns; could move into long docs if rarely triggered.
-- `TroubleshootingDashboard.md` is operational, not editing; could live in `.claude-local/` or a Docs subfolder.
-- `FormattingOracle.md` scope is narrow enough to inline into `SystemMonitorStaging.md`.
+Current 10 cards + README. Some are narrow enough to merge or retire:
 
-Consolidation reduces the cognitive cost of `SkillRouter.md` decisions.
+- **`PartialClassRefactor.md` — retire.** The card is 5 rules + a short flow. `set_type_partial` already appears in `SystemMonitorStaging.md`'s staging mode table. The only unique content ("advanced refactor, not the default path") is one sentence; fold as a footnote in `SystemMonitorStaging.md`.
+- **`AsyncPropagation.md`** — task-specific; keep as on-demand only.
+- **`TroubleshootingDashboard.md`** — operational/diagnostic, not editing workflow. Move to `Docs/` or `.claude-local/`; remove from skill pack.
+- **`FormattingOracle.md`** — narrow enough to fold into `SystemMonitorStaging.md` as an insertion/replacement layout section.
+
+### Always-live via `@` import in CLAUDE.md
+
+Claude Code supports `@filename` imports in CLAUDE.md. Skills that should always be in context can be imported directly, replacing explicit on-demand loading while keeping CLAUDE.md itself short:
+
+```markdown
+@Docs/Skills/SystemMonitorStaging.md
+@Docs/Skills/RoslynFirstNavigation.md
+@Docs/Skills/SessionOverlayValidation.md
+@Docs/Skills/ReviewQueueAndGates.md
+```
+
+Task-specific cards (`AsyncPropagation.md`) and retired cards stay out of the import list.
 
 ---
 
 ## Priority Order
 
 1. Add design principle section to CLAUDE.md — highest value, missing entirely.
-2. Add warm-session / `refresh_file` / Razor section update — closes Findings 56 instruction gap.
-3. Add index-for-dependencies pattern to a skill card — design intent, mark as pending validation.
-4. Trim CLAUDE.md mechanics to pointers — reduces per-turn context load.
-5. Skill consolidation — lowest urgency, weekend-sized task.
+2. Add warm-session / `refresh_file` / Razor section update to CLAUDE.md and `SystemMonitorStaging.md` — closes Finding 56 instruction gap.
+3. Wire always-live skill imports via `@` in CLAUDE.md.
+4. Retire `PartialClassRefactor.md`; fold `FormattingOracle.md` into `SystemMonitorStaging.md`; move `TroubleshootingDashboard.md` out of skill pack.
+5. Add index-for-dependencies pattern to a skill card — mark as design intent, pending end-to-end validation.
+6. Trim CLAUDE.md mechanics to pointers — reduces per-turn context load.
