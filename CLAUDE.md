@@ -2,6 +2,13 @@
 
 This project is a monitor and MCP workflow host. Treat watched source as protected source, not as a scratchpad.
 
+## Design Principle
+
+Reason in the cloud; edit locally. Use compact context for understanding, then let the local Monitor server perform bounded edits, validation, staging, and review. Optimize both directions:
+
+- Inbound: use source maps, symbols, and solution index summaries before loading bodies.
+- Outbound: use the smallest safe composition tool. Prefer symbol tools for C#, `replace_text_in_file` for exact text changes, `replace_span_in_file` when exact line/column bounds are already known, and `submit_file` only for new files or deliberate whole-file rewrites.
+
 ## Report And Memory Lanes
 
 Use `CLAUDE_Live_Tests/` for source-controlled findings, bug reports, test results, and doc suggestions that Codex/operator should review. Follow `CLAUDE_Live_Tests/README.md`: every report is date-stamped, has a status header, and can be marked processed after triage.
@@ -35,7 +42,7 @@ For watched project source edits, use the Monitor MCP workflow:
 2. Read structure with `get_source_map` for C# files, folders, or project slices. Use `mode: navigation` for broad folder/project orientation and `mode: selector` for a chosen file.
 3. Read the smallest needed body with `get_symbol`.
 4. Use `get_file` only when symbol/source-map context is not enough and the file is not large. For any large file, call `refresh_file` first and chunk-read the returned Working file path instead of asking MCP to return the whole file.
-5. Compose a complete Working candidate with `submit_file`, `replace_span_in_file`, `submit_symbol`, `add_symbol`, `add_field`, `add_property`, `add_method`, `add_constructor`, `add_nested_type`, `set_type_partial`, `add_using`, `remove_using`, or `remove_symbol`.
+5. Compose a complete Working candidate with `replace_text_in_file`, `replace_span_in_file`, `submit_file`, `submit_symbol`, `add_symbol`, `add_field`, `add_property`, `add_method`, `add_constructor`, `add_nested_type`, `set_type_partial`, `add_using`, `remove_using`, or `remove_symbol`.
 6. Call `stage_candidate_for_review` only after the Working candidate is complete enough for review.
 7. Use `launch_staged_diff`, or let the Host or sidecar open WinMerge between the real watched file and the staged candidate.
 8. The Operator either saves the whole candidate in WinMerge or leaves source unchanged.
@@ -77,7 +84,7 @@ Expected:
 
 ```text
 Complete candidate prepared
--> submit_file, replace_span_in_file, or submit_symbol
+-> replace_text_in_file, replace_span_in_file, submit_file, or submit_symbol
    or add_symbol / add_field / add_property / add_method / add_constructor / add_nested_type
    or set_type_partial / add_using / remove_using / remove_symbol
 -> stage_candidate_for_review
@@ -90,7 +97,7 @@ Complete candidate prepared
 
 For coupled multi-file C# edits, use one monitor session and stage all affected files before the first `launch_staged_diff`. Overlay compilation must see the proposed files together; WinMerge review is still serial, one file at a time.
 
-For small Razor, markup, CSS, or other text edits, prefer `replace_span_in_file` over full-file `submit_file` when you can identify an exact span from the current file text. Supply `expectedFileHash` and either `expectedOldTextHash` or `expectedOldText` so the server can reject stale or wrong spans. Use full-file `submit_file` only for new files, broad rewrites, or when the exact span cannot be safely identified.
+For small Razor, markup, CSS, JSON, config, or other text edits, prefer `replace_text_in_file` with exact `oldText`, `newText`, and `expectedMatches: 1`. Use `replace_span_in_file` when exact line/column bounds are already known. Supply `expectedFileHash` and old-text/hash guards when available. Use full-file `submit_file` only for new files, broad rewrites, or unsafe narrow edits.
 
 For any large file in a cold session, regardless of extension, do not call `get_file`. Call `refresh_file(sourceFilePath)`, then read the returned `workingFilePath` in bounded chunks. If the file is already in context in the current session, do not re-read it; call the narrow edit tool directly with `expectedOldText` or a hash guard from that in-context text.
 
@@ -175,4 +182,4 @@ When making a meaningful C# source change, preserve and update the existing `AIF
 
 ## Razor Files
 
-Razor files are not plain C# files. Do not apply C# Roslyn symbol surgery directly to `.razor` or `.cshtml` source. For Razor edits, prefer `replace_span_in_file` over full-file `submit_file` when the exact old text/span is known. Full-file submission is still acceptable for new Razor files, broad structural rewrites, or unsafe spans.
+Razor files are not plain C# files. Do not apply C# Roslyn symbol surgery directly to `.razor` or `.cshtml` source. For Razor edits, prefer `replace_text_in_file` for exact small changes or `replace_span_in_file` when bounds are already known. Full-file submission is still acceptable for new Razor files, broad structural rewrites, or unsafe narrow edits.

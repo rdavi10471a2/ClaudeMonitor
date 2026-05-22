@@ -328,6 +328,40 @@ public sealed class MonitorTools
     }
 
     [McpServerTool]
+    [Description("Find an exact text span in the monitor-owned Working mirror candidate and return 1-based line/column bounds. Use as a dry-run before replace_span_in_file when line numbers are not already known.")]
+    public MonitorTextSpanResult FindTextSpan(
+        [Description("Source file path, absolute or relative to the watched solution folder.")] string path,
+        [Description("Exact text to find using ordinal matching.")] string findText,
+        [Description("0-based occurrence index to return when the text appears multiple times.")] int occurrenceIndex = 0,
+        [Description("Optional SHA-256 hash of the current edit base file.")] string? expectedFileHash = null,
+        [Description("Optional durable session handle for ownership/telemetry.")] string? sessionId = null)
+    {
+        return Track(
+            nameof(FindTextSpan),
+            new { path, findTextLength = findText.Length, occurrenceIndex, hasExpectedFileHash = !string.IsNullOrWhiteSpace(expectedFileHash), sessionId },
+            () => workflowService.FindTextSpan(path, findText, occurrenceIndex, expectedFileHash, sessionId));
+    }
+
+    [McpServerTool]
+    [Description("Replace exact oldText in the monitor-owned Working mirror candidate. Default requires exactly one match. Use for token-efficient Razor/text edits when line/column spans are not worth computing.")]
+    public MonitorCandidateEditResult ReplaceTextInFile(
+        [Description("Source file path, absolute or relative to the watched solution folder.")] string path,
+        [Description("Exact old text to replace using ordinal matching.")] string oldText,
+        [Description("Replacement text.")] string newText,
+        [Description("Required number of oldText matches in the current edit base. Defaults to 1 for safe unique replacement.")] int expectedMatches = 1,
+        [Description("0-based occurrence index to replace when expectedMatches is greater than 1.")] int occurrenceIndex = 0,
+        [Description("Optional SHA-256 hash of the current edit base file.")] string? expectedFileHash = null,
+        [Description("Optional SHA-256 hash of oldText.")] string? expectedOldTextHash = null,
+        [Description("Optional durable session handle for ownership/telemetry.")] string? sessionId = null,
+        [Description("Optional JSON manifest expressing Model intent.")] string? manifestJson = null)
+    {
+        return Track(
+            nameof(ReplaceTextInFile),
+            new { path, oldTextLength = oldText.Length, newTextLength = newText.Length, expectedMatches, occurrenceIndex, hasExpectedFileHash = !string.IsNullOrWhiteSpace(expectedFileHash), hasExpectedOldTextHash = !string.IsNullOrWhiteSpace(expectedOldTextHash), sessionId, manifestLength = manifestJson?.Length ?? 0 },
+            () => workflowService.ReplaceTextInFile(path, oldText, newText, expectedMatches, occurrenceIndex, expectedFileHash, expectedOldTextHash, sessionId, manifestJson));
+    }
+
+    [McpServerTool]
     [Description("Stage the current Working mirror candidate for review. This creates one immutable staged record from the completed candidate.")]
     public MonitorFileSubmitResult StageCandidateForReview(
         [Description("Source file path, absolute or relative to the watched solution folder.")] string path,

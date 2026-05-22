@@ -54,14 +54,14 @@ The V1 composition path is:
 
 ```text
 get_source_map(path, scope: "file", mode: "selector")
-submit_file / replace_span_in_file / add_symbol / add_field / add_method
+submit_file / replace_text_in_file / replace_span_in_file / add_symbol / add_field / add_method
 repeat candidate edits as needed
 stage_candidate_for_review
 launch_staged_diff or Host/sidecar WinMerge review/save
 record_diff_decision(stagedRecordId, accepted|rejected)
 ```
 
-`submit_file`, `replace_span_in_file`, `add_symbol`, `add_field`, and `add_method` write to the normal monitor-owned `Working\<observedRootKey>\<relative source path>` mirror. They do not create staged records. The session id is metadata only; it is not part of the visible Working path.
+`submit_file`, `replace_text_in_file`, `replace_span_in_file`, `add_symbol`, `add_field`, and `add_method` write to the normal monitor-owned `Working\<observedRootKey>\<relative source path>` mirror. They do not create staged records. The session id is metadata only; it is not part of the visible Working path.
 
 Models are allowed and expected to read related files under the watched root when the change requires context. The preferred first read for C# is `get_source_map`, because it gives the real current structure without forcing a whole-file read.
 
@@ -79,7 +79,7 @@ These sequences are part of the tool contract. They are intentionally small so a
 find_file, unless the full path was returned by a Roslyn or Monitor tool in this session
 get_source_map(path, scope: "file", mode: "selector")
 get_symbol(path, symbolSelectorJson)
-submit_file, replace_span_in_file, or submit_symbol
+submit_file, replace_text_in_file, replace_span_in_file, or submit_symbol
 launch_staged_diff or Host/sidecar WinMerge review/save
 record_diff_decision(stagedRecordId, accepted|rejected)
 ```
@@ -158,7 +158,7 @@ This prevents Accept and Reject from collapsing into the same raw hash state.
 | watched solution index file refresh | `refresh_solution_index_file`, `refresh_file_and_index` | implemented |
 | watched solution index queries | `get_solution_index`, `get_solution_index_tree`, `query_solution_index`, `find_indexed_symbols`, `get_indexed_symbol`, `find_indexed_references`, `find_indexed_callers` | implemented |
 | Working mirror full-file candidate | `submit_file` | implemented |
-| Working mirror verified text/span candidate | `replace_span_in_file` | implemented |
+| Working mirror verified text/span candidate | `replace_text_in_file`, `find_text_span`, `replace_span_in_file` | implemented |
 | Working mirror member candidates | `add_symbol`, `add_field`, `add_method`, `add_property`, `add_constructor`, `add_nested_type` | implemented |
 | Working candidate review snapshot | `stage_candidate_for_review` | implemented |
 | Working mirror symbol replacement/removal | `submit_symbol`, `remove_symbol` | implemented |
@@ -493,9 +493,45 @@ Safety rule:
 - If the hash or extracted old span does not match, the server rejects the edit before writing the candidate.
 - Do not use this as a fuzzy search/replace; the span must come from the exact current file text.
 
+### `find_text_span`
+
+Finds exact text in the current edit base and returns 1-based line/column bounds suitable for `replace_span_in_file`.
+
+Arguments:
+
+- `path`: watched source file path, absolute or relative to the watched solution folder.
+- `findText`: exact text to find using ordinal matching.
+- `occurrenceIndex`: 0-based occurrence index when the text appears multiple times.
+- `expectedFileHash`: optional SHA-256 hash of the current edit base.
+- `sessionId`: optional durable session handle.
+
+Use this as a dry run when line/column bounds are needed for review or diagnostics. For normal text replacement, prefer `replace_text_in_file`.
+
+### `replace_text_in_file`
+
+Replaces exact `oldText` in the monitor-owned Working mirror candidate. This is the preferred small-edit path for Razor, markup, CSS, JSON, config, and other text where emitting the full file would waste output tokens.
+
+Arguments:
+
+- `path`: watched source file path, absolute or relative to the watched solution folder.
+- `oldText`: exact old text to replace using ordinal matching.
+- `newText`: replacement text.
+- `expectedMatches`: required number of matches in the current edit base. Defaults to `1`.
+- `occurrenceIndex`: 0-based occurrence index to replace when `expectedMatches` is greater than `1`.
+- `expectedFileHash`: optional SHA-256 hash of the current edit base.
+- `expectedOldTextHash`: optional SHA-256 hash of `oldText`.
+- `sessionId`: optional durable session handle.
+- `manifestJson`: optional Model-intent manifest.
+
+Safety rule:
+
+- Prefer `expectedMatches: 1`.
+- If the match count, file hash, or old-text hash does not match, the server returns a structured error result and does not write the candidate.
+- Widen `oldText` until it is unique instead of relying on a fragile short token.
+
 ### `stage_candidate_for_review`
 
-Snapshots the completed Working candidate into `Working\Staged`, writes one immutable `StagedEditRecord`, derives Roslyn metadata, runs syntax validation, and returns the staged record id for `launch_staged_diff` / `record_diff_decision`.
+Snapshots the completed Working candidate into `Working\Staged`, writes one immutable `StagedEditRecord`, derives Roslyn metadata, runs syntax validation, and returns the staged record id for `launch_staged_diff` / `record_diff_decision`. Candidate state problems return structured statuses such as `no-active-candidate`, `candidate-working-missing`, and `candidate-baseline-stale` instead of an opaque tool failure.
 
 Arguments:
 
@@ -633,6 +669,8 @@ Queue rule: any not-launched result from this tool stops the current review chai
 Server-side queue block: when an overlay-error review is cancelled by the Operator or the Host is unavailable, the staged record queue status becomes `blocked-overlay-validation`. Later `launch_staged_diff` calls for other staged records in the same monitor session return `review-chain-blocked` until the blocked item is fixed or explicitly force-reviewed. Host-unavailable is recorded as `host_unavailable`, not as an Operator cancel.
 
 Multi-file overlay expectation: for coupled C# changes, use one monitor session and pass the same `sessionId` to every staging call before the first review launch. Overlay validation reads the staged files in that session together, while WinMerge review remains serial.
+
+Overlay validation is cached in-process by observed root plus candidate overlay file hashes. Re-staging the same candidate content can return the same validation status with `fromCache: true` instead of recompiling the same overlay.
 
 ### Run History Tools
 

@@ -36,6 +36,7 @@ public sealed partial class MonitorWorkflowService
     ];
 
     private readonly MonitorServerSettings settings;
+    private readonly Dictionary<string, MonitorOverlayValidationResult> overlayValidationCache = new(StringComparer.Ordinal);
 
     public MonitorWorkflowService(MonitorServerSettings settings)
     {
@@ -374,6 +375,69 @@ public sealed partial class MonitorWorkflowService
         string? manifestJson = null)
     {
         MonitorFileContext context = ResolveFileContext(sourceFilePath, allowMissing: false);
+        try
+        {
+            string editBasePath = ResolveCandidateEditBasePath(context, sessionId);
+            string baseText = File.ReadAllText(editBasePath);
+            string baseHash = ComputeSha256(editBasePath);
+            if (!string.IsNullOrWhiteSpace(expectedFileHash)
+                && !expectedFileHash.Equals(baseHash, StringComparison.OrdinalIgnoreCase))
+            {
+                throw new InvalidOperationException(
+                    $"replace_span_in_file hash mismatch for {context.RelativeSourcePath}: expected {expectedFileHash}, actual {baseHash}.");
+            }
+
+            int startOffset = GetOffsetFromLineColumn(baseText, startLine, startColumn, nameof(startLine), nameof(startColumn));
+            int endOffset = GetOffsetFromLineColumn(baseText, endLine, endColumn, nameof(endLine), nameof(endColumn));
+            if (endOffset < startOffset)
+            {
+                throw new InvalidOperationException("replace_span_in_file end position must be greater than or equal to start position.");
+            }
+
+            string oldText = baseText[startOffset..endOffset];
+            if (expectedOldText is not null && !oldText.Equals(expectedOldText, StringComparison.Ordinal))
+            {
+                throw new InvalidOperationException(
+                    $"replace_span_in_file old text mismatch for {context.RelativeSourcePath} at {startLine}:{startColumn}-{endLine}:{endColumn}.");
+            }
+
+            if (!string.IsNullOrWhiteSpace(expectedOldTextHash))
+            {
+                string actualOldTextHash = ComputeSha256Text(oldText);
+                if (!expectedOldTextHash.Equals(actualOldTextHash, StringComparison.OrdinalIgnoreCase))
+                {
+                    throw new InvalidOperationException(
+                        $"replace_span_in_file old text hash mismatch for {context.RelativeSourcePath}: expected {expectedOldTextHash}, actual {actualOldTextHash}.");
+                }
+            }
+
+            string updatedText = baseText[..startOffset] + newText + baseText[endOffset..];
+            return WriteCandidateFile("replace_span_in_file", context, updatedText, sessionId, manifestJson);
+        }
+        catch (Exception ex) when (IsStructuredCandidateError(ex))
+        {
+            return CreateCandidateEditErrorResult(context, ClassifyCandidateError(ex), ex.Message);
+        }
+    }
+
+    public MonitorTextSpanResult FindTextSpan(
+        string sourceFilePath,
+        string findText,
+        int occurrenceIndex = 0,
+        string? expectedFileHash = null,
+        string? sessionId = null)
+    {
+        if (string.IsNullOrEmpty(findText))
+        {
+            throw new ArgumentException("findText must not be empty.", nameof(findText));
+        }
+
+        if (occurrenceIndex < 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(occurrenceIndex), "Occurrence index is 0-based.");
+        }
+
+        MonitorFileContext context = ResolveFileContext(sourceFilePath, allowMissing: false);
         string editBasePath = ResolveCandidateEditBasePath(context, sessionId);
         string baseText = File.ReadAllText(editBasePath);
         string baseHash = ComputeSha256(editBasePath);
@@ -381,35 +445,78 @@ public sealed partial class MonitorWorkflowService
             && !expectedFileHash.Equals(baseHash, StringComparison.OrdinalIgnoreCase))
         {
             throw new InvalidOperationException(
-                $"replace_span_in_file hash mismatch for {context.RelativeSourcePath}: expected {expectedFileHash}, actual {baseHash}.");
+                $"find_text_span hash mismatch for {context.RelativeSourcePath}: expected {expectedFileHash}, actual {baseHash}.");
         }
 
-        int startOffset = GetOffsetFromLineColumn(baseText, startLine, startColumn, nameof(startLine), nameof(startColumn));
-        int endOffset = GetOffsetFromLineColumn(baseText, endLine, endColumn, nameof(endLine), nameof(endColumn));
-        if (endOffset < startOffset)
+        TextMatchSet matches = FindTextMatches(baseText, findText, occurrenceIndex);
+        return CreateTextSpanResult(context, editBasePath, baseHash, findText, matches);
+    }
+
+    public MonitorCandidateEditResult ReplaceTextInFile(
+        string sourceFilePath,
+        string oldText,
+        string newText,
+        int expectedMatches = 1,
+        int occurrenceIndex = 0,
+        string? expectedFileHash = null,
+        string? expectedOldTextHash = null,
+        string? sessionId = null,
+        string? manifestJson = null)
+    {
+        if (string.IsNullOrEmpty(oldText))
         {
-            throw new InvalidOperationException("replace_span_in_file end position must be greater than or equal to start position.");
+            throw new ArgumentException("oldText must not be empty.", nameof(oldText));
         }
 
-        string oldText = baseText[startOffset..endOffset];
-        if (expectedOldText is not null && !oldText.Equals(expectedOldText, StringComparison.Ordinal))
+        if (expectedMatches < 1)
         {
-            throw new InvalidOperationException(
-                $"replace_span_in_file old text mismatch for {context.RelativeSourcePath} at {startLine}:{startColumn}-{endLine}:{endColumn}.");
+            throw new ArgumentOutOfRangeException(nameof(expectedMatches), "Expected matches must be at least 1.");
         }
 
-        if (!string.IsNullOrWhiteSpace(expectedOldTextHash))
+        if (occurrenceIndex < 0)
         {
-            string actualOldTextHash = ComputeSha256Text(oldText);
-            if (!expectedOldTextHash.Equals(actualOldTextHash, StringComparison.OrdinalIgnoreCase))
+            throw new ArgumentOutOfRangeException(nameof(occurrenceIndex), "Occurrence index is 0-based.");
+        }
+
+        MonitorFileContext context = ResolveFileContext(sourceFilePath, allowMissing: false);
+        try
+        {
+            string editBasePath = ResolveCandidateEditBasePath(context, sessionId);
+            string baseText = File.ReadAllText(editBasePath);
+            string baseHash = ComputeSha256(editBasePath);
+            if (!string.IsNullOrWhiteSpace(expectedFileHash)
+                && !expectedFileHash.Equals(baseHash, StringComparison.OrdinalIgnoreCase))
             {
                 throw new InvalidOperationException(
-                    $"replace_span_in_file old text hash mismatch for {context.RelativeSourcePath}: expected {expectedOldTextHash}, actual {actualOldTextHash}.");
+                    $"replace_text_in_file hash mismatch for {context.RelativeSourcePath}: expected {expectedFileHash}, actual {baseHash}.");
             }
-        }
 
-        string updatedText = baseText[..startOffset] + newText + baseText[endOffset..];
-        return WriteCandidateFile("replace_span_in_file", context, updatedText, sessionId, manifestJson);
+            if (!string.IsNullOrWhiteSpace(expectedOldTextHash))
+            {
+                string actualOldTextHash = ComputeSha256Text(oldText);
+                if (!expectedOldTextHash.Equals(actualOldTextHash, StringComparison.OrdinalIgnoreCase))
+                {
+                    throw new InvalidOperationException(
+                        $"replace_text_in_file old text hash mismatch for {context.RelativeSourcePath}: expected {expectedOldTextHash}, actual {actualOldTextHash}.");
+                }
+            }
+
+            TextMatchSet matches = FindTextMatches(baseText, oldText, occurrenceIndex);
+            if (matches.Count != expectedMatches)
+            {
+                throw new InvalidOperationException(
+                    $"replace_text_in_file expected {expectedMatches} match(es) in {context.RelativeSourcePath}, found {matches.Count}.");
+            }
+
+            int startOffset = matches.SelectedOffset;
+            int endOffset = startOffset + oldText.Length;
+            string updatedText = baseText[..startOffset] + newText + baseText[endOffset..];
+            return WriteCandidateFile("replace_text_in_file", context, updatedText, sessionId, manifestJson);
+        }
+        catch (Exception ex) when (IsStructuredCandidateError(ex))
+        {
+            return CreateCandidateEditErrorResult(context, ClassifyCandidateError(ex), ex.Message);
+        }
     }
 
     public MonitorCandidateEditResult AddSymbol(
@@ -535,16 +642,23 @@ public sealed partial class MonitorWorkflowService
     public MonitorFileSubmitResult StageCandidateForReview(string sourceFilePath, string? sessionId = null, string? manifestJson = null)
     {
         MonitorFileContext context = ResolveFileContext(sourceFilePath, allowMissing: true);
-        CandidateEditState state = ReadCurrentCandidateState(context);
-        EnsureCandidateBaselineIsCurrent(context, state);
-        if (!File.Exists(context.WorkingFilePath))
+        try
         {
-            throw new FileNotFoundException("Candidate Working file was not found. Create a candidate before staging for review.", context.WorkingFilePath);
-        }
+            CandidateEditState state = ReadCurrentCandidateState(context);
+            EnsureCandidateBaselineIsCurrent(context, state);
+            if (!File.Exists(context.WorkingFilePath))
+            {
+                throw new FileNotFoundException("Candidate Working file was not found. Create a candidate before staging for review.", context.WorkingFilePath);
+            }
 
-        string content = File.ReadAllText(context.WorkingFilePath);
-        MonitorOverlayValidationResult overlayValidation = ValidateCandidateOverlayCompilation(context, context.WorkingFilePath);
-        return StageFileReplacement("stage_candidate_for_review", context, content, sessionId, manifestJson, launchDiff: false, overlayValidation);
+            string content = File.ReadAllText(context.WorkingFilePath);
+            MonitorOverlayValidationResult overlayValidation = ValidateCandidateOverlayCompilation(context, context.WorkingFilePath);
+            return StageFileReplacement("stage_candidate_for_review", context, content, sessionId, manifestJson, launchDiff: false, overlayValidation);
+        }
+        catch (Exception ex) when (IsStructuredCandidateError(ex))
+        {
+            return CreateStageErrorResult(context, ClassifyCandidateError(ex), ex.Message);
+        }
     }
 
     public MonitorCandidateEditResult AddProperty(string sourceFilePath, string containingType, string declaration, string? afterSymbol = null, string? sessionId = null, string? manifestJson = null)
@@ -787,6 +901,95 @@ public sealed partial class MonitorWorkflowService
     {
         return TryReadCandidateState(context)
             ?? throw new FileNotFoundException("Candidate state was not found. Create a candidate before staging for review.", GetCandidateStatePath(context));
+    }
+
+    private static bool IsStructuredCandidateError(Exception ex)
+    {
+        return ex is FileNotFoundException
+            || ex is InvalidOperationException invalidOperation
+                && (invalidOperation.Message.StartsWith("candidate-baseline-stale:", StringComparison.Ordinal)
+                    || invalidOperation.Message.Contains("hash mismatch", StringComparison.OrdinalIgnoreCase)
+                    || invalidOperation.Message.Contains("old text mismatch", StringComparison.OrdinalIgnoreCase)
+                    || invalidOperation.Message.Contains("old text hash mismatch", StringComparison.OrdinalIgnoreCase)
+                    || invalidOperation.Message.Contains("occurrence", StringComparison.OrdinalIgnoreCase)
+                    || invalidOperation.Message.Contains("expected ", StringComparison.OrdinalIgnoreCase)
+                        && invalidOperation.Message.Contains("match(es)", StringComparison.OrdinalIgnoreCase));
+    }
+
+    private static string ClassifyCandidateError(Exception ex)
+    {
+        if (ex is FileNotFoundException fileNotFound
+            && fileNotFound.Message.Contains("Candidate state was not found", StringComparison.OrdinalIgnoreCase))
+        {
+            return "no-active-candidate";
+        }
+
+        if (ex is FileNotFoundException fileNotFoundWorking
+            && fileNotFoundWorking.Message.Contains("Working", StringComparison.OrdinalIgnoreCase))
+        {
+            return "candidate-working-missing";
+        }
+
+        if (ex.Message.StartsWith("candidate-baseline-stale:", StringComparison.Ordinal))
+        {
+            return "candidate-baseline-stale";
+        }
+
+        if (ex.Message.Contains("old text mismatch", StringComparison.OrdinalIgnoreCase)
+            || ex.Message.Contains("old text hash mismatch", StringComparison.OrdinalIgnoreCase)
+            || ex.Message.Contains("occurrence", StringComparison.OrdinalIgnoreCase)
+            || ex.Message.Contains("match(es)", StringComparison.OrdinalIgnoreCase))
+        {
+            return "text-match-mismatch";
+        }
+
+        if (ex.Message.Contains("hash mismatch", StringComparison.OrdinalIgnoreCase))
+        {
+            return "hash-mismatch";
+        }
+
+        return "candidate-error";
+    }
+
+    private MonitorCandidateEditResult CreateCandidateEditErrorResult(MonitorFileContext context, string status, string message)
+    {
+        return new MonitorCandidateEditResult(
+            status,
+            context.SourceFilePath,
+            context.WatchedProjectFolder,
+            context.ObservedRootKey,
+            context.RelativeSourcePath,
+            context.WorkingFilePath,
+            GetCandidateStatePath(context),
+            string.Empty,
+            File.Exists(context.WorkingFilePath) ? ComputeSha256(context.WorkingFilePath) : string.Empty,
+            0,
+            new MonitorSyntaxValidationResult(false, []),
+            new MonitorOverlayValidationResult("not-run", false, 0, 0, []),
+            status,
+            message);
+    }
+
+    private MonitorFileSubmitResult CreateStageErrorResult(MonitorFileContext context, string status, string message)
+    {
+        return new MonitorFileSubmitResult(
+            status,
+            context.SourceFilePath,
+            context.RelativeSourcePath,
+            string.Empty,
+            string.Empty,
+            string.Empty,
+            File.Exists(context.SourceFilePath) ? ComputeSha256(context.SourceFilePath) : string.Empty,
+            File.Exists(context.WorkingFilePath) ? ComputeSha256(context.WorkingFilePath) : string.Empty,
+            new StagedEditMetadata([], [], [], [], string.Empty),
+            new MonitorSyntaxValidationResult(false, []),
+            new MonitorOverlayValidationResult("not-run", false, 0, 0, []),
+            false,
+            null,
+            message,
+            null,
+            status,
+            message);
     }
 
     private CandidateEditState? TryReadCandidateState(MonitorFileContext context)
@@ -2265,6 +2468,95 @@ public sealed partial class MonitorWorkflowService
         return Convert.ToHexString(hashBytes).ToLowerInvariant();
     }
 
+    private static TextMatchSet FindTextMatches(string text, string findText, int occurrenceIndex)
+    {
+        List<int> offsets = [];
+        int searchStart = 0;
+        while (searchStart <= text.Length)
+        {
+            int offset = text.IndexOf(findText, searchStart, StringComparison.Ordinal);
+            if (offset < 0)
+            {
+                break;
+            }
+
+            offsets.Add(offset);
+            searchStart = offset + findText.Length;
+        }
+
+        if (occurrenceIndex >= offsets.Count)
+        {
+            throw new InvalidOperationException(
+                $"Requested occurrence index {occurrenceIndex} but only {offsets.Count} occurrence(s) were found.");
+        }
+
+        return new TextMatchSet(offsets.Count, occurrenceIndex, offsets[occurrenceIndex]);
+    }
+
+    private static MonitorTextSpanResult CreateTextSpanResult(
+        MonitorFileContext context,
+        string editBasePath,
+        string editBaseHash,
+        string findText,
+        TextMatchSet matches)
+    {
+        string baseText = File.ReadAllText(editBasePath);
+        (int StartLine, int StartColumn) startPosition = GetLineColumnFromOffset(baseText, matches.SelectedOffset);
+        (int EndLine, int EndColumn) endPosition = GetLineColumnFromOffset(baseText, matches.SelectedOffset + findText.Length);
+        return new MonitorTextSpanResult(
+            "found",
+            context.SourceFilePath,
+            context.WatchedProjectFolder,
+            context.ObservedRootKey,
+            context.RelativeSourcePath,
+            editBasePath,
+            editBaseHash,
+            ComputeSha256Text(findText),
+            matches.Count,
+            matches.OccurrenceIndex,
+            startPosition.StartLine,
+            startPosition.StartColumn,
+            endPosition.EndLine,
+            endPosition.EndColumn);
+    }
+
+    private static (int StartLine, int StartColumn) GetLineColumnFromOffset(string text, int offset)
+    {
+        if (offset < 0 || offset > text.Length)
+        {
+            throw new ArgumentOutOfRangeException(nameof(offset), "Offset is outside the file text.");
+        }
+
+        int line = 1;
+        int column = 1;
+        for (int index = 0; index < offset; index++)
+        {
+            char c = text[index];
+            if (c == '\r')
+            {
+                if (index + 1 < offset && text[index + 1] == '\n')
+                {
+                    index++;
+                }
+
+                line++;
+                column = 1;
+                continue;
+            }
+
+            if (c == '\n')
+            {
+                line++;
+                column = 1;
+                continue;
+            }
+
+            column++;
+        }
+
+        return (line, column);
+    }
+
     private static int GetOffsetFromLineColumn(string text, int line, int column, string lineParameterName, string columnParameterName)
     {
         if (line < 1)
@@ -2378,6 +2670,12 @@ public sealed partial class MonitorWorkflowService
                 documentationMode: DocumentationMode.Parse);
             Dictionary<string, string> overlays = BuildCandidateOverlayMap(context, candidateFilePath);
             string[] overlayRelatives = overlays.Keys.ToArray();
+            string cacheKey = BuildOverlayValidationCacheKey(context, overlays);
+            if (overlayValidationCache.TryGetValue(cacheKey, out MonitorOverlayValidationResult? cached))
+            {
+                return cached with { FromCache = true };
+            }
+
             List<SyntaxTree> trees = [];
             int overlayFileCount = 0;
 
@@ -2443,12 +2741,14 @@ public sealed partial class MonitorWorkflowService
                 })
                 .ToArray();
 
-            return new MonitorOverlayValidationResult(
+            MonitorOverlayValidationResult result = new(
                 diagnostics.Length > 0 ? "compiled-with-errors" : "compiled",
                 diagnostics.Length > 0,
                 trees.Count,
                 overlayFileCount,
                 diagnostics);
+            overlayValidationCache[cacheKey] = result;
+            return result;
         }
         catch (Exception ex)
         {
@@ -2459,6 +2759,21 @@ public sealed partial class MonitorWorkflowService
                 0,
                 [new MonitorOverlayDiagnostic("MONITOR_CANDIDATE_OVERLAY", ex.Message, context.SourceFilePath, 0, 0)]);
         }
+    }
+
+    private static string BuildOverlayValidationCacheKey(MonitorFileContext context, IReadOnlyDictionary<string, string> overlays)
+    {
+        StringBuilder builder = new();
+        builder.Append(context.ObservedRootKey);
+        foreach (KeyValuePair<string, string> overlay in overlays.OrderBy(item => item.Key, StringComparer.OrdinalIgnoreCase))
+        {
+            builder.Append('|');
+            builder.Append(NormalizePath(overlay.Key));
+            builder.Append('=');
+            builder.Append(File.Exists(overlay.Value) ? ComputeSha256(overlay.Value) : "<missing>");
+        }
+
+        return builder.ToString();
     }
 
     private Dictionary<string, string> BuildCandidateOverlayMap(MonitorFileContext context, string candidateFilePath)
@@ -3597,7 +3912,25 @@ public sealed record MonitorCandidateEditResult(
     string CandidateHash,
     int OperationCount,
     MonitorSyntaxValidationResult SyntaxValidation,
-    MonitorOverlayValidationResult OverlayValidation);
+    MonitorOverlayValidationResult OverlayValidation,
+    string? ErrorCode = null,
+    string? ErrorMessage = null);
+
+public sealed record MonitorTextSpanResult(
+    string Status,
+    string SourceFilePath,
+    string WatchedProjectFolder,
+    string ObservedRootKey,
+    string RelativeSourcePath,
+    string EditBaseFilePath,
+    string EditBaseHash,
+    string FoundTextHash,
+    int OccurrenceCount,
+    int OccurrenceIndex,
+    int StartLine,
+    int StartColumn,
+    int EndLine,
+    int EndColumn);
 
 [Description("Compare a monitor Working file with the watched source file using WinMerge.")]
 public sealed record MonitorFileCompareResult(
@@ -3801,7 +4134,9 @@ public sealed record MonitorFileSubmitResult(
     bool DiffRequested,
     string? DiffToolPath,
     string? DiffToolArguments,
-    int? ProcessId);
+    int? ProcessId,
+    string? ErrorCode = null,
+    string? ErrorMessage = null);
 
 public sealed record MonitorDiffDecisionResult(
     string StagedRecordId,
@@ -3931,7 +4266,8 @@ public sealed record MonitorOverlayValidationResult(
     bool HasErrors,
     int SyntaxTreeCount,
     int OverlayFileCount,
-    IReadOnlyList<MonitorOverlayDiagnostic> Diagnostics);
+    IReadOnlyList<MonitorOverlayDiagnostic> Diagnostics,
+    bool FromCache = false);
 
 public sealed record MonitorOverlayDiagnostic(
     string Id,
@@ -3974,3 +4310,5 @@ public sealed record CandidateEditState(
     string Operation,
     string? ManifestJson,
     int OperationCount);
+
+internal sealed record TextMatchSet(int Count, int OccurrenceIndex, int SelectedOffset);
