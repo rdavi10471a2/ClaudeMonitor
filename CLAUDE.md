@@ -6,7 +6,7 @@ This project is a monitor and MCP workflow host. Treat watched source as protect
 
 Reason in the cloud; edit locally. Use compact context for understanding, then let the local Monitor server perform bounded edits, validation, staging, and review. Optimize both directions:
 
-- Inbound: use source maps, symbols, and solution index summaries before loading bodies.
+- Inbound: use the Solution Index MCP surface (`get_solution_index_tree`, `query_solution_index`, `find_indexed_symbols`, `find_indexed_references`, `find_indexed_callers`, `get_indexed_symbol`) plus source maps and symbols before loading bodies.
 - Outbound: use the smallest safe composition tool. Prefer symbol tools for C#, `replace_text_in_file` for exact text changes, `replace_span_in_file` when exact line/column bounds are already known, and `submit_file` only for new files or deliberate whole-file rewrites.
 
 ## Report And Memory Lanes
@@ -39,15 +39,16 @@ Before pushing a Claude notes branch, run `git diff --name-only main...HEAD`. St
 For watched project source edits, use the Monitor MCP workflow:
 
 1. Find related files with `find_file`.
-2. Read structure with `get_source_map` for C# files, folders, or project slices. Use `mode: navigation` for broad folder/project orientation and `mode: selector` for a chosen file.
-3. Read the smallest needed body with `get_symbol`.
-4. Use `get_file` only when symbol/source-map context is not enough and the file is not large. For any large file, call `refresh_file` first and chunk-read the returned Working file path instead of asking MCP to return the whole file.
-5. Compose a complete Working candidate with `replace_text_in_file`, `replace_span_in_file`, `submit_file`, `submit_symbol`, `add_symbol`, `add_field`, `add_property`, `add_method`, `add_constructor`, `add_nested_type`, `set_type_partial`, `add_using`, `remove_using`, or `remove_symbol`.
-6. Call `stage_candidate_for_review` only after the Working candidate is complete enough for review.
-7. Use `launch_staged_diff`, or let the Host or sidecar open WinMerge between the real watched file and the staged candidate.
-8. The Operator either saves the whole candidate in WinMerge or leaves source unchanged.
-9. Call `record_diff_decision`.
-10. Trust vote-plus-hash classification, not the reported outcome text alone.
+2. Use Solution Index tools for project and dependency surfaces before loading source: `get_solution_index_tree` for orientation, `query_solution_index` for namespace/folder/file slices, `find_indexed_symbols` for declarations, and `find_indexed_references` / `find_indexed_callers` for impact checks.
+3. Read structure with `get_source_map` for C# files, folders, or project slices when live selectors or source-map shapes are needed. Use `mode: navigation` for broad folder/project orientation and `mode: selector` for a chosen file before symbol mutation.
+4. Read the smallest needed body with `get_symbol`.
+5. Use `get_file` only when index/source-map/symbol context is not enough and the file is not large. For any large file, call `refresh_file` first and chunk-read the returned Working file path instead of asking MCP to return the whole file.
+6. Compose a complete Working candidate with `replace_text_in_file`, `replace_span_in_file`, `submit_file`, `submit_symbol`, `add_symbol`, `add_field`, `add_property`, `add_method`, `add_constructor`, `add_nested_type`, `set_type_partial`, `add_using`, `remove_using`, or `remove_symbol`.
+7. Call `stage_candidate_for_review` only after the Working candidate is complete enough for review.
+8. Use `launch_staged_diff`, or let the Host or sidecar open WinMerge between the real watched file and the staged candidate.
+9. The Operator either saves the whole candidate in WinMerge or leaves source unchanged.
+10. Call `record_diff_decision`.
+11. Trust vote-plus-hash classification, not the reported outcome text alone.
 
 The Monitor Tool Server never directly overwrites watched source. WinMerge save/no-save is the physical mutation path in the current workflow.
 
@@ -64,6 +65,8 @@ Use these sequences as the default learned workflow. Do not skip directly to a b
 ```text
 User asks for a C# edit
 -> find_file, if the path is uncertain
+-> get_solution_index_tree or query_solution_index for the project/folder/namespace surface
+-> find_indexed_symbols for target declarations; find_indexed_references / find_indexed_callers for impact checks
 -> get_source_map(path, scope: file, mode: selector)
 -> choose the smallest likely symbol from the source map
 -> get_symbol(path, symbolSelectorJson)
@@ -75,9 +78,10 @@ Example:
 ```text
 User: Add a null guard to LoadTable.
 Expected:
-1. get_source_map for the containing C# file with `mode: selector`.
-2. get_symbol for LoadTable using a structured selector or stableSymbolKey.
-3. Stage a complete candidate only after the body and local context are known.
+1. Use `find_indexed_symbols` or `query_solution_index` to locate `LoadTable` and related callers/references.
+2. Use `get_source_map` for the containing C# file with `mode: selector` before mutation.
+3. Use `get_symbol` for LoadTable using a structured selector or stableSymbolKey.
+4. Stage a complete candidate only after the body and local impact context are known.
 ```
 
 ### Stage And Review
