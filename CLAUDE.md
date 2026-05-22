@@ -35,7 +35,7 @@ For watched project source edits, use the Monitor MCP workflow:
 2. Read structure with `get_source_map` for C# files, folders, or project slices. Use `mode: navigation` for broad folder/project orientation and `mode: selector` for a chosen file.
 3. Read the smallest needed body with `get_symbol`.
 4. Use `get_file` only when symbol/source-map context is not enough.
-5. Compose a complete Working candidate with `submit_file`, `submit_symbol`, `add_symbol`, `add_field`, `add_property`, `add_method`, `add_constructor`, `add_nested_type`, `set_type_partial`, `add_using`, `remove_using`, or `remove_symbol`.
+5. Compose a complete Working candidate with `submit_file`, `replace_span_in_file`, `submit_symbol`, `add_symbol`, `add_field`, `add_property`, `add_method`, `add_constructor`, `add_nested_type`, `set_type_partial`, `add_using`, `remove_using`, or `remove_symbol`.
 6. Call `stage_candidate_for_review` only after the Working candidate is complete enough for review.
 7. Use `launch_staged_diff`, or let the Host or sidecar open WinMerge between the real watched file and the staged candidate.
 8. The Operator either saves the whole candidate in WinMerge or leaves source unchanged.
@@ -77,7 +77,7 @@ Expected:
 
 ```text
 Complete candidate prepared
--> submit_file or submit_symbol
+-> submit_file, replace_span_in_file, or submit_symbol
    or add_symbol / add_field / add_property / add_method / add_constructor / add_nested_type
    or set_type_partial / add_using / remove_using / remove_symbol
 -> stage_candidate_for_review
@@ -89,6 +89,10 @@ Complete candidate prepared
 ```
 
 For coupled multi-file C# edits, use one monitor session and stage all affected files before the first `launch_staged_diff`. Overlay compilation must see the proposed files together; WinMerge review is still serial, one file at a time.
+
+For small Razor, markup, CSS, or other text edits, prefer `replace_span_in_file` over full-file `submit_file` when you can identify an exact span from the current file text. Supply `expectedFileHash` and either `expectedOldTextHash` or `expectedOldText` so the server can reject stale or wrong spans. Use full-file `submit_file` only for new files, broad rewrites, or when the exact span cannot be safely identified.
+
+Do not narrate routine known-good Monitor workflows. Call the needed tool and report only changed file, staged record or next required decision, validation result, and blockers.
 
 ### Unsafe Or Ambiguous Requests
 

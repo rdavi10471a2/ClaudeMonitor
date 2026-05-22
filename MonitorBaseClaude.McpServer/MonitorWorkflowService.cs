@@ -359,6 +359,58 @@ public sealed partial class MonitorWorkflowService
         return WriteCandidateFile("submit_file", context, content, sessionId, manifestJson);
     }
 
+    public MonitorCandidateEditResult ReplaceSpanInFile(
+        string sourceFilePath,
+        int startLine,
+        int startColumn,
+        int endLine,
+        int endColumn,
+        string newText,
+        string? expectedFileHash = null,
+        string? expectedOldTextHash = null,
+        string? expectedOldText = null,
+        string? sessionId = null,
+        string? manifestJson = null)
+    {
+        MonitorFileContext context = ResolveFileContext(sourceFilePath, allowMissing: false);
+        string editBasePath = ResolveCandidateEditBasePath(context, sessionId);
+        string baseText = File.ReadAllText(editBasePath);
+        string baseHash = ComputeSha256(editBasePath);
+        if (!string.IsNullOrWhiteSpace(expectedFileHash)
+            && !expectedFileHash.Equals(baseHash, StringComparison.OrdinalIgnoreCase))
+        {
+            throw new InvalidOperationException(
+                $"replace_span_in_file hash mismatch for {context.RelativeSourcePath}: expected {expectedFileHash}, actual {baseHash}.");
+        }
+
+        int startOffset = GetOffsetFromLineColumn(baseText, startLine, startColumn, nameof(startLine));
+        int endOffset = GetOffsetFromLineColumn(baseText, endLine, endColumn, nameof(endLine));
+        if (endOffset < startOffset)
+        {
+            throw new InvalidOperationException("replace_span_in_file end position must be greater than or equal to start position.");
+        }
+
+        string oldText = baseText[startOffset..endOffset];
+        if (expectedOldText is not null && !oldText.Equals(expectedOldText, StringComparison.Ordinal))
+        {
+            throw new InvalidOperationException(
+                $"replace_span_in_file old text mismatch for {context.RelativeSourcePath} at {startLine}:{startColumn}-{endLine}:{endColumn}.");
+        }
+
+        if (!string.IsNullOrWhiteSpace(expectedOldTextHash))
+        {
+            string actualOldTextHash = ComputeSha256Text(oldText);
+            if (!expectedOldTextHash.Equals(actualOldTextHash, StringComparison.OrdinalIgnoreCase))
+            {
+                throw new InvalidOperationException(
+                    $"replace_span_in_file old text hash mismatch for {context.RelativeSourcePath}: expected {expectedOldTextHash}, actual {actualOldTextHash}.");
+            }
+        }
+
+        string updatedText = baseText[..startOffset] + newText + baseText[endOffset..];
+        return WriteCandidateFile("replace_span_in_file", context, updatedText, sessionId, manifestJson);
+    }
+
     public MonitorCandidateEditResult AddSymbol(
         string sourceFilePath,
         string containingType,
@@ -2202,6 +2254,58 @@ public sealed partial class MonitorWorkflowService
     {
         byte[] hashBytes = SHA256.HashData(Encoding.UTF8.GetBytes(text));
         return Convert.ToHexString(hashBytes).ToLowerInvariant();
+    }
+
+    private static int GetOffsetFromLineColumn(string text, int line, int column, string parameterName)
+    {
+        if (line < 1)
+        {
+            throw new ArgumentOutOfRangeException(parameterName, "Line numbers are 1-based.");
+        }
+
+        if (column < 1)
+        {
+            throw new ArgumentOutOfRangeException(nameof(column), "Column numbers are 1-based.");
+        }
+
+        int currentLine = 1;
+        int currentColumn = 1;
+        for (int index = 0; index < text.Length; index++)
+        {
+            if (currentLine == line && currentColumn == column)
+            {
+                return index;
+            }
+
+            char c = text[index];
+            if (c == '\r')
+            {
+                if (index + 1 < text.Length && text[index + 1] == '\n')
+                {
+                    index++;
+                }
+
+                currentLine++;
+                currentColumn = 1;
+                continue;
+            }
+
+            if (c == '\n')
+            {
+                currentLine++;
+                currentColumn = 1;
+                continue;
+            }
+
+            currentColumn++;
+        }
+
+        if (currentLine == line && currentColumn == column)
+        {
+            return text.Length;
+        }
+
+        throw new ArgumentOutOfRangeException(parameterName, $"Position {line}:{column} is outside the file text.");
     }
 
     private static bool IsInIgnoredDirectory(string path)

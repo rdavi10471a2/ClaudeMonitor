@@ -54,14 +54,14 @@ The V1 composition path is:
 
 ```text
 get_source_map(path, scope: "file", mode: "selector")
-submit_file / add_symbol / add_field / add_method
+submit_file / replace_span_in_file / add_symbol / add_field / add_method
 repeat candidate edits as needed
 stage_candidate_for_review
 launch_staged_diff or Host/sidecar WinMerge review/save
 record_diff_decision(stagedRecordId, accepted|rejected)
 ```
 
-`submit_file`, `add_symbol`, `add_field`, and `add_method` write to the normal monitor-owned `Working\<observedRootKey>\<relative source path>` mirror. They do not create staged records. The session id is metadata only; it is not part of the visible Working path.
+`submit_file`, `replace_span_in_file`, `add_symbol`, `add_field`, and `add_method` write to the normal monitor-owned `Working\<observedRootKey>\<relative source path>` mirror. They do not create staged records. The session id is metadata only; it is not part of the visible Working path.
 
 Models are allowed and expected to read related files under the watched root when the change requires context. The preferred first read for C# is `get_source_map`, because it gives the real current structure without forcing a whole-file read.
 
@@ -79,7 +79,7 @@ These sequences are part of the tool contract. They are intentionally small so a
 find_file, unless the full path was returned by a Roslyn or Monitor tool in this session
 get_source_map(path, scope: "file", mode: "selector")
 get_symbol(path, symbolSelectorJson)
-submit_file or submit_symbol
+submit_file, replace_span_in_file, or submit_symbol
 launch_staged_diff or Host/sidecar WinMerge review/save
 record_diff_decision(stagedRecordId, accepted|rejected)
 ```
@@ -158,6 +158,7 @@ This prevents Accept and Reject from collapsing into the same raw hash state.
 | watched solution index file refresh | `refresh_solution_index_file`, `refresh_file_and_index` | implemented |
 | watched solution index queries | `get_solution_index`, `get_solution_index_tree`, `query_solution_index`, `find_indexed_symbols`, `get_indexed_symbol`, `find_indexed_references`, `find_indexed_callers` | implemented |
 | Working mirror full-file candidate | `submit_file` | implemented |
+| Working mirror verified text/span candidate | `replace_span_in_file` | implemented |
 | Working mirror member candidates | `add_symbol`, `add_field`, `add_method`, `add_property`, `add_constructor`, `add_nested_type` | implemented |
 | Working candidate review snapshot | `stage_candidate_for_review` | implemented |
 | Working mirror symbol replacement/removal | `submit_symbol`, `remove_symbol` | implemented |
@@ -467,6 +468,28 @@ Baseline rule:
 - The first candidate operation copies the watched source into the Working mirror and records source hash, length, and timestamp.
 - Later candidate operations refuse with `candidate-baseline-stale` if the watched source changed after the candidate was initialized.
 - For new-file candidates, the baseline is `<new-file>` and staging remains a review action; watched source is not directly overwritten by candidate composition.
+
+### `replace_span_in_file`
+
+Replaces an exact 1-based line/column span in the monitor-owned Working mirror candidate. Use it for small Razor, markup, CSS, JSON, or other text edits when a full-file `submit_file` would force unnecessary model output. It does not create a staged record and does not overwrite watched source. Use `stage_candidate_for_review` when the Working candidate is complete.
+
+Arguments:
+
+- `path`: watched source file path, absolute or relative to the watched solution folder.
+- `startLine`, `startColumn`: 1-based start position.
+- `endLine`, `endColumn`: 1-based exclusive end position.
+- `newText`: replacement text for exactly that span.
+- `expectedFileHash`: optional SHA-256 hash of the current edit base; use it to reject stale candidates.
+- `expectedOldTextHash`: optional SHA-256 hash of the extracted old span text; use it to reject wrong spans.
+- `expectedOldText`: optional exact old span text; use it when the old text is short enough to send cheaply.
+- `sessionId`: optional durable session handle.
+- `manifestJson`: optional Model-intent manifest.
+
+Safety rule:
+
+- Prefer `expectedFileHash` plus `expectedOldTextHash` or `expectedOldText`.
+- If the hash or extracted old span does not match, the server rejects the edit before writing the candidate.
+- Do not use this as a fuzzy search/replace; the span must come from the exact current file text.
 
 ### `stage_candidate_for_review`
 

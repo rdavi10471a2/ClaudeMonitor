@@ -307,6 +307,27 @@ public sealed class MonitorTools
     }
 
     [McpServerTool]
+    [Description("Replace an exact 1-based line/column span in the monitor-owned Working mirror candidate. Use for Razor/text small edits. Optional expectedFileHash and expectedOldTextHash guard against stale or wrong spans. Does not create a staged record; call stage_candidate_for_review when complete.")]
+    public MonitorCandidateEditResult ReplaceSpanInFile(
+        [Description("Source file path, absolute or relative to the watched solution folder.")] string path,
+        [Description("1-based start line of the span to replace.")] int startLine,
+        [Description("1-based start column of the span to replace.")] int startColumn,
+        [Description("1-based exclusive end line of the span to replace.")] int endLine,
+        [Description("1-based exclusive end column of the span to replace.")] int endColumn,
+        [Description("Replacement text for the exact span.")] string newText,
+        [Description("Optional SHA-256 hash of the current edit base file. If supplied, the server rejects stale candidates before replacing.")] string? expectedFileHash = null,
+        [Description("Optional SHA-256 hash of the extracted old span text. If supplied, the server rejects wrong spans before replacing.")] string? expectedOldTextHash = null,
+        [Description("Optional exact old span text. If supplied, the server rejects wrong spans before replacing.")] string? expectedOldText = null,
+        [Description("Optional durable session handle for ownership/telemetry. The session id is metadata and is not part of the Working path.")] string? sessionId = null,
+        [Description("Optional JSON manifest expressing Model intent.")] string? manifestJson = null)
+    {
+        return Track(
+            nameof(ReplaceSpanInFile),
+            new { path, startLine, startColumn, endLine, endColumn, newTextLength = newText.Length, hasExpectedFileHash = !string.IsNullOrWhiteSpace(expectedFileHash), hasExpectedOldTextHash = !string.IsNullOrWhiteSpace(expectedOldTextHash), hasExpectedOldText = expectedOldText is not null, sessionId, manifestLength = manifestJson?.Length ?? 0 },
+            () => workflowService.ReplaceSpanInFile(path, startLine, startColumn, endLine, endColumn, newText, expectedFileHash, expectedOldTextHash, expectedOldText, sessionId, manifestJson));
+    }
+
+    [McpServerTool]
     [Description("Stage the current Working mirror candidate for review. This creates one immutable staged record from the completed candidate.")]
     public MonitorFileSubmitResult StageCandidateForReview(
         [Description("Source file path, absolute or relative to the watched solution folder.")] string path,
