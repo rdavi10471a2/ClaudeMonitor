@@ -53,6 +53,7 @@ public sealed partial class MonitorWorkflowService
         Directory.CreateDirectory(Path.GetDirectoryName(context.WorkingFilePath)!);
         Directory.CreateDirectory(Path.GetDirectoryName(context.RefreshStatePath)!);
         File.Copy(context.SourceFilePath, context.WorkingFilePath, overwrite: true);
+        ClearCandidateState(context);
         if (recoverDirtyUnexpected)
         {
             RecoverBlockedDirtyUnexpectedRecords(context.SourceFilePath);
@@ -383,8 +384,8 @@ public sealed partial class MonitorWorkflowService
                 $"replace_span_in_file hash mismatch for {context.RelativeSourcePath}: expected {expectedFileHash}, actual {baseHash}.");
         }
 
-        int startOffset = GetOffsetFromLineColumn(baseText, startLine, startColumn, nameof(startLine));
-        int endOffset = GetOffsetFromLineColumn(baseText, endLine, endColumn, nameof(endLine));
+        int startOffset = GetOffsetFromLineColumn(baseText, startLine, startColumn, nameof(startLine), nameof(startColumn));
+        int endOffset = GetOffsetFromLineColumn(baseText, endLine, endColumn, nameof(endLine), nameof(endColumn));
         if (endOffset < startOffset)
         {
             throw new InvalidOperationException("replace_span_in_file end position must be greater than or equal to start position.");
@@ -683,7 +684,6 @@ public sealed partial class MonitorWorkflowService
         string? manifestJson)
     {
         CandidateEditState state = EnsureCandidateInitialized(context, sessionId);
-        EnsureCandidateBaselineIsCurrent(context, state);
         MonitorSyntaxValidationResult validation = ValidateSyntaxIfCSharp(context.SourceFilePath, content);
         if (validation.HasErrors)
         {
@@ -805,6 +805,15 @@ public sealed partial class MonitorWorkflowService
         string path = GetCandidateStatePath(context);
         Directory.CreateDirectory(Path.GetDirectoryName(path)!);
         File.WriteAllText(path, JsonSerializer.Serialize(state, JsonOptions));
+    }
+
+    private void ClearCandidateState(MonitorFileContext context)
+    {
+        string path = GetCandidateStatePath(context);
+        if (File.Exists(path))
+        {
+            File.Delete(path);
+        }
     }
 
     private string GetCandidateStatePath(MonitorFileContext context)
@@ -2256,16 +2265,16 @@ public sealed partial class MonitorWorkflowService
         return Convert.ToHexString(hashBytes).ToLowerInvariant();
     }
 
-    private static int GetOffsetFromLineColumn(string text, int line, int column, string parameterName)
+    private static int GetOffsetFromLineColumn(string text, int line, int column, string lineParameterName, string columnParameterName)
     {
         if (line < 1)
         {
-            throw new ArgumentOutOfRangeException(parameterName, "Line numbers are 1-based.");
+            throw new ArgumentOutOfRangeException(lineParameterName, "Line numbers are 1-based.");
         }
 
         if (column < 1)
         {
-            throw new ArgumentOutOfRangeException(nameof(column), "Column numbers are 1-based.");
+            throw new ArgumentOutOfRangeException(columnParameterName, "Column numbers are 1-based.");
         }
 
         int currentLine = 1;
@@ -2305,7 +2314,10 @@ public sealed partial class MonitorWorkflowService
             return text.Length;
         }
 
-        throw new ArgumentOutOfRangeException(parameterName, $"Position {line}:{column} is outside the file text.");
+        string invalidParameterName = line > currentLine ? lineParameterName : columnParameterName;
+        throw new ArgumentOutOfRangeException(
+            invalidParameterName,
+            $"Position {line}:{column} is outside the file text.");
     }
 
     private static bool IsInIgnoredDirectory(string path)

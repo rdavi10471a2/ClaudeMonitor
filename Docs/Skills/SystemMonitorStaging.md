@@ -1,6 +1,6 @@
 # System Monitor Staging
 
-Use when changing watched C# source.
+Use when changing watched source.
 
 The active safety mechanism is session overlay validation plus gated serial diff review. If files are coupled, stage all required candidates into one monitor session before launching the first review.
 
@@ -10,6 +10,8 @@ The active safety mechanism is session overlay validation plus gated serial diff
 - All watched-source changes go through System Monitor staging.
 - Reason in the cloud; compose locally. Use Roslyn and Monitor selectors to describe the intended edit, then let the local tooling splice/stage the candidate.
 - Use the smallest safe edit unit: symbol edit before whole-file replacement.
+- For any large file in a cold session, call `refresh_file` and chunk-read the returned Working file path. Do not use `get_file` when the file is large enough to risk an oversized tool result.
+- For warm-session text edits, do not re-read the file. Use the text already in context with `replace_span_in_file` and `expectedOldText` or a hash guard.
 - Stage candidates, let System Monitor validate syntax/overlay compilation, then use Operator review.
 - For coupled multi-file C# edits, stage every required file in one monitor session before the first review launch so overlay validation sees the whole proposed change.
 - Record the Operator decision with `record_diff_decision`.
@@ -30,6 +32,7 @@ The active safety mechanism is session overlay validation plus gated serial diff
 | Remove a member | `remove_symbol` |
 | Change using directives | `add_using` / `remove_using` |
 | Make an existing type partial | `set_type_partial` |
+| Replace a narrow text span in Razor, markup, CSS, JSON, or other text | `replace_span_in_file` |
 | Create a brand-new file | `submit_file` |
 | Regenerate or deliberately replace a whole file | `submit_file` |
 
@@ -81,6 +84,8 @@ Use `get_source_map(scope: "namespace", namespaceName: "...")` when a file's `us
 If overlay/build diagnostics reveal a missed or broken call site that Roslyn did not surface, text search is allowed as a diagnostic fallback. Use it to locate the missed file or literal call site, then confirm structure where possible and stage the corrected file into the same monitor session before retrying review. Do not use grep as the first-pass way to understand C# code.
 
 For whole-file staging, use Roslyn shape plus `get_file`; skip `get_source_map` unless you need stable selectors or structure. For symbol staging, use Roslyn shape plus `get_source_map`/`get_symbol`; skip `get_file` unless symbol context is insufficient.
+
+For large files of any type, the cold-session read path is `refresh_file(sourceFilePath)` followed by bounded chunk reads from the returned Working file path. This prevents oversized MCP results. If the file is already loaded in the current session, skip the read and use the in-context text as the guard for a narrow edit.
 
 If a candidate target came from `get_solution_index`, `get_solution_index_tree`, or cached compact index JSON, treat that target as discovery only. Refresh the file selector/hash in the current session before body read and mutation; if the live selector is missing, ambiguous, or hash-drifted, refresh/rebuild the selector data and restart the narrow edit path.
 

@@ -250,7 +250,7 @@ This is useful telemetry for choosing narrower tools; it is lower priority than 
 
 ### `refresh_file`
 
-Copies a watched source file into the monitor-owned `Working` folder and records refresh state.
+Copies a watched source file into the monitor-owned `Working` folder, records refresh state, and clears any existing candidate state for that file. Use this as the cold-session entry point before reading any large file in chunks from the returned `workingFilePath`. Do not use `get_file` for large files where returning the whole content could overflow the model/client tool-result budget.
 
 Arguments:
 
@@ -266,6 +266,8 @@ Arguments:
 - `sessionId`: optional durable session handle. When supplied, the server records the fetched file hash in the session.
 
 `get_file` returns the full file. Token-efficient partial reads should use outline/symbol tools rather than arbitrary character clipping.
+
+For large files of any extension, prefer `refresh_file` and chunked reads from the returned Working path instead of `get_file`.
 
 ### `check_file_hash`
 
@@ -354,7 +356,7 @@ Refreshes one watched C# file in the monitor-owned SQLite index. Because referen
 
 ### `refresh_file_and_index`
 
-Refreshes the monitor-owned Working copy from the watched source file, then refreshes the same file in the SQLite solution index. This is the one-call path for "reload this file and its index slice."
+Refreshes the monitor-owned Working copy from the watched source file, clears stale candidate state for that file, then refreshes the same file in the SQLite solution index. This is the one-call path for "reload this file and its index slice."
 
 ### `get_solution_index_status`
 

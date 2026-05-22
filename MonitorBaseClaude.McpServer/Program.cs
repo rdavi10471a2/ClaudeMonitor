@@ -223,7 +223,7 @@ public sealed class MonitorTools
     }
 
     [McpServerTool]
-    [Description("Refresh a watched source file into the monitor-owned Working folder. The path may be absolute or relative to the watched solution folder.")]
+    [Description("Refresh a watched source file into the monitor-owned Working folder and clear candidate state for that file. Use before chunk-reading any large file from the returned Working path.")]
     public MonitorFileRefreshResult RefreshFile(
         [Description("Source file path, absolute or relative to the watched solution folder.")] string sourceFilePath)
     {
