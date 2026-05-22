@@ -48,3 +48,16 @@ The `--refresh-only` CLI origin confirms this was the intended pre-read initiali
 ## Notes
 
 Once `refresh_file` has been called once for a file, the Working copy persists across sessions (hash-match wins). Subsequent sessions can Read from `candidateFilePath` immediately without re-calling `refresh_file` unless the watched source has changed since the last refresh.
+
+## Addendum: Read Is Cold-Session Only
+
+The `refresh_file → Read(workingFilePath) in chunks` instruction applies to **cold sessions** — where the file has not yet been loaded into Claude's context this session.
+
+In a **warm session** (file already loaded via a prior `get_file` or `Read` call):
+- Skip `Read` entirely.
+- Call `replace_span_in_file` directly with `expectedOldText` from in-context knowledge.
+- The `expectedOldText` guard validates that in-context knowledge matches the server-side Working file. No re-read is needed or correct.
+
+Re-reading a file that is already in context is a workflow error, not a safety precaution. The instruction for CLAUDE.md should make this distinction explicit: "if the file is already in context this session, proceed directly to `replace_span_in_file` with `expectedOldText` from context."
+
+Source: Operator correction in session 8b1353c0 after inverse test on BaseViewCreator.razor (86KB, 7 spans): Claude re-read the Working file before each span despite having the full file content and all span positions in context from the forward test in the same session.
