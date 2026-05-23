@@ -4,6 +4,8 @@ MonitorBaseClaude is a local WinForms and MCP workflow monitor for AI-assisted c
 
 The current target runtime client is Claude using MCP tools. The current implementation/test client is this repository plus its smoke harnesses.
 
+For a human-readable architecture walkthrough with diagrams, index details, edit flow, and both MCP tool surfaces, start with `Docs/HumanSystemReadme.md`.
+
 ## What It Does
 
 - Exposes a local MCP Tool Server for source discovery, source maps, symbol reads, Working candidate composition, staged review snapshots, and decision tools.
