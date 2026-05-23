@@ -8,6 +8,14 @@ Use this when you come back later and need to remember why the workflow exists, 
 
 MonitorBaseClaude lets a cloud model reason over a local compiler-backed map, compose edits into a monitor-owned Working mirror, and change watched source only after human diff review and vote-plus-hash verification.
 
+Trust hierarchy:
+
+```text
+dotnet build is truth -> overlay compile is the safety floor -> solution index is the fast navigation layer
+```
+
+The index does not need to model every MSBuild detail to be valuable. It must be explicit when it is incomplete, and the workflow still relies on build/overlay validation before reviewed source changes.
+
 The core idea is:
 
 ```text
@@ -139,42 +147,15 @@ index row -> get_source_map(scope: "file", mode: "selector") or check_file_hash 
 
 ## Normal Edit Loop
 
-```mermaid
-sequenceDiagram
-    participant C as Claude
-    participant M as Monitor MCP
-    participant I as SQLite Index
-    participant W as Working Mirror
-    participant H as Host / WinMerge
-    participant O as Operator
-    participant S as Watched Source
-
-    C->>M: query_solution_index / find_indexed_symbols
-    M->>I: read symbols, refs, callers, relationships
-    I-->>M: compact rows
-    M-->>C: stable keys, anchors, impact rows
-
-    C->>M: get_source_map(file, selector)
-    M-->>C: live selectors and hashes
-    C->>M: get_symbol(selector)
-    M-->>C: one body
-
-    C->>M: submit_symbol / replace_text_in_file / add_method / etc.
-    M->>W: write complete candidate
-    C->>M: stage_candidate_for_review
-    M->>W: immutable staged snapshot + validation metadata
-
-    C->>M: launch_staged_diff
-    M->>H: open review
-    O->>H: accept whole candidate or reject
-    H->>S: save candidate only on accept
-
-    C->>M: record_diff_decision(accepted/rejected)
-    M->>S: hash watched file
-    M->>W: compare original/staged hashes
-    M-->>C: accepted / rejected / dirty-unexpected
-    M->>I: refresh file or rebuild session chain index
-```
+1. Query the solution index for files, symbols, callers, references, and relationships.
+2. Use a source map to get live selectors and hashes for the file that will be edited.
+3. Read the smallest needed symbol body with `get_symbol`.
+4. Compose a complete candidate into the monitor-owned Working mirror.
+5. Stage the completed candidate into an immutable staged record with validation metadata.
+6. Launch WinMerge or the Host review surface.
+7. The operator accepts the whole candidate or rejects it.
+8. `record_diff_decision` compares the reported decision with original/staged/watched hashes.
+9. Accepted decisions refresh the index so the next query sees current source.
 
 The Monitor MCP server does not directly overwrite watched source. The physical mutation path is the human review surface saving the candidate.
 
@@ -197,6 +178,8 @@ record_diff_decision triggers one index rebuild when the chain completes
 ```
 
 Do not accept file A, then compose file B against the watched-source intermediate state. Compose later candidates against the full proposed Working overlay.
+
+How the overlay is established: pass the same `sessionId` through every candidate composition and `stage_candidate_for_review` call. Each composition tool writes that file's candidate into the monitor-owned `Working\<observedRootKey>\...` mirror. Overlay validation reads the current set of staged/Working candidates for that session together, so file B can compile against file A's proposed candidate before either file is accepted.
 
 ## Review Gate
 
@@ -407,15 +390,4 @@ Use this triage path:
    - fix the indexer
 7. Use grep only as a forensic tool after an index/compiler surprise, not as first-pass C# discovery.
 
-## Short Glossary
-
-| Term | Meaning |
-| --- | --- |
-| Watched source | The real project being edited, such as DBV2 or WebViewer. |
-| Working mirror | Monitor-owned editable copy under `Working\...`; candidate tools write here. |
-| Staged record | Immutable snapshot of a completed candidate plus baseline hashes and validation metadata. |
-| Stable symbol key | Persisted index identity for a source symbol. Get it from index/source-map rows. Do not invent it. |
-| Source anchor | Human-readable path/line/column span for a symbol. Useful for inspection, not a replacement for stable keys. |
-| Overlay compile | Validation that staged Working candidates compile together before review. |
-| Vote-plus-hash | `record_diff_decision` classification based on operator report plus watched/original/staged hashes. |
-| IndexRefresh | Automatic index refresh returned after accepted decisions so the next query sees current source. |
+Actor rule for failures: Claude may report the evidence and request a new test; Codex or the operator-owned development workflow should change the indexer and test corpus. Claude should not patch indexer internals during a watched-source edit session.

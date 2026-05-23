@@ -1,0 +1,906 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>MonitorBaseClaude Human System Guide</title>
+  <style>
+    :root {
+      --ink: #1f2933;
+      --muted: #5d6978;
+      --line: #d7dde6;
+      --panel: #f6f8fb;
+      --panel2: #eef4ff;
+      --accent: #1f5fbf;
+      --accent2: #5f3dc4;
+      --ok: #1f7a4d;
+      --warn: #9a5b00;
+      --bad: #a33a3a;
+    }
+
+    html {
+      background: #e8ebf0;
+    }
+
+    body {
+      margin: 0 auto;
+      max-width: 1080px;
+      color: var(--ink);
+      background: white;
+      font-family: "Segoe UI", Arial, sans-serif;
+      line-height: 1.48;
+      box-shadow: 0 18px 60px rgba(15, 23, 42, 0.18);
+    }
+
+    .page {
+      padding: 44px 58px 64px;
+    }
+
+    .cover {
+      border-bottom: 4px solid var(--accent);
+      padding-bottom: 24px;
+      margin-bottom: 28px;
+    }
+
+    h1 {
+      font-size: 36px;
+      line-height: 1.1;
+      margin: 0 0 10px;
+      letter-spacing: 0;
+    }
+
+    .subtitle {
+      font-size: 18px;
+      color: var(--muted);
+      max-width: 850px;
+    }
+
+    .meta {
+      margin-top: 16px;
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    h2 {
+      margin: 34px 0 12px;
+      padding-bottom: 6px;
+      border-bottom: 1px solid var(--line);
+      font-size: 24px;
+      color: #152238;
+    }
+
+    h3 {
+      margin: 24px 0 10px;
+      font-size: 18px;
+      color: #1d3557;
+    }
+
+    p {
+      margin: 9px 0;
+    }
+
+    code {
+      background: #f1f4f8;
+      border: 1px solid #dde4ee;
+      border-radius: 4px;
+      padding: 1px 5px;
+      font-family: Consolas, "Cascadia Mono", monospace;
+      font-size: 0.92em;
+    }
+
+    pre {
+      white-space: pre-wrap;
+      background: #111827;
+      color: #e5e7eb;
+      border-radius: 8px;
+      padding: 14px 16px;
+      font-family: Consolas, "Cascadia Mono", monospace;
+      font-size: 13px;
+      overflow-wrap: anywhere;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin: 14px 0 20px;
+      font-size: 14px;
+    }
+
+    th {
+      text-align: left;
+      background: #edf2f7;
+      border: 1px solid var(--line);
+      padding: 8px 10px;
+    }
+
+    td {
+      vertical-align: top;
+      border: 1px solid var(--line);
+      padding: 8px 10px;
+    }
+
+    ul, ol {
+      margin-top: 8px;
+      padding-left: 26px;
+    }
+
+    li {
+      margin: 4px 0;
+    }
+
+    .callout {
+      border-left: 5px solid var(--accent);
+      background: var(--panel2);
+      padding: 14px 16px;
+      margin: 16px 0;
+      border-radius: 0 8px 8px 0;
+    }
+
+    .callout strong {
+      color: #173f82;
+    }
+
+    .warning {
+      border-left-color: var(--warn);
+      background: #fff7e8;
+    }
+
+    .success {
+      border-left-color: var(--ok);
+      background: #ecfdf3;
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 12px;
+      margin: 16px 0;
+    }
+
+    .card {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--panel);
+      padding: 12px 14px;
+    }
+
+    .card h3 {
+      margin-top: 0;
+      font-size: 16px;
+    }
+
+    .flow {
+      margin: 18px 0 24px;
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      padding: 18px;
+      background: #fbfcfe;
+    }
+
+    .flow-row {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-wrap: wrap;
+      gap: 10px;
+      margin: 10px 0;
+    }
+
+    .node {
+      min-width: 130px;
+      text-align: center;
+      border: 1px solid #b9c7d8;
+      border-radius: 8px;
+      background: white;
+      padding: 10px 12px;
+      font-weight: 600;
+    }
+
+    .node.blue {
+      border-color: #86a9e6;
+      background: #eef4ff;
+    }
+
+    .node.purple {
+      border-color: #b4a4e8;
+      background: #f3f0ff;
+    }
+
+    .node.green {
+      border-color: #8fd3aa;
+      background: #ecfdf3;
+    }
+
+    .node.orange {
+      border-color: #e6bd75;
+      background: #fff7e8;
+    }
+
+    .arrow {
+      color: var(--muted);
+      font-weight: 700;
+      font-size: 20px;
+    }
+
+    .swimlane {
+      display: grid;
+      grid-template-columns: 150px 1fr;
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      overflow: hidden;
+      margin: 18px 0;
+    }
+
+    .lane-label {
+      background: #edf2f7;
+      border-bottom: 1px solid var(--line);
+      padding: 10px;
+      font-weight: 700;
+    }
+
+    .lane-body {
+      border-bottom: 1px solid var(--line);
+      padding: 10px;
+    }
+
+    .lane-label:last-of-type,
+    .lane-body:last-of-type {
+      border-bottom: 0;
+    }
+
+    .step-list {
+      counter-reset: steps;
+      list-style: none;
+      padding-left: 0;
+    }
+
+    .step-list li {
+      counter-increment: steps;
+      position: relative;
+      padding: 10px 12px 10px 48px;
+      margin: 8px 0;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #fbfcfe;
+    }
+
+    .step-list li::before {
+      content: counter(steps);
+      position: absolute;
+      left: 12px;
+      top: 10px;
+      width: 24px;
+      height: 24px;
+      border-radius: 50%;
+      background: var(--accent);
+      color: white;
+      text-align: center;
+      line-height: 24px;
+      font-weight: 700;
+    }
+
+    .two-col {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 18px;
+    }
+
+    .small {
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    .page-break {
+      break-before: page;
+      page-break-before: always;
+    }
+
+    @media print {
+      html {
+        background: white;
+      }
+
+      body {
+        max-width: none;
+        box-shadow: none;
+      }
+
+      .page {
+        padding: 0.55in;
+      }
+
+      h2 {
+        break-after: avoid;
+      }
+
+      table, .card, .callout, .flow, .swimlane {
+        break-inside: avoid;
+      }
+    }
+  </style>
+</head>
+<body>
+  <main class="page">
+    <section class="cover">
+      <h1>MonitorBaseClaude Human System Guide</h1>
+      <div class="subtitle">
+        A readable memory document for how the WinForms monitor, Monitor MCP tools,
+        Roslyn CodeLens MCP tools, SQLite solution index, staging workflow, and review gate fit together.
+      </div>
+      <div class="meta">
+        Repository: <code>C:\VSCodeProjects\MonitorBaseClaude</code><br>
+        Purpose: a human reference, not an agent instruction file.
+      </div>
+    </section>
+
+    <section>
+      <h2>Executive Summary</h2>
+      <p>
+        MonitorBaseClaude lets a cloud model reason over a local compiler-backed map,
+        compose edits into a monitor-owned Working mirror, and change watched source only
+        after human diff review and vote-plus-hash verification.
+      </p>
+
+      <div class="callout">
+        <strong>Core idea:</strong>
+        the model can reason and propose, but local tools own state, staging, validation,
+        review records, and hash classification.
+      </div>
+
+      <div class="callout success">
+        <strong>Trust hierarchy:</strong>
+        <code>dotnet build</code> is truth, overlay compile is the safety floor, and the solution index is the fast navigation layer.
+        The index does not need to model every MSBuild detail to be valuable, but it must be explicit when it is incomplete.
+      </div>
+
+      <div class="flow">
+        <div class="flow-row">
+          <div class="node blue">Cloud model reasons</div>
+          <div class="arrow">-&gt;</div>
+          <div class="node purple">Monitor composes and stages</div>
+          <div class="arrow">-&gt;</div>
+          <div class="node orange">Human reviews</div>
+          <div class="arrow">-&gt;</div>
+          <div class="node green">Hashes classify</div>
+          <div class="arrow">-&gt;</div>
+          <div class="node blue">Index refreshes</div>
+        </div>
+      </div>
+    </section>
+
+    <section>
+      <h2>Main Components</h2>
+      <div class="grid">
+        <div class="card">
+          <h3>WinForms App</h3>
+          <p>Human/operator UI, MCP hub visibility, Solution Index viewer, review and test surfaces.</p>
+        </div>
+        <div class="card">
+          <h3>Monitor MCP Server</h3>
+          <p>Safe workflow API for file reads, source maps, candidate composition, staged review, and review decisions.</p>
+        </div>
+        <div class="card">
+          <h3>Roslyn CodeLens MCP</h3>
+          <p>Live compiler-style semantic navigation: diagnostics, references, callers, implementations, type overview, and call graph.</p>
+        </div>
+        <div class="card">
+          <h3>Solution Index</h3>
+          <p>SQLite symbol/reference/caller/relationship index built from Roslyn semantic APIs over watched C# source.</p>
+        </div>
+        <div class="card">
+          <h3>Working Mirror</h3>
+          <p>Monitor-owned candidate files, staged snapshots, sessions, history, ledgers, and index databases.</p>
+        </div>
+        <div class="card">
+          <h3>WinMerge / Host Review</h3>
+          <p>The actual human save/no-save gate for watched source. Accept all or reject all.</p>
+        </div>
+      </div>
+    </section>
+
+    <section>
+      <h2>Architecture Diagram</h2>
+      <div class="flow">
+        <div class="flow-row">
+          <div class="node orange">Human Operator</div>
+          <div class="arrow">-&gt;</div>
+          <div class="node blue">Claude / Model Client</div>
+        </div>
+        <div class="flow-row">
+          <div class="node blue">Claude</div>
+          <div class="arrow">-&gt;</div>
+          <div class="node purple">Monitor MCP Server</div>
+          <div class="arrow">-&gt;</div>
+          <div class="node green">SQLite Solution Index</div>
+        </div>
+        <div class="flow-row">
+          <div class="node blue">Claude</div>
+          <div class="arrow">-&gt;</div>
+          <div class="node purple">Roslyn CodeLens MCP</div>
+          <div class="arrow">-&gt;</div>
+          <div class="node green">Roslyn Compiler APIs</div>
+        </div>
+        <div class="flow-row">
+          <div class="node purple">Monitor MCP</div>
+          <div class="arrow">-&gt;</div>
+          <div class="node">Working Mirror</div>
+          <div class="arrow">-&gt;</div>
+          <div class="node">Staged Candidate</div>
+          <div class="arrow">-&gt;</div>
+          <div class="node orange">WinMerge Review</div>
+          <div class="arrow">-&gt;</div>
+          <div class="node green">Watched Source</div>
+        </div>
+        <div class="flow-row">
+          <div class="node orange">Operator Vote</div>
+          <div class="arrow">-&gt;</div>
+          <div class="node purple">record_diff_decision</div>
+          <div class="arrow">-&gt;</div>
+          <div class="node green">Vote-plus-hash</div>
+          <div class="arrow">-&gt;</div>
+          <div class="node blue">IndexRefresh</div>
+        </div>
+      </div>
+    </section>
+
+    <section class="page-break">
+      <h2>Source Boundaries</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>World</th>
+            <th>Examples</th>
+            <th>Mutation Rule</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Product / monitor source</td>
+            <td><code>MonitorBaseClaude</code>, <code>MonitorBaseClaude.McpServer</code>, docs, tests</td>
+            <td>Codex can edit this repository normally.</td>
+          </tr>
+          <tr>
+            <td>Watched project source</td>
+            <td>DBV2, WebViewer, or whatever solution is configured as observed</td>
+            <td>Claude/model edits must go through Monitor staging and human review.</td>
+          </tr>
+          <tr>
+            <td>Monitor-owned generated state</td>
+            <td><code>Working\</code>, indexes, history, sessions, staged snapshots</td>
+            <td>Tools own this. It is not product source and not watched project source.</td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section>
+      <h2>The Solution Index</h2>
+      <p>
+        The solution index is the local map Claude should ask for before it reads file bodies.
+        It is built from Roslyn semantic APIs over watched C# source and persisted as SQLite.
+      </p>
+      <pre>Working\Indexes\&lt;observedRootKey&gt;\solution-index.sqlite</pre>
+
+      <div class="two-col">
+        <div class="card">
+          <h3>What It Stores</h3>
+          <ul>
+            <li>Files: path, hash, length, timestamp, parse status, diagnostic count, stale flag</li>
+            <li>Symbols: stable key, path, namespace, type, kind, name, signature, anchor, selector JSON</li>
+            <li>References and call sites: target, caller, file, line, column, snippet</li>
+            <li>Relationships: partials, inheritance, overrides, interface implementations</li>
+            <li>Diagnostics: severity, id, message, line span</li>
+          </ul>
+        </div>
+        <div class="card">
+          <h3>What It Answers</h3>
+          <ul>
+            <li>What symbols are in this file?</li>
+            <li>What calls this method?</li>
+            <li>What references this property, type, field, or event?</li>
+            <li>What partials, overrides, and interface relationships matter?</li>
+            <li>Is this file stale or diagnostic-bearing?</li>
+            <li>What stable key should Claude pass to the next tool?</li>
+          </ul>
+        </div>
+      </div>
+
+      <div class="warning callout">
+        <strong>Boundary:</strong> the index is not full MSBuild graph identity yet. It does not model framework/NuGet internals,
+        generated code that only exists during build, or Razor markup semantics. <code>dotnet build</code> remains the final correctness gate.
+      </div>
+    </section>
+
+    <section>
+      <h2>Index-First Read Flow</h2>
+      <p>
+        When Claude already knows the file, it should not guess stable keys or read the whole file first.
+        It should ask the index for the file-local symbol table:
+      </p>
+      <pre>query_solution_index(scope: "file", value: "Data/BaseTableRepository.cs")</pre>
+      <p>
+        The returned symbol rows contain <code>StableSymbolKey</code>, <code>SourceAnchor</code>,
+        <code>SelectorJson</code>, <code>Kind</code>, <code>Name</code>, <code>Signature</code>,
+        namespace, and containing type.
+      </p>
+      <p>Then Claude passes the returned stable key to:</p>
+      <pre>find_indexed_references(stableSymbolKey)
+find_indexed_callers(stableSymbolKey)
+find_indexed_relationships(stableSymbolKey)
+get_indexed_symbol(stableSymbolKey)</pre>
+      <div class="callout">
+        <strong>Important:</strong> stable keys come from index or source-map rows. Claude should not manually compose them from text.
+      </div>
+    </section>
+
+    <section>
+      <h2>Source Map vs. Solution Index</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>Surface</th>
+            <th>Best For</th>
+            <th>Authority Level</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Solution index</td>
+            <td>Broad navigation, file/symbol discovery, callers, references, relationships, diagnostics</td>
+            <td>Persisted Roslyn-derived map. Good first signal.</td>
+          </tr>
+          <tr>
+            <td>Source map</td>
+            <td>Live C# file/folder/namespace structure, selector JSON, current file hash</td>
+            <td>Same-session freshness hop before mutation.</td>
+          </tr>
+          <tr>
+            <td><code>get_symbol</code></td>
+            <td>Actual body text for one selected C# symbol</td>
+            <td>Smallest body read before composing an edit.</td>
+          </tr>
+          <tr>
+            <td><code>get_file</code></td>
+            <td>Full file body when unavoidable and below 32KB</td>
+            <td>Last resort for small files when map/body tools are not enough.</td>
+          </tr>
+        </tbody>
+      </table>
+      <pre>index row -&gt; get_source_map(scope: "file", mode: "selector") or check_file_hash -&gt; get_symbol -&gt; compose candidate</pre>
+    </section>
+
+    <section class="page-break">
+      <h2>Normal Edit Loop</h2>
+      <ol class="step-list">
+        <li>Claude asks the index for files, symbols, callers, references, and relationships.</li>
+        <li>Claude uses a source map to get live selectors and hashes for the file it will edit.</li>
+        <li>Claude reads only the needed symbol body with <code>get_symbol</code>.</li>
+        <li>Claude composes a full candidate into the monitor-owned Working mirror.</li>
+        <li>The candidate is staged into an immutable staged record with validation metadata.</li>
+        <li>WinMerge or the Host opens a review between watched source and staged candidate.</li>
+        <li>The operator accepts the whole candidate or rejects it.</li>
+        <li><code>record_diff_decision</code> compares the operator vote with hashes.</li>
+        <li>Accepted decisions refresh the solution index so the next query sees current source.</li>
+      </ol>
+
+      <div class="swimlane">
+        <div class="lane-label">Memory hook</div>
+        <div class="lane-body">Index to find the right thing, source map to target it safely, Working mirror to compose it, WinMerge to accept it, hashes to classify it.</div>
+      </div>
+    </section>
+
+    <section>
+      <h2>Multi-File Edits</h2>
+      <p>Coupled C# edits must validate together. This is especially important for async propagation, interface changes, constructor changes, or any signature/API change.</p>
+      <pre>start_monitor_session
+compose Working candidate A
+stage candidate A
+compose Working candidate B
+stage candidate B
+overlay compile sees A+B together
+review A
+record decision A
+review B
+record decision B
+record_diff_decision triggers one index rebuild when the chain completes</pre>
+      <div class="warning callout">
+        Do not accept file A and then compose file B against the watched-source intermediate state.
+        Compose later candidates against the full proposed Working overlay.
+      </div>
+      <p>
+        How the overlay is established: pass the same <code>sessionId</code> through every candidate composition and
+        <code>stage_candidate_for_review</code> call. Each composition tool writes that file's candidate into the
+        monitor-owned <code>Working\&lt;observedRootKey&gt;\...</code> mirror. Overlay validation reads the current set
+        of staged/Working candidates for that session together, so file B can compile against file A's proposed candidate
+        before either file is accepted.
+      </p>
+    </section>
+
+    <section>
+      <h2>Review Gate</h2>
+      <p>The diff is all-or-none. There is no partial hunk merge and no repairing the candidate in WinMerge.</p>
+      <table>
+        <thead>
+          <tr>
+            <th>Classification</th>
+            <th>Meaning</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><code>accepted</code></td>
+            <td>Operator reported accepted and watched hash equals staged candidate hash.</td>
+          </tr>
+          <tr>
+            <td><code>accepted-normalized</code></td>
+            <td>Accepted with only BOM/EOL-normalized differences.</td>
+          </tr>
+          <tr>
+            <td><code>rejected</code></td>
+            <td>Operator reported rejected and watched hash equals original baseline hash.</td>
+          </tr>
+          <tr>
+            <td><code>dirty-unexpected</code></td>
+            <td>Operator report and watched hash disagree, or watched hash matches neither original nor staged.</td>
+          </tr>
+        </tbody>
+      </table>
+      <div class="callout warning">
+        <strong>Recovery rule:</strong> <code>dirty-unexpected</code> blocks further staging on that file until explicit refresh/recovery.
+      </div>
+    </section>
+
+    <section>
+      <h2>Razor and Large Files</h2>
+      <p>Razor is not treated as normal C# symbol surgery.</p>
+      <ul>
+        <li>Use <code>replace_text_in_file</code> for exact small Razor or markup changes.</li>
+        <li>Use <code>replace_span_in_file</code> when line/column bounds are already known.</li>
+        <li>Use <code>submit_file</code> for new files, broad rewrites, or unsafe narrow edits.</li>
+      </ul>
+      <p>Cold-session read rule:</p>
+      <ul>
+        <li>Below 32KB: <code>get_file</code> is allowed when index/source-map/symbol context is not enough.</li>
+        <li>32KB and above, or when unsure: call <code>refresh_file</code>, then chunk-read the returned Working path.</li>
+      </ul>
+      <p class="small"><code>refresh_file</code> does not chunk. It refreshes the Working mirror and returns the local path. The client reads bounded chunks from that path.</p>
+    </section>
+
+    <section class="page-break">
+      <h2>Monitor MCP Tool Surface</h2>
+      <p>The Monitor MCP server is the workflow and safety surface. Its tools are grouped by intent.</p>
+      <table>
+        <thead>
+          <tr>
+            <th>Group</th>
+            <th>Representative Tools</th>
+            <th>What They Do</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Status and help</td>
+            <td><code>get_monitor_status</code>, <code>get_workflow_status</code>, <code>get_self_check</code>, <code>get_tool_manifest</code>, <code>get_staging_guide</code></td>
+            <td>Let a client discover configuration, rules, and debug catalog.</td>
+          </tr>
+          <tr>
+            <td>Solution index</td>
+            <td><code>query_solution_index</code>, <code>find_indexed_symbols</code>, <code>find_indexed_references</code>, <code>find_indexed_callers</code>, <code>find_indexed_relationships</code></td>
+            <td>Read or refresh the SQLite symbol/reference/caller/relationship index.</td>
+          </tr>
+          <tr>
+            <td>Session state</td>
+            <td><code>start_monitor_session</code>, <code>list_monitor_sessions</code>, <code>get_monitor_session</code>, <code>list_session_staged_records</code></td>
+            <td>Give agents durable handles instead of implicit connection memory.</td>
+          </tr>
+          <tr>
+            <td>File and structure reads</td>
+            <td><code>refresh_file</code>, <code>get_file</code>, <code>check_file_hash</code>, <code>find_file</code>, <code>get_source_map</code>, <code>get_symbol</code></td>
+            <td>Read current watched source safely and narrowly.</td>
+          </tr>
+          <tr>
+            <td>Candidate composition</td>
+            <td><code>submit_file</code>, <code>submit_symbol</code>, <code>replace_text_in_file</code>, <code>replace_span_in_file</code>, <code>add_method</code>, <code>remove_symbol</code></td>
+            <td>Write proposed content to the monitor-owned Working mirror only.</td>
+          </tr>
+          <tr>
+            <td>Review and decision</td>
+            <td><code>stage_candidate_for_review</code>, <code>launch_staged_diff</code>, <code>record_diff_decision</code>, <code>compare_file</code></td>
+            <td>Snapshot candidates, launch review, and classify outcomes by vote-plus-hash.</td>
+          </tr>
+          <tr>
+            <td>History and cleanup</td>
+            <td><code>list_monitor_runs</code>, <code>get_monitor_run</code>, <code>list_ledgers</code>, <code>get_ledger</code>, <code>prune_monitor_history</code></td>
+            <td>Inspect monitor history and local ledgers.</td>
+          </tr>
+        </tbody>
+      </table>
+      <div class="callout">
+        <strong>Mental model:</strong> index tools answer what exists; source-map/symbol tools answer what exact source will be edited; composition tools create the Working candidate; review tools classify the human decision.
+      </div>
+    </section>
+
+    <section>
+      <h2>Roslyn CodeLens MCP Tool Surface</h2>
+      <p>Roslyn CodeLens MCP is the live compiler-backed semantic analysis surface. It should be used for compiler questions, not mutation.</p>
+      <table>
+        <thead>
+          <tr>
+            <th>Tool</th>
+            <th>Main Argument Shape</th>
+            <th>Use It For</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><code>list_solutions</code></td>
+            <td>No special remembered shape</td>
+            <td>Confirm Roslyn can see the intended solution.</td>
+          </tr>
+          <tr>
+            <td><code>get_diagnostics</code></td>
+            <td><code>project</code>, <code>severity</code>, <code>includeAnalyzers</code></td>
+            <td>Compiler warning/error inventory.</td>
+          </tr>
+          <tr>
+            <td><code>search_symbols</code></td>
+            <td><code>query</code></td>
+            <td>Discover candidate types and members by name.</td>
+          </tr>
+          <tr>
+            <td><code>get_type_overview</code></td>
+            <td><code>typeName</code></td>
+            <td>Confirm namespace, members, dependencies, hierarchy, and file diagnostics.</td>
+          </tr>
+          <tr>
+            <td><code>find_references</code></td>
+            <td><code>symbol</code></td>
+            <td>Find references to a type or member. Do not pass <code>symbolName</code> or <code>query</code>.</td>
+          </tr>
+          <tr>
+            <td><code>find_callers</code></td>
+            <td><code>symbol</code></td>
+            <td>Find method call sites. Useful for async propagation.</td>
+          </tr>
+          <tr>
+            <td><code>get_call_graph</code></td>
+            <td><code>symbol</code>, <code>direction</code>, <code>maxDepth</code>, <code>maxNodes</code></td>
+            <td>Inspect caller/callee chains without manual recursion.</td>
+          </tr>
+          <tr>
+            <td><code>analyze_change_impact</code></td>
+            <td><code>symbol</code></td>
+            <td>Estimate blast radius for signature changes, renames, removals, and async conversion.</td>
+          </tr>
+          <tr>
+            <td><code>find_implementations</code></td>
+            <td><code>symbol</code></td>
+            <td>Find implementers and derived types, especially for interfaces and virtual/abstract paths.</td>
+          </tr>
+        </tbody>
+      </table>
+      <div class="warning callout">
+        Common mistake: <code>search_symbols</code> uses <code>query</code>, but reference/caller/impact tools use <code>symbol</code>.
+      </div>
+    </section>
+
+    <section>
+      <h2>Which MCP Should I Use?</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>Question</th>
+            <th>Monitor MCP</th>
+            <th>Roslyn CodeLens MCP</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>What files/symbols are in the watched source index?</td>
+            <td>Yes. This is the cheap first path.</td>
+            <td>Maybe, but Monitor is cheaper.</td>
+          </tr>
+          <tr>
+            <td>What is the stable key for a file-local symbol?</td>
+            <td>Yes: <code>query_solution_index(scope: "file")</code>.</td>
+            <td>No.</td>
+          </tr>
+          <tr>
+            <td>What calls/references this indexed source symbol?</td>
+            <td>Yes first: <code>find_indexed_callers/references</code>.</td>
+            <td>Use as live sanity check or deeper semantic query.</td>
+          </tr>
+          <tr>
+            <td>What overrides or implements this symbol?</td>
+            <td>Yes first: <code>find_indexed_relationships</code>.</td>
+            <td>Use <code>find_implementations</code> for live compiler perspective.</td>
+          </tr>
+          <tr>
+            <td>What exact body should be edited?</td>
+            <td>Yes: <code>get_source_map</code> then <code>get_symbol</code>.</td>
+            <td>No mutation authority.</td>
+          </tr>
+          <tr>
+            <td>How do I stage/review/accept an edit?</td>
+            <td>Monitor only.</td>
+            <td>Never.</td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section class="page-break">
+      <h2>Proof and Tests</h2>
+      <p>The important testing idea is that the index is checked against compiler-style known answers.</p>
+      <div class="grid">
+        <div class="card">
+          <h3>Fixture Matrix</h3>
+          <p>Generated fixture, Roslyn target counts, Monitor reference/caller/relationship counts. Current matrix passes 68/68.</p>
+        </div>
+        <div class="card">
+          <h3>DBV2 Smokes</h3>
+          <p>Real watched project cross-section and all indexed method/constructor caller verification.</p>
+        </div>
+        <div class="card">
+          <h3>External Corpus</h3>
+          <p>Local sibling repo with <code>.cs.tst</code> samples, bind markers, and <code>expected.json</code> known answers.</p>
+        </div>
+      </div>
+      <div class="callout success">
+        The bind-marker model is the proof: Roslyn is asked what symbol is under <code>/*&lt;bind&gt;*/.../*&lt;/bind&gt;*/</code>, and Monitor must return matching indexed behavior.
+      </div>
+    </section>
+
+    <section>
+      <h2>The Mean Teacher End-To-End Test</h2>
+      <p>The best live proof of the full workflow is an async repository conversion.</p>
+      <ol class="step-list">
+        <li>Pick one low-fanout repository method.</li>
+        <li>Convert it to async.</li>
+        <li>Update every actual caller.</li>
+        <li>Do not use <code>.Wait()</code>, <code>.Result</code>, <code>GetAwaiter().GetResult()</code>, <code>Task.Run</code> sync bridges, or helper bridge wrappers.</li>
+        <li>If a caller now awaits, make that caller async and continue propagation until validation is clean.</li>
+        <li>Stage all coupled files in one monitor session.</li>
+        <li>Accept/reject through WinMerge.</li>
+        <li>Check <code>IndexRefresh</code>.</li>
+        <li>Re-query the index and confirm the async method and callers are visible.</li>
+      </ol>
+      <p>
+        This tests index-first discovery, caller propagation, async reasoning, multi-file staging,
+        overlay compile validation, review gate, automatic index refresh, and post-change query correctness.
+      </p>
+    </section>
+
+    <section>
+      <h2>WinForms Index Viewer</h2>
+      <p>The <code>Solution Index</code> tab is a read-only viewer for the SQLite index. It is not an editor.</p>
+      <ul>
+        <li>Files grid: what files were indexed and whether they are stale or diagnostic-bearing.</li>
+        <li>Symbols grid: declarations, signatures, source anchors, stable keys.</li>
+        <li>References tab: incoming references for the selected symbol.</li>
+        <li>Callers tab: invocation call sites for methods/constructors and callable symbols.</li>
+        <li>Relationships tab: partials, inheritance, overrides, and interface implementation rows.</li>
+        <li>Diagnostics tab: persisted diagnostic rows.</li>
+        <li>Raw tab: copyable selected symbol data and evidence rows.</li>
+      </ul>
+    </section>
+
+    <section>
+      <h2>If Something Seems Wrong</h2>
+      <ol class="step-list">
+        <li>Check the Solution Index UI and <code>get_solution_index_status</code>.</li>
+        <li>If file data is stale, run <code>refresh_solution_index_file</code> or rebuild the index.</li>
+        <li>Query by file first: <code>query_solution_index(scope: "file", value: "&lt;relative path&gt;")</code>.</li>
+        <li>Use the returned <code>StableSymbolKey</code>, not a hand-built key.</li>
+        <li>Check references, callers, and relationships.</li>
+        <li>If the index missed a real C# symbol/reference, capture the file, symbol, and bind/call site and add a fixture or corpus case.</li>
+        <li>Use grep only as a forensic tool after an index/compiler surprise, not as first-pass C# discovery.</li>
+      </ol>
+      <div class="warning callout">
+        <strong>Actor rule:</strong>
+        Claude may report the evidence and request a new test. Codex or the operator-owned development workflow should change
+        the indexer and test corpus. Claude should not patch indexer internals during a watched-source edit session.
+      </div>
+    </section>
+  </main>
+</body>
+</html>
