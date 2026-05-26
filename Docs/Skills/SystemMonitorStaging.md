@@ -38,6 +38,8 @@ The active safety mechanism is session overlay validation plus gated serial diff
 | Replace exact text in Razor, markup, CSS, JSON, config, or other text | `replace_text_in_file` |
 | Replace a known line/column span | `replace_span_in_file` |
 | Create a brand-new file | `submit_file` |
+| Create a brand-new Razor component | Two `submit_file` calls in one session: `.razor` markup + `.razor.cs` partial-class companion. Do not start a new Razor file with inline `@code`. |
+| Migrate legacy inline-`@code` Razor to two-file form | `split_razor_code_to_companion` |
 | Regenerate or deliberately replace a whole file | `submit_file` |
 
 Do not use `submit_file` for ordinary member-level edits just because you have the full file in context.

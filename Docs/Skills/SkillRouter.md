@@ -15,6 +15,7 @@ Confirm task type from get_workflow_status output or the user's task description
 - Adding, replacing, or removing C# symbols: `FormattingOracle.md`
 - Async/signature/API caller propagation: `AsyncPropagation.md`
 - Human-guided companion partial extraction: `PartialClassRefactor.md`
+- New Razor component authoring (markup + companion partial class): see CLAUDE.md "Razor Files" — start in two-file form, do not author with inline `@code`.
 - Live tool-traffic verification or debugging: `TroubleshootingDashboard.md`
 
 ## Layering
