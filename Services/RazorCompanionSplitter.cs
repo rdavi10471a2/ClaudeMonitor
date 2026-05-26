@@ -77,7 +77,7 @@ public static partial class RazorCompanionSplitter
             BuildNamespaceFromProject(observedRoot, razorRelativePath))
             ?? throw new InvalidOperationException("Unable to infer a namespace for the companion file. Pass a namespace override.");
 
-        string[] razorUsings = FindRazorUsings(razorText).ToArray();
+        string[] razorUsings = CollectCompanionUsings(observedRoot, razorRelativePath, razorText).ToArray();
         string companionCode = BuildCompanionCode(namespaceName, className, razorUsings, blocks.Select(block => razorText[block.ContentStart..block.ContentEnd]));
         ValidateCompanionCode(companionCode, companionRelativePath);
 
@@ -353,6 +353,48 @@ public static partial class RazorCompanionSplitter
             {
                 yield return value.TrimEnd(';');
             }
+        }
+    }
+
+    private static IEnumerable<string> CollectCompanionUsings(string observedRoot, string razorRelativePath, string razorText)
+    {
+        // Razor's compiler implicitly adds Microsoft.AspNetCore.Components to every generated component, so the
+        // detached companion needs it spelled out to resolve RenderFragment, ParameterAttribute, ComponentBase, etc.
+        yield return "Microsoft.AspNetCore.Components";
+
+        foreach (string @using in FindImportsRazorUsings(observedRoot, razorRelativePath))
+        {
+            yield return @using;
+        }
+
+        foreach (string @using in FindRazorUsings(razorText))
+        {
+            yield return @using;
+        }
+    }
+
+    private static IEnumerable<string> FindImportsRazorUsings(string observedRoot, string razorRelativePath)
+    {
+        string rootFull = Path.GetFullPath(observedRoot);
+        string? folder = Path.GetDirectoryName(Path.GetFullPath(Path.Combine(observedRoot, razorRelativePath)));
+        while (!string.IsNullOrWhiteSpace(folder))
+        {
+            string importsPath = Path.Combine(folder, "_Imports.razor");
+            if (File.Exists(importsPath))
+            {
+                string text = File.ReadAllText(importsPath);
+                foreach (string @using in FindRazorUsings(text))
+                {
+                    yield return @using;
+                }
+            }
+
+            if (string.Equals(folder, rootFull, StringComparison.OrdinalIgnoreCase))
+            {
+                yield break;
+            }
+
+            folder = Path.GetDirectoryName(folder);
         }
     }
 
