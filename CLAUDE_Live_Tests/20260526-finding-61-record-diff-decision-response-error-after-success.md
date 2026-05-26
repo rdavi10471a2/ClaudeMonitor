@@ -1,11 +1,22 @@
 ---
-status: new
+status: fixed
 type: finding
 created: 2026-05-26
-processed: false
-processedBy:
-processedAt:
-resolution:
+processed: true
+processedBy: Claude
+processedAt: 2026-05-26
+resolution: |
+  Root cause: split_razor_code_to_companion fabricated a "razor-split-<timestamp>" sessionId
+  in MonitorWorkflowService.SplitRazorCodeToCompanion but never durably created the session
+  file. record_diff_decision later called sessionService.RecordEvent(result.SessionId, ...)
+  which called LoadRequired(sessionId) which threw FileNotFoundException. Track re-threw,
+  the MCP SDK wrapped the throw in a JSON-RPC error envelope, and the host bridge logged
+  isError=true. Server-side telemetry (errors.jsonl) was disabled in the running McpServer
+  process so the throw appeared "silent" from the McpServer side.
+  Fix: added MonitorSessionService.EnsureSession (idempotent create-if-missing). The
+  Program.cs SplitRazorCodeToCompanion wrapper now calls EnsureSession with the result's
+  SessionId after the workflow returns, so RecordEvent/RecordFileFetch can find the session
+  in the subsequent record_diff_decision calls.
 resolutionCommit:
 ---
 

@@ -340,7 +340,16 @@ public sealed class MonitorTools
         return Track(
             nameof(SplitRazorCodeToCompanion),
             new { sourceFilePath, namespaceName, leaveEmptyCodeBlock, sessionId, manifestLength = manifestJson?.Length ?? 0 },
-            () => workflowService.SplitRazorCodeToCompanion(sourceFilePath, namespaceName, leaveEmptyCodeBlock, sessionId, manifestJson));
+            () =>
+            {
+                RazorCompanionSplitStageResult result = workflowService.SplitRazorCodeToCompanion(sourceFilePath, namespaceName, leaveEmptyCodeBlock, sessionId, manifestJson);
+                if (!string.IsNullOrWhiteSpace(result.SessionId))
+                {
+                    sessionService.EnsureSession(result.SessionId, "razor-companion-split");
+                }
+
+                return result;
+            });
     }
 
     [McpServerTool]

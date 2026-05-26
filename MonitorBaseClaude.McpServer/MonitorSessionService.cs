@@ -19,6 +19,31 @@ public sealed class MonitorSessionService
     public MonitorSessionState StartSession(string purpose = "monitor workflow")
     {
         string sessionId = $"monitor-{DateTimeOffset.UtcNow:yyyyMMddHHmmss}-{Guid.NewGuid():N}"[..40];
+        return CreateSessionState(sessionId, purpose);
+    }
+
+    public MonitorSessionState EnsureSession(string sessionId, string purpose)
+    {
+        if (string.IsNullOrWhiteSpace(sessionId))
+        {
+            throw new ArgumentException("Session id is required.", nameof(sessionId));
+        }
+
+        string path = GetSessionPath(sessionId);
+        if (File.Exists(path))
+        {
+            MonitorSessionState existing = JsonSerializer.Deserialize<MonitorSessionState>(File.ReadAllText(path), JsonOptions)
+                ?? throw new InvalidOperationException($"Monitor session file could not be read: {path}");
+            MonitorSessionState touched = existing with { LastAccessedAt = DateTimeOffset.UtcNow };
+            Save(touched);
+            return touched;
+        }
+
+        return CreateSessionState(sessionId, purpose);
+    }
+
+    private MonitorSessionState CreateSessionState(string sessionId, string purpose)
+    {
         MonitorSessionState state = new(
             sessionId,
             purpose,
