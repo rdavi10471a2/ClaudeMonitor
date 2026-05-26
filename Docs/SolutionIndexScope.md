@@ -13,7 +13,14 @@ The solution index is a fast source navigation layer for code owned by the watch
 
 ## Current Boundary
 
-The current indexer builds one Roslyn compilation from C# files under the observed root. This gives strong coverage for normal source semantics inside one source boundary, but it is not yet a full MSBuild project graph model.
+The current indexer builds one Roslyn compilation from C# files under the observed root, plus a Razor pre-pass for `.razor` files. This gives strong coverage for normal source semantics inside one source boundary, but it is not yet a full MSBuild project graph model.
+
+Razor coverage (added 2026-05-26):
+
+- `.razor` files are run through `Microsoft.AspNetCore.Razor.Language` (`RazorProjectEngine.Process`, `FileKinds.Component`); the generated C# is parsed, and symbol positions are projected back to the original `.razor` coordinates via `SourceMappings` so `stableSymbolKey`, `sourceAnchor`, and line/column point at user-written source.
+- Symbols whose generated position lies in synthesized scaffolding (no covering source mapping) are dropped, so only `@code` members the developer wrote are indexed.
+- Razor pipeline failures surface as `RAZOR0001` index diagnostics, not silent zero.
+- `.cshtml` is not currently indexed. Indexing covers reads only — typed mutation tools (`submit_symbol`, `add_method`, `remove_symbol`, etc.) still gate to `.cs`; Razor edits flow through `replace_text_in_file` and `submit_file`.
 
 Known project-system gaps:
 
@@ -23,6 +30,8 @@ Known project-system gaps:
 - per-project conditional symbols and target frameworks
 - NuGet package metadata beyond display context
 - generated code that is produced only during build and not present as source
+- `.cshtml` indexing
+- Razor-aware typed mutation tools (write surface)
 
 ## Testing Boundary
 
