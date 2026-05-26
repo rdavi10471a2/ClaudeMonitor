@@ -269,6 +269,30 @@ Arguments:
 
 For large files of any extension, prefer `refresh_file` and chunked reads from the returned Working path instead of `get_file`.
 
+### `split_razor_code_to_companion`
+
+Splits a Razor component that contains markup plus inline `@code` into a `.razor` markup file and a `.razor.cs` partial-class companion, staged as two normal monitor candidates under one session.
+
+Supported input shapes:
+
+- `Foo.razor`: existing markup file with inline `@code`; stages modified `Foo.razor` plus new `Foo.razor.cs`.
+- `Foo.razor.cs`: legacy hybrid file containing Razor markup plus inline `@code`; stages new `Foo.razor` plus cleaned `Foo.razor.cs`.
+
+Safety rules:
+
+- Refuses normal `.razor` input when `Foo.razor.cs` already exists.
+- Refuses legacy hybrid `.razor.cs` input when `Foo.razor` already exists.
+- Refuses when either output already has a monitor Working candidate in progress.
+- Does not write watched source directly. The returned staged records must still go through `launch_staged_diff` and `record_diff_decision` one file at a time.
+
+Arguments:
+
+- `sourceFilePath`: watched `.razor` or legacy hybrid `.razor.cs` path.
+- `namespaceName`: optional namespace override for the generated companion.
+- `leaveEmptyCodeBlock`: optional; when true leaves `@code { }` in the markup file.
+- `sessionId`: optional durable monitor session id; one is created if omitted.
+- `manifestJson`: optional intent/verification manifest.
+
 ### `check_file_hash`
 
 Checks a watched source file against the hash last recorded in a durable monitor session.
@@ -691,6 +715,16 @@ Overlay validation is cached in-process by observed root plus candidate overlay 
 ### `prune_monitor_history`
 
 Archives old monitor-owned history snapshots and prunes old ledgers. This does not touch watched source files.
+
+### `shutdown_server`
+
+Requests graceful shutdown of the current Monitor MCP server process.
+
+Use this when a direct MCP server launch has become stale and is locking build outputs. The server also has an idle self-exit guard for forgotten direct launches; set `MONITORBASECLAUDE_IDLE_EXIT_MINUTES=0` or pass `--idle-exit-minutes 0` to disable that guard for a long-running diagnostic session.
+
+Arguments:
+
+- `reason`: optional operator/client reason recorded in the shutdown response.
 
 ### Command-Line Breadcrumb
 
