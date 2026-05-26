@@ -2,6 +2,7 @@ using System.ComponentModel;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
+using Microsoft.AspNetCore.Razor.Language;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
@@ -11,8 +12,8 @@ using MonitorBaseClaude.AI;
 
 namespace MonitorBaseClaude.Services;
 
-[AIFileContext("SolutionIndexService.cs", "Builds and queries the monitor-owned SQLite index for watched C# solution structure.")]
-[FileVersion("1.9")]
+[AIFileContext("SolutionIndexService.cs", "Builds and queries the monitor-owned SQLite index for watched C# and Razor solution structure. Razor (.razor) files are parsed via Microsoft.AspNetCore.Razor.Language; symbols inside @code blocks are translated back to original .razor coordinates via SourceMappings.")]
+[FileVersion("1.10")]
 public sealed class SolutionIndexService
 {
     private static readonly string[] ExcludedDirectoryNames =
@@ -837,19 +838,62 @@ public sealed class SolutionIndexService
     private static IndexedFileBuild BuildFileIndex(string observedRoot, string sourceFilePath)
     {
         string text = File.ReadAllText(sourceFilePath);
-        SyntaxTree tree = CSharpSyntaxTree.ParseText(text, path: sourceFilePath);
-        CompilationUnitSyntax root = tree.GetCompilationUnitRoot();
         string relativePath = Path.GetRelativePath(observedRoot, sourceFilePath);
         FileInfo info = new(sourceFilePath);
-        IReadOnlyList<IndexedDiagnosticBuild> diagnostics = tree.GetDiagnostics()
-            .Select(diagnostic => BuildDiagnostic(tree, diagnostic))
-            .ToArray();
-        bool isGenerated = IsGeneratedFile(root);
-        IReadOnlyList<IndexedSymbolBuild> symbols = root.DescendantNodes()
-            .SelectMany(node => BuildSymbolsForNode(tree, relativePath, node, isGenerated))
-            .OrderBy(symbol => symbol.StartLine)
-            .ThenBy(symbol => symbol.Name, StringComparer.OrdinalIgnoreCase)
-            .ToArray();
+        bool isRazor = sourceFilePath.EndsWith(".razor", StringComparison.OrdinalIgnoreCase);
+
+        SyntaxTree tree;
+        CompilationUnitSyntax root;
+        IReadOnlyList<IndexedDiagnosticBuild> diagnostics;
+        IReadOnlyList<IndexedSymbolBuild> symbols;
+
+        if (isRazor)
+        {
+            string? generatedCode;
+            IReadOnlyList<SourceMapping> mappings;
+            string? razorError;
+            (generatedCode, mappings, razorError) = TryGenerateRazorCSharp(observedRoot, sourceFilePath);
+
+            if (generatedCode is null)
+            {
+                tree = CSharpSyntaxTree.ParseText(string.Empty, path: sourceFilePath);
+                root = tree.GetCompilationUnitRoot();
+                diagnostics = new[]
+                {
+                    new IndexedDiagnosticBuild("Error", "RAZOR0001", razorError ?? "Razor parse failed.", 1, 1)
+                };
+                symbols = Array.Empty<IndexedSymbolBuild>();
+            }
+            else
+            {
+                tree = CSharpSyntaxTree.ParseText(generatedCode, path: sourceFilePath);
+                root = tree.GetCompilationUnitRoot();
+                diagnostics = Array.Empty<IndexedDiagnosticBuild>();
+                SourceText razorText = SourceText.From(text);
+                symbols = root.DescendantNodes()
+                    .SelectMany(node => BuildSymbolsForNode(tree, relativePath, node, isGenerated: false))
+                    .Select(symbol => TranslateSymbolToRazor(symbol, mappings, razorText, relativePath))
+                    .Where(symbol => symbol is not null)
+                    .Select(symbol => symbol!)
+                    .OrderBy(symbol => symbol.StartLine)
+                    .ThenBy(symbol => symbol.Name, StringComparer.OrdinalIgnoreCase)
+                    .ToArray();
+            }
+        }
+        else
+        {
+            tree = CSharpSyntaxTree.ParseText(text, path: sourceFilePath);
+            root = tree.GetCompilationUnitRoot();
+            diagnostics = tree.GetDiagnostics()
+                .Select(diagnostic => BuildDiagnostic(tree, diagnostic))
+                .ToArray();
+            bool isGenerated = IsGeneratedFile(root);
+            symbols = root.DescendantNodes()
+                .SelectMany(node => BuildSymbolsForNode(tree, relativePath, node, isGenerated))
+                .OrderBy(symbol => symbol.StartLine)
+                .ThenBy(symbol => symbol.Name, StringComparer.OrdinalIgnoreCase)
+                .ToArray();
+        }
 
         return new IndexedFileBuild(
             sourceFilePath,
@@ -862,6 +906,80 @@ public sealed class SolutionIndexService
             diagnostics.Any(diagnostic => diagnostic.Severity.Equals("Error", StringComparison.OrdinalIgnoreCase)) ? "error" : "ok",
             symbols,
             diagnostics);
+    }
+
+    private static (string? GeneratedCode, IReadOnlyList<SourceMapping> Mappings, string? Error) TryGenerateRazorCSharp(
+        string observedRoot,
+        string sourceFilePath)
+    {
+        try
+        {
+            RazorProjectFileSystem fileSystem = RazorProjectFileSystem.Create(observedRoot);
+            RazorProjectEngine engine = RazorProjectEngine.Create(
+                RazorConfiguration.Default,
+                fileSystem,
+                builder => { });
+
+            string relativeForRazor = "/" + Path.GetRelativePath(observedRoot, sourceFilePath).Replace('\\', '/');
+            RazorProjectItem projectItem = fileSystem.GetItem(relativeForRazor, FileKinds.Component);
+            RazorCodeDocument codeDocument = engine.Process(projectItem);
+            RazorCSharpDocument csharpDoc = codeDocument.GetCSharpDocument();
+            return (csharpDoc.GeneratedCode, csharpDoc.SourceMappings, null);
+        }
+        catch (Exception ex)
+        {
+            return (null, Array.Empty<SourceMapping>(), $"Razor pipeline failed: {ex.Message}");
+        }
+    }
+
+    private static IndexedSymbolBuild? TranslateSymbolToRazor(
+        IndexedSymbolBuild symbol,
+        IReadOnlyList<SourceMapping> mappings,
+        SourceText razorText,
+        string relativePath)
+    {
+        // 2026-05-26: Symbol positions are in GENERATED C# coordinates.
+        // Use Razor SourceMappings to project back into the original .razor file so
+        // stableSymbolKey/sourceAnchor/start/end line columns point at user-visible source.
+        // Symbols whose generated position is in synthesized scaffolding (no mapping covers
+        // it) are dropped — those are render-tree calls / framework boilerplate the user
+        // never wrote.
+        foreach (SourceMapping mapping in mappings)
+        {
+            int genStart = mapping.GeneratedSpan.AbsoluteIndex;
+            int genEnd = genStart + mapping.GeneratedSpan.Length;
+            if (symbol.TextSpanStart < genStart || symbol.TextSpanStart >= genEnd)
+            {
+                continue;
+            }
+
+            int offset = symbol.TextSpanStart - genStart;
+            int origStart = mapping.OriginalSpan.AbsoluteIndex + offset;
+            int generatedTail = mapping.GeneratedSpan.Length - offset;
+            int origLength = Math.Min(symbol.TextSpanLength, generatedTail);
+            if (origStart < 0 || origStart >= razorText.Length)
+            {
+                return null;
+            }
+
+            int origEnd = Math.Min(origStart + origLength, Math.Max(razorText.Length - 1, 0));
+            LinePosition startLp = razorText.Lines.GetLinePosition(origStart);
+            LinePosition endLp = razorText.Lines.GetLinePosition(origEnd);
+            string relativeKeyPath = relativePath.Replace('\\', '/');
+            string sourceAnchor = $"{relativeKeyPath}:{startLp.Line + 1}:{startLp.Character + 1}-{endLp.Line + 1}:{endLp.Character + 1}";
+            return symbol with
+            {
+                StartLine = startLp.Line + 1,
+                EndLine = endLp.Line + 1,
+                StartColumn = startLp.Character + 1,
+                EndColumn = endLp.Character + 1,
+                TextSpanStart = origStart,
+                TextSpanLength = origLength,
+                SourceAnchor = sourceAnchor
+            };
+        }
+
+        return null;
     }
 
     private static IReadOnlyList<IndexedReferenceBuild> BuildReferenceIndex(string observedRoot, IReadOnlyList<IndexedFileBuild> files)
@@ -2675,6 +2793,7 @@ public sealed class SolutionIndexService
         };
 
         return Directory.EnumerateFiles(observedRoot, "*.cs", options)
+            .Concat(Directory.EnumerateFiles(observedRoot, "*.razor", options))
             .Where(path => !IsExcludedPath(observedRoot, path))
             .OrderBy(path => Path.GetRelativePath(observedRoot, path), StringComparer.OrdinalIgnoreCase);
     }
@@ -2696,9 +2815,10 @@ public sealed class SolutionIndexService
             throw new InvalidOperationException("Path must be under the watched solution folder.");
         }
 
-        if (!fullPath.EndsWith(".cs", StringComparison.OrdinalIgnoreCase))
+        if (!fullPath.EndsWith(".cs", StringComparison.OrdinalIgnoreCase) &&
+            !fullPath.EndsWith(".razor", StringComparison.OrdinalIgnoreCase))
         {
-            throw new InvalidOperationException("Only C# files can be indexed by file refresh.");
+            throw new InvalidOperationException("Only .cs and .razor files can be indexed by file refresh.");
         }
 
         if (!File.Exists(fullPath))
