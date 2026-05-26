@@ -18,6 +18,7 @@
 
   <ItemGroup>
     <Compile Include="..\AI\AIAttributes.cs" Link="AI\AIAttributes.cs" />
+    <Compile Include="..\Services\RazorCompanionSplitter.cs" Link="Services\RazorCompanionSplitter.cs" />
     <Compile Include="..\Services\SolutionIndexService.cs" Link="Services\SolutionIndexService.cs" />
   </ItemGroup>
 

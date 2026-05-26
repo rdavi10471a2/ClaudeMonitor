@@ -16,10 +16,12 @@ internal static class Program
         builder.Logging.ClearProviders();
         MonitorServerSettings settings = MonitorServerSettings.Load(args);
         builder.Services.AddSingleton(settings);
+        builder.Services.AddSingleton<MonitorServerRuntimeState>();
         builder.Services.AddSingleton<MonitorWorkflowService>();
         builder.Services.AddSingleton<MonitorSessionService>();
         builder.Services.AddSingleton<MonitorMcpTelemetryService>();
         builder.Services.AddSingleton(new SolutionIndexService(settings.UiRoot, settings.WatchedSolutionPath));
+        builder.Services.AddHostedService<MonitorServerIdleExitService>();
         builder.Services
             .AddMcpServer()
             .WithStdioServerTransport()
@@ -37,19 +39,25 @@ public sealed class MonitorTools
     private readonly MonitorSessionService sessionService;
     private readonly MonitorMcpTelemetryService telemetryService;
     private readonly SolutionIndexService solutionIndexService;
+    private readonly MonitorServerRuntimeState runtimeState;
+    private readonly IHostApplicationLifetime applicationLifetime;
 
     public MonitorTools(
         MonitorServerSettings settings,
         MonitorWorkflowService workflowService,
         MonitorSessionService sessionService,
         MonitorMcpTelemetryService telemetryService,
-        SolutionIndexService solutionIndexService)
+        SolutionIndexService solutionIndexService,
+        MonitorServerRuntimeState runtimeState,
+        IHostApplicationLifetime applicationLifetime)
     {
         this.settings = settings;
         this.workflowService = workflowService;
         this.sessionService = sessionService;
         this.telemetryService = telemetryService;
         this.solutionIndexService = solutionIndexService;
+        this.runtimeState = runtimeState;
+        this.applicationLifetime = applicationLifetime;
     }
 
     [McpServerTool]
@@ -318,6 +326,21 @@ public sealed class MonitorTools
         [Description("Optional JSON manifest expressing Model intent.")] string? manifestJson = null)
     {
         return Track(nameof(SubmitFile), new { path, contentLength = content.Length, sessionId, manifestLength = manifestJson?.Length ?? 0 }, () => workflowService.SubmitFile(path, content, sessionId, manifestJson));
+    }
+
+    [McpServerTool]
+    [Description("Split a Razor component with inline @code into a .razor markup file plus a .razor.cs partial-class companion. Accepts normal .razor input or legacy hybrid .razor.cs input, refuses existing split outputs, and stages both files under one monitor session.")]
+    public RazorCompanionSplitStageResult SplitRazorCodeToCompanion(
+        [Description("Watched .razor file or legacy hybrid .razor.cs file path, absolute or relative to the watched solution folder.")] string sourceFilePath,
+        [Description("Optional namespace override for the generated .razor.cs companion.")] string? namespaceName = null,
+        [Description("If true, leave an empty @code { } placeholder in the markup file. Default false.")] bool leaveEmptyCodeBlock = false,
+        [Description("Optional durable monitor session id; one is created if omitted.")] string? sessionId = null,
+        [Description("Optional JSON manifest expressing Model intent.")] string? manifestJson = null)
+    {
+        return Track(
+            nameof(SplitRazorCodeToCompanion),
+            new { sourceFilePath, namespaceName, leaveEmptyCodeBlock, sessionId, manifestLength = manifestJson?.Length ?? 0 },
+            () => workflowService.SplitRazorCodeToCompanion(sourceFilePath, namespaceName, leaveEmptyCodeBlock, sessionId, manifestJson));
     }
 
     [McpServerTool]
@@ -675,8 +698,29 @@ public sealed class MonitorTools
         });
     }
 
+    [McpServerTool]
+    [Description("Request a graceful shutdown of this Monitor MCP server process. Use this before rebuilding when a direct MCP server launch has become stale and is locking build outputs.")]
+    public MonitorServerShutdownResult ShutdownServer(
+        [Description("Optional operator/client reason for the shutdown request.")] string? reason = null)
+    {
+        return Track(nameof(ShutdownServer), new { hasReason = !string.IsNullOrWhiteSpace(reason) }, () =>
+        {
+            runtimeState.RequestShutdown(reason);
+            _ = Task.Run(async () =>
+            {
+                await Task.Delay(100);
+                applicationLifetime.StopApplication();
+            });
+            return new MonitorServerShutdownResult(
+                Environment.ProcessId,
+                DateTimeOffset.UtcNow,
+                string.IsNullOrWhiteSpace(reason) ? "shutdown_server requested" : reason);
+        });
+    }
+
     private T Track<T>(string toolName, object? arguments, Func<T> action)
     {
+        runtimeState.Touch();
         return telemetryService.Track(toolName, arguments, action);
     }
 
@@ -711,6 +755,83 @@ public sealed record WatchedProjectInfo(
     string Path,
     IReadOnlyList<string> SolutionFiles);
 
+public sealed record MonitorServerShutdownResult(
+    int ProcessId,
+    DateTimeOffset RequestedAtUtc,
+    string Reason);
+
+public sealed class MonitorServerRuntimeState
+{
+    private long lastActivityTicks = DateTimeOffset.UtcNow.UtcTicks;
+    private int shutdownRequested;
+
+    public DateTimeOffset LastActivityUtc => new(Interlocked.Read(ref lastActivityTicks), TimeSpan.Zero);
+
+    public bool ShutdownRequested => Volatile.Read(ref shutdownRequested) == 1;
+
+    public void Touch()
+    {
+        Interlocked.Exchange(ref lastActivityTicks, DateTimeOffset.UtcNow.UtcTicks);
+    }
+
+    public void RequestShutdown(string? reason)
+    {
+        _ = reason;
+        Volatile.Write(ref shutdownRequested, 1);
+        Touch();
+    }
+}
+
+public sealed class MonitorServerIdleExitService : BackgroundService
+{
+    private readonly MonitorServerSettings settings;
+    private readonly MonitorServerRuntimeState runtimeState;
+    private readonly IHostApplicationLifetime applicationLifetime;
+
+    public MonitorServerIdleExitService(
+        MonitorServerSettings settings,
+        MonitorServerRuntimeState runtimeState,
+        IHostApplicationLifetime applicationLifetime)
+    {
+        this.settings = settings;
+        this.runtimeState = runtimeState;
+        this.applicationLifetime = applicationLifetime;
+    }
+
+    protected override async Task ExecuteAsync(CancellationToken stoppingToken)
+    {
+        if (settings.IdleExitAfter is null)
+        {
+            return;
+        }
+
+        TimeSpan idleExitAfter = settings.IdleExitAfter.Value;
+        while (!stoppingToken.IsCancellationRequested)
+        {
+            try
+            {
+                await Task.Delay(TimeSpan.FromMinutes(1), stoppingToken);
+            }
+            catch (OperationCanceledException)
+            {
+                return;
+            }
+
+            if (runtimeState.ShutdownRequested)
+            {
+                applicationLifetime.StopApplication();
+                return;
+            }
+
+            if (DateTimeOffset.UtcNow - runtimeState.LastActivityUtc >= idleExitAfter)
+            {
+                applicationLifetime.StopApplication();
+                return;
+            }
+        }
+    }
+}
+
 public sealed record RefreshFileAndIndexResult(
     MonitorFileRefreshResult Refresh,
     SolutionIndexFileRefreshResult Index);
@@ -720,7 +841,8 @@ public sealed record MonitorServerSettings(
     string McpServerRoot,
     string LegacyMonitorRoot,
     string WatchedProjectsRoot,
-    string WatchedSolutionPath)
+    string WatchedSolutionPath,
+    TimeSpan? IdleExitAfter = null)
 {
     public static MonitorServerSettings Load(string[]? args = null)
     {
@@ -733,6 +855,7 @@ public sealed record MonitorServerSettings(
         string legacyRoot = Path.Combine(siblingRoot, "ClaudeMonitor", "Monitor");
         string watchedRoot = siblingRoot;
         string watchedSolutionPath = FindFirstSolution(Path.Combine(Path.GetPathRoot(uiRoot) ?? "C:\\", "Schema Studio - DBV2")) ?? string.Empty;
+        TimeSpan? idleExitAfter = TimeSpan.FromMinutes(60);
 
         string settingsPath = ResolvePath(ReadOption(args ?? [], "--settings"), Directory.GetCurrentDirectory())
             ?? Path.Combine(uiRoot, "appsettings.json");
@@ -761,7 +884,29 @@ public sealed record MonitorServerSettings(
             }
         }
 
-        return new MonitorServerSettings(uiRoot, mcpRoot, legacyRoot, watchedRoot, watchedSolutionPath);
+        idleExitAfter = ResolveIdleExit(args ?? [], idleExitAfter);
+        return new MonitorServerSettings(uiRoot, mcpRoot, legacyRoot, watchedRoot, watchedSolutionPath, idleExitAfter);
+    }
+
+    private static TimeSpan? ResolveIdleExit(string[] args, TimeSpan? defaultValue)
+    {
+        string? value = ReadOption(args, "--idle-exit-minutes")
+            ?? Environment.GetEnvironmentVariable("MONITORBASECLAUDE_IDLE_EXIT_MINUTES");
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return defaultValue;
+        }
+
+        if (value.Equals("0", StringComparison.OrdinalIgnoreCase)
+            || value.Equals("off", StringComparison.OrdinalIgnoreCase)
+            || value.Equals("disabled", StringComparison.OrdinalIgnoreCase))
+        {
+            return null;
+        }
+
+        return int.TryParse(value, out int minutes) && minutes > 0
+            ? TimeSpan.FromMinutes(minutes)
+            : defaultValue;
     }
 
     private static string? ReadOption(string[] args, string name)

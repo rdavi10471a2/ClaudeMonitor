@@ -7,7 +7,7 @@ using ModelContextProtocol.Protocol;
 namespace MonitorBaseClaude;
 
 [AIFileContext("MonitorMcpClientService.cs", "Starts and talks to the new MonitorBaseClaude MCP server over stdio for the WinForms operator dashboard.")]
-[FileVersion("1.1")]
+[FileVersion("1.2")]
 public sealed class MonitorMcpClientService : IDisposable
 {
     private static readonly JsonSerializerOptions JsonOptions = new()
@@ -31,19 +31,21 @@ public sealed class MonitorMcpClientService : IDisposable
         await clientGate.WaitAsync(cancellationToken);
         try
         {
-            McpClient activeClient = await GetClientAsync(cancellationToken);
-            IList<McpClientTool> tools = await activeClient.ListToolsAsync(cancellationToken: cancellationToken);
-            string statusTool = ResolveToolName(tools, "get_monitor_status");
-            string manifestTool = ResolveToolName(tools, "get_tool_manifest");
+            return await WithRestartedClientOnFailureAsync(async activeClient =>
+            {
+                IList<McpClientTool> tools = await activeClient.ListToolsAsync(cancellationToken: cancellationToken);
+                string statusTool = ResolveToolName(tools, "get_monitor_status");
+                string manifestTool = ResolveToolName(tools, "get_tool_manifest");
 
-            CallToolResult statusResult = await activeClient.CallToolAsync(statusTool, cancellationToken: cancellationToken);
-            CallToolResult manifestResult = await activeClient.CallToolAsync(manifestTool, cancellationToken: cancellationToken);
+                CallToolResult statusResult = await activeClient.CallToolAsync(statusTool, cancellationToken: cancellationToken);
+                CallToolResult manifestResult = await activeClient.CallToolAsync(manifestTool, cancellationToken: cancellationToken);
 
-            return new MonitorMcpDashboardSnapshot(
-                tools.Select(tool => tool.Name).OrderBy(name => name, StringComparer.Ordinal).ToArray(),
-                ToJsonNode(statusResult)?.ToJsonString(JsonOptions) ?? JsonSerializer.Serialize(statusResult, JsonOptions),
-                ExtractText(manifestResult) ?? ToJsonNode(manifestResult)?.ToJsonString(JsonOptions) ?? JsonSerializer.Serialize(manifestResult, JsonOptions),
-                statusResult.IsError == true || manifestResult.IsError == true);
+                return new MonitorMcpDashboardSnapshot(
+                    tools.Select(tool => tool.Name).OrderBy(name => name, StringComparer.Ordinal).ToArray(),
+                    ToJsonNode(statusResult)?.ToJsonString(JsonOptions) ?? JsonSerializer.Serialize(statusResult, JsonOptions),
+                    ExtractText(manifestResult) ?? ToJsonNode(manifestResult)?.ToJsonString(JsonOptions) ?? JsonSerializer.Serialize(manifestResult, JsonOptions),
+                    statusResult.IsError == true || manifestResult.IsError == true);
+            }, cancellationToken);
         }
         finally
         {
@@ -59,16 +61,18 @@ public sealed class MonitorMcpClientService : IDisposable
         await clientGate.WaitAsync(cancellationToken);
         try
         {
-            McpClient activeClient = await GetClientAsync(cancellationToken);
-            CallToolResult result = await activeClient.CallToolAsync(
-                toolName,
-                arguments?.ToDictionary(pair => pair.Key, pair => pair.Value),
-                cancellationToken: cancellationToken);
-            JsonNode? resultJson = ToJsonNode(result);
-            return new MonitorMcpToolCallResult(
-                toolName,
-                result.IsError == true,
-                resultJson?.ToJsonString(JsonOptions) ?? JsonSerializer.Serialize(result, JsonOptions));
+            return await WithRestartedClientOnFailureAsync(async activeClient =>
+            {
+                CallToolResult result = await activeClient.CallToolAsync(
+                    toolName,
+                    arguments?.ToDictionary(pair => pair.Key, pair => pair.Value),
+                    cancellationToken: cancellationToken);
+                JsonNode? resultJson = ToJsonNode(result);
+                return new MonitorMcpToolCallResult(
+                    toolName,
+                    result.IsError == true,
+                    resultJson?.ToJsonString(JsonOptions) ?? JsonSerializer.Serialize(result, JsonOptions));
+            }, cancellationToken);
         }
         finally
         {
@@ -112,6 +116,40 @@ public sealed class MonitorMcpClientService : IDisposable
 
         client = await McpClient.CreateAsync(new StdioClientTransport(transportOptions), cancellationToken: cancellationToken);
         return client;
+    }
+
+    private async Task<T> WithRestartedClientOnFailureAsync<T>(
+        Func<McpClient, Task<T>> action,
+        CancellationToken cancellationToken)
+    {
+        McpClient activeClient = await GetClientAsync(cancellationToken);
+        try
+        {
+            return await action(activeClient);
+        }
+        catch when (client is not null)
+        {
+            await DisposeClientAsync();
+            activeClient = await GetClientAsync(cancellationToken);
+            return await action(activeClient);
+        }
+    }
+
+    private async Task DisposeClientAsync()
+    {
+        if (client is null)
+        {
+            return;
+        }
+
+        try
+        {
+            await client.DisposeAsync();
+        }
+        finally
+        {
+            client = null;
+        }
     }
 
     private string ResolveServerCommand()

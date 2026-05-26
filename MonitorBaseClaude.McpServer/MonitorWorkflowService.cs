@@ -369,6 +369,79 @@ public sealed partial class MonitorWorkflowService
         return WriteCandidateFile("submit_file", context, content, sessionId, manifestJson);
     }
 
+    public RazorCompanionSplitStageResult SplitRazorCodeToCompanion(
+        string sourceFilePath,
+        string? namespaceName = null,
+        bool leaveEmptyCodeBlock = false,
+        string? sessionId = null,
+        string? manifestJson = null)
+    {
+        MonitorFileContext sourceContext = ResolveFileContext(sourceFilePath, allowMissing: false);
+        if (!sourceContext.SourceFilePath.EndsWith(".razor", StringComparison.OrdinalIgnoreCase)
+            && !sourceContext.SourceFilePath.EndsWith(".razor.cs", StringComparison.OrdinalIgnoreCase))
+        {
+            throw new InvalidOperationException("split_razor_code_to_companion supports .razor and legacy hybrid .razor.cs files only.");
+        }
+
+        string effectiveSessionId = string.IsNullOrWhiteSpace(sessionId)
+            ? $"razor-split-{DateTimeOffset.UtcNow:yyyyMMddTHHmmssfffZ}"
+            : sessionId;
+        RazorCompanionSplitResult split = RazorCompanionSplitter.Split(
+            sourceContext.WatchedProjectFolder,
+            sourceContext.RelativeSourcePath,
+            File.ReadAllText(sourceContext.SourceFilePath),
+            new RazorCompanionSplitOptions(leaveEmptyCodeBlock, namespaceName));
+
+        MonitorFileContext razorContext = ResolveFileContext(split.RazorRelativePath, allowMissing: true);
+        MonitorFileContext companionContext = ResolveFileContext(split.CompanionRelativePath, allowMissing: true);
+        EnsureNoCandidateInProgress(razorContext, "Razor markup output");
+        EnsureNoCandidateInProgress(companionContext, "Razor companion output");
+
+        string combinedManifest = string.Join(
+            Environment.NewLine,
+            new[]
+            {
+                manifestJson,
+                $"splitRazorSource={sourceContext.RelativeSourcePath}",
+                $"splitRazorMarkup={split.RazorRelativePath}",
+                $"splitRazorCompanion={split.CompanionRelativePath}"
+            }.Where(value => !string.IsNullOrWhiteSpace(value)));
+
+        MonitorCandidateEditResult razorCandidate = WriteCandidateFile(
+            "split_razor_code_to_companion",
+            razorContext,
+            split.OriginalRazorText,
+            effectiveSessionId,
+            combinedManifest);
+        MonitorFileSubmitResult razorStage = StageCandidateForReview(
+            split.RazorRelativePath,
+            effectiveSessionId,
+            combinedManifest);
+
+        MonitorCandidateEditResult companionCandidate = WriteCandidateFile(
+            "split_razor_code_to_companion",
+            companionContext,
+            split.CompanionCsText,
+            effectiveSessionId,
+            combinedManifest);
+        MonitorFileSubmitResult companionStage = StageCandidateForReview(
+            split.CompanionRelativePath,
+            effectiveSessionId,
+            combinedManifest);
+
+        return new RazorCompanionSplitStageResult(
+            "staged",
+            effectiveSessionId,
+            sourceContext.SourceFilePath,
+            split.RazorRelativePath,
+            split.CompanionRelativePath,
+            razorCandidate,
+            razorStage,
+            companionCandidate,
+            companionStage,
+            split.Warnings);
+    }
+
     public MonitorCandidateEditResult ReplaceSpanInFile(
         string sourceFilePath,
         int startLine,
@@ -2128,6 +2201,14 @@ public sealed partial class MonitorWorkflowService
 
         throw new InvalidOperationException(
             $"Further staged edits are blocked for {context.RelativeSourcePath} because staged record {blocked.Value.Record.RecordId} is dirty-unexpected. Run refresh_file after Host/Operator inspection before staging another candidate.");
+    }
+
+    private void EnsureNoCandidateInProgress(MonitorFileContext context, string label)
+    {
+        if (TryReadCandidateState(context) is not null)
+        {
+            throw new InvalidOperationException($"{label} already has a monitor Working candidate in progress: {context.RelativeSourcePath}");
+        }
     }
 
     private void RecoverBlockedDirtyUnexpectedRecords(string sourceFilePath)
@@ -4037,6 +4118,18 @@ public sealed record MonitorCandidateEditResult(
     MonitorOverlayValidationResult OverlayValidation,
     string? ErrorCode = null,
     string? ErrorMessage = null);
+
+public sealed record RazorCompanionSplitStageResult(
+    string Status,
+    string SessionId,
+    string SourceFilePath,
+    string RazorRelativePath,
+    string CompanionRelativePath,
+    MonitorCandidateEditResult RazorCandidate,
+    MonitorFileSubmitResult RazorStage,
+    MonitorCandidateEditResult CompanionCandidate,
+    MonitorFileSubmitResult CompanionStage,
+    IReadOnlyList<string> Warnings);
 
 public sealed record MonitorTextSpanResult(
     string Status,
