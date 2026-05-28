@@ -205,3 +205,16 @@ When making a meaningful C# source change, preserve and update the existing `AIF
 Razor files are not plain C# files. Do not apply C# Roslyn symbol surgery directly to `.razor` or `.cshtml` source. For Razor edits, prefer `replace_text_in_file` for exact small changes or `replace_span_in_file` when bounds are already known. Full-file submission is still acceptable for broad Razor structural rewrites or unsafe narrow edits.
 
 Author new Razor components in two-file form from the start: a `.razor` markup file and a sibling `.razor.cs` partial-class companion. The companion declares `public partial class <Name>`, holds all C# members that would otherwise live in `@code`, and includes the standard Blazor usings (Razor SDK's implicit `Microsoft.AspNetCore.Components`, plus any `_Imports.razor` directives the component depends on). Stage both files in one monitor session so overlay validation sees them together. Do not start a new component with inline `@code`; that pattern blocks typed-symbol edits to its C# members and forces a later split. For legacy single-file components that already have inline `@code`, use `split_razor_code_to_companion` to migrate to the two-file form before applying typed-symbol edits.
+
+### Editing existing Razor components
+
+Before editing a Razor `@code` member, detect the file's split state with two cheap checks: (1) does a sibling `<name>.razor.cs` exist (`find_file` or Glob), and (2) does the `.razor` still contain an `@code` block (grep or short read). Cross-tabulate:
+
+| `.razor.cs` exists? | `@code` in `.razor`? | State | Action |
+|---|---|---|---|
+| no  | yes | Unsplit (clean) | Small one-off → `replace_text_in_file` on the `.razor`. Non-trivial change → **stop and ask the operator to authorize `split_razor_code_to_companion` first**; do not split autonomously. |
+| no  | no  | Markup-only, no code | Normal Razor text edits via `replace_text_in_file`. |
+| yes | no  | Already split (clean) | Treat the `.razor.cs` companion as plain C# — typed-symbol tools (`add_method`, `submit_symbol`, `remove_symbol`, etc.). Reserve `replace_text_in_file` for the `.razor` markup side. |
+| yes | yes | **Mixed/partial split** | **Stop and surface to the operator.** `split_razor_code_to_companion` will refuse this state; the two surfaces are out of sync and the resolution (finish the move, or roll one side back) needs a human decision. |
+
+The split itself is a structural migration to file shape — never run `split_razor_code_to_companion` as a side effect of a feature request. Propose, name the reason, wait for the explicit yes.

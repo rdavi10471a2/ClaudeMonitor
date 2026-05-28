@@ -39,7 +39,10 @@ The active safety mechanism is session overlay validation plus gated serial diff
 | Replace a known line/column span | `replace_span_in_file` |
 | Create a brand-new file | `submit_file` |
 | Create a brand-new Razor component | Two `submit_file` calls in one session: `.razor` markup + `.razor.cs` partial-class companion. Do not start a new Razor file with inline `@code`. |
-| Migrate legacy inline-`@code` Razor to two-file form | `split_razor_code_to_companion` |
+| Migrate legacy inline-`@code` Razor to two-file form | `split_razor_code_to_companion` — **ask the operator first**; never split as a side effect of a feature request |
+| Edit a member in an existing `.razor.cs` companion (split is clean) | Typed-symbol tools (`add_method` / `submit_symbol` / `remove_symbol` / etc.) — treat the companion as plain C# |
+| Edit a member in an unsplit `.razor` (no companion, `@code` inline) | Small one-off → `replace_text_in_file` on the `.razor`. Non-trivial → stop and ask the operator to authorize a split first |
+| Mixed state: `.razor.cs` exists AND `.razor` still has `@code` | **Stop and ask the operator**; `split_razor_code_to_companion` refuses this state |
 | Regenerate or deliberately replace a whole file | `submit_file` |
 
 Do not use `submit_file` for ordinary member-level edits just because you have the full file in context.

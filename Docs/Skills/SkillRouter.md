@@ -16,6 +16,7 @@ Confirm task type from get_workflow_status output or the user's task description
 - Async/signature/API caller propagation: `AsyncPropagation.md`
 - Human-guided companion partial extraction: `PartialClassRefactor.md`
 - New Razor component authoring (markup + companion partial class): see CLAUDE.md "Razor Files" — start in two-file form, do not author with inline `@code`.
+- Editing an existing Razor `@code` member: see CLAUDE.md "Razor Files → Editing existing Razor components". Detect split state (sibling `.razor.cs` + `@code` presence) before choosing between typed-symbol on the companion, text-edit on the `.razor`, or stop-and-ask for a split.
 - Live tool-traffic verification or debugging: `TroubleshootingDashboard.md`
 
 ## Layering
