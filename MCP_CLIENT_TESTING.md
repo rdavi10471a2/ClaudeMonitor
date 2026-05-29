@@ -18,7 +18,15 @@ Build it before opening Claude Code:
 dotnet build C:\VSCodeProjects\MonitorBaseClaude\MonitorBaseClaude.McpServer\MonitorBaseClaude.McpServer.csproj
 ```
 
-For the Claude Code for VS Code bridge path, also build the hub bridge and Roslyn telemetry proxy:
+For Claude Code in the VS Code extension, `.mcp.json` binds the Monitor MCP name to the hub bridge executable:
+
+```text
+Claude Code -> McpHubBridge.exe -> MonitorBaseClaude.exe WinForms hub -> real MCP server
+```
+
+Starting `MonitorBaseClaude.exe` starts the WinForms hub pipe, not the bridge process. Claude/VS Code starts `McpHubBridge.exe` from `.mcp.json`; the bridge connects to the already-running hub, and the hub starts or reconnects the real Monitor server behind that client stream. Roslyn support remains behind Monitor/hub-owned surfaces, not a second Claude-facing MCP binding.
+
+Build the hub bridge and Roslyn telemetry proxy before opening Claude Code:
 
 ```powershell
 dotnet build C:\VSCodeProjects\MonitorBaseClaude\Tools\McpHubBridge\McpHubBridge.csproj
@@ -32,11 +40,13 @@ Before live MCP testing:
 1. Build the solution or at least the MCP server, hub bridge, and Roslyn telemetry proxy.
 2. Start `MonitorBaseClaude.exe` so the WinForms Host owns the MCP hub pipe.
 3. Fully restart the VS Code window that owns Claude Code. `Developer: Reload Window` may not respawn MCP launchers or refresh tool bindings.
-4. Confirm `monitor-base-claude` and `roslyn-codelens` reconnect.
+4. Confirm `monitor-base-claude` reconnects.
 5. Call `get_monitor_status`, `get_tool_manifest`, `get_staging_guide`, and `get_workflow_status`.
-6. Confirm Roslyn `list_solutions` and `get_diagnostics` work before staging C# changes.
+6. Confirm Monitor solution-index/source-map tools work before staging C# changes.
 
 If the bridge reports that the WinForms hub stream closed or the pipe cannot be reached, restart `MonitorBaseClaude.exe` and then fully restart the VS Code window.
+
+The PowerShell scripts under `Tools` are developer convenience wrappers only. They are not the canonical Claude Code binding path; the VS Code Claude plugin should launch `McpHubBridge.exe` directly from `.mcp.json`.
 
 ## Claude Code / VS Code Test
 
@@ -74,11 +84,11 @@ Use find_file and get_source_map to inspect the related files for an edit under 
 
 The real migration rule is that the legacy monitor command/help surface becomes typed MCP tools. The manifest is the bridge document while the tools are ported one by one.
 
-## Roslyn CodeLens Pairing
+## Roslyn-Derived Context
 
-Use Roslyn CodeLens MCP for semantic questions such as diagnostics, references, callers, implementations, type hierarchy, dependency analysis, and generated code. Use Monitor MCP for staging, hashes, WinMerge review paths, ledgers, and `record_diff_decision`.
+Use Monitor MCP for semantic questions through its Roslyn-derived solution index and source-map surfaces, and for staging, hashes, WinMerge review paths, ledgers, and `record_diff_decision`. The normal Claude/VS Code workflow does not expose a separate `roslyn-codelens` MCP binding.
 
-Use `Docs/RoslynToolingTeachingSpec.md` as the concrete recipe sheet for Roslyn arguments. The important discipline is schema-first argument acquisition: `search_symbols` uses `query`, while reference/caller/impact tools use `symbol`.
+Use `Docs/RoslynToolingTeachingSpec.md` only when a separate Roslyn namespace is deliberately attached for an experiment. The normal workflow should follow `get_tool_manifest` and Monitor tool descriptions.
 
 The expected C# context loop is:
 

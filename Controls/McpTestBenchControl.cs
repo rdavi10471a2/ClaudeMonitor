@@ -8,7 +8,7 @@ namespace MonitorBaseClaude.Controls;
 
 [DesignerCategory("Code")]
 [AIFileContext("McpTestBenchControl.cs", "Code-only MCP test surface for loading a solution through the telemetry proxy and proving project-scoped calls.")]
-[FileVersion("1.4")]
+[FileVersion("1.5")]
 public sealed class McpTestBenchControl : UserControl
 {
     private const int FriendlySplitterWidth = 12;
@@ -105,7 +105,7 @@ public sealed class McpTestBenchControl : UserControl
         solutionPathTextBox.MinimumSize = new Size(300, 0);
         solutionPathTextBox.Margin = new Padding(0, 7, 10, 7);
         solutionPathTextBox.ReadOnly = true;
-        solutionPathTextBox.Text = settings.CodeLensSolutionPath;
+        solutionPathTextBox.Text = settings.WatchedSolutionPath;
         solutionPathTextBox.TextChanged += SolutionPathTextBox_TextChanged;
         browseButton.Visible = false;
         loadSolutionButton.Text = "Reload";
@@ -253,7 +253,7 @@ public sealed class McpTestBenchControl : UserControl
             Title = "Select a Visual Studio solution",
             Filter = "Visual Studio Solution (*.sln)|*.sln|All files (*.*)|*.*",
             CheckFileExists = true,
-            InitialDirectory = Directory.Exists(Path.GetDirectoryName(settings.CodeLensSolutionPath)) ? Path.GetDirectoryName(settings.CodeLensSolutionPath) : Environment.CurrentDirectory,
+            InitialDirectory = Directory.Exists(Path.GetDirectoryName(settings.WatchedSolutionPath)) ? Path.GetDirectoryName(settings.WatchedSolutionPath) : Environment.CurrentDirectory,
             Multiselect = false
         };
 

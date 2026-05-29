@@ -69,11 +69,17 @@ The source-map hierarchy is intentional:
 dotnet build .\MonitorBaseClaude.slnx
 ```
 
-## Claude Desktop On Windows
+## Claude MCP Binding
 
-Build the MCP server first, then point Claude Desktop at the server executables directly. Do not use `dotnet run` or PowerShell wrapper scripts as the Desktop MCP command on the Windows MSIX build; the wrapper layer can break stdio forwarding and MSBuild output can pollute the JSON-RPC stream.
+Build the solution first, start `MonitorBaseClaude.exe`, then let Claude bind to the hub bridge executable. The canonical path is:
 
-Use `Docs/ClaudeDesktopAndCodeSetup.md` for the workstation-local direct-exe config.
+```text
+Claude -> McpHubBridge.exe -> MonitorBaseClaude.exe WinForms hub -> real MCP server
+```
+
+Starting `MonitorBaseClaude.exe` starts the hub pipe. Claude starts the bridge process from its MCP config, then the bridge connects to that hub.
+
+Do not use `dotnet run` or PowerShell wrapper scripts as Claude MCP commands. The wrapper layer can break stdio forwarding and MSBuild output can pollute the JSON-RPC stream. Use `Docs/ClaudeDesktopAndCodeSetup.md` for the workstation-local bridge config.
 
 ## High-Value Smokes
 

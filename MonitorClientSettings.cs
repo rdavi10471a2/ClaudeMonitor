@@ -3,14 +3,13 @@ using MonitorBaseClaude.AI;
 
 namespace MonitorBaseClaude;
 
-[AIFileContext("MonitorClientSettings.cs", "Loads local WinForms monitor client settings such as UI root, new MCP server root, legacy monitor source, watched solution, CodeLens solution path, and local Ollama defaults.")]
-[FileVersion("1.4")]
+[AIFileContext("MonitorClientSettings.cs", "Loads local WinForms monitor client settings such as UI root, MCP server root, legacy monitor source, the single watched solution path shared by Monitor and Roslyn, and local Ollama defaults.")]
+[FileVersion("1.7")]
 public sealed record MonitorClientSettings(
     string UiRoot,
     string MonitorMcpServerRoot,
     string LegacyMonitorRoot,
     string WatchedSolutionPath,
-    string CodeLensSolutionPath,
     string OllamaEndpoint,
     string OllamaModel)
 {
@@ -33,11 +32,9 @@ public sealed record MonitorClientSettings(
         string uiRoot = FindAncestorWithFile(baseDirectory, "MonitorBaseClaude.csproj")
             ?? FindAncestorWithFile(currentDirectory, "MonitorBaseClaude.csproj")
             ?? currentDirectory;
-        string siblingRoot = Directory.GetParent(uiRoot)?.FullName ?? uiRoot;
         string monitorMcpServerRoot = Path.Combine(uiRoot, "MonitorBaseClaude.McpServer");
-        string legacyMonitorRoot = Path.Combine(siblingRoot, "ClaudeMonitor", "Monitor");
-        string watchedSolutionPath = FindFirstSolution(Path.Combine(Path.GetPathRoot(uiRoot) ?? "C:\\", "Schema Studio - DBV2")) ?? string.Empty;
-        string codeLensSolutionPath = watchedSolutionPath;
+        string legacyMonitorRoot = Path.Combine(uiRoot, "Monitor");
+        string watchedSolutionPath = string.Empty;
         string ollamaEndpoint = "http://127.0.0.1:11434";
         string ollamaModel = "qwen3-coder:30b";
 
@@ -52,7 +49,6 @@ public sealed record MonitorClientSettings(
                 monitorMcpServerRoot = ResolvePath(GetString(client, "MonitorMcpServerRoot"), settingsDirectory) ?? monitorMcpServerRoot;
                 legacyMonitorRoot = ResolvePath(GetString(client, "LegacyMonitorRoot"), settingsDirectory) ?? legacyMonitorRoot;
                 watchedSolutionPath = ResolvePath(GetString(client, "WatchedSolutionPath"), settingsDirectory) ?? watchedSolutionPath;
-                codeLensSolutionPath = ResolvePath(GetString(client, "CodeLensSolutionPath"), settingsDirectory) ?? codeLensSolutionPath;
                 ollamaEndpoint = GetString(client, "OllamaEndpoint") ?? ollamaEndpoint;
                 ollamaModel = GetString(client, "OllamaModel") ?? ollamaModel;
             }
@@ -60,7 +56,9 @@ public sealed record MonitorClientSettings(
             if (root.TryGetProperty("WorkflowSettings", out JsonElement workflow))
             {
                 string? observedRoot = ResolvePath(GetString(workflow, "ObservedRoot"), settingsDirectory);
-                if (!string.IsNullOrWhiteSpace(observedRoot) && Directory.Exists(observedRoot))
+                if (string.IsNullOrWhiteSpace(watchedSolutionPath)
+                    && !string.IsNullOrWhiteSpace(observedRoot)
+                    && Directory.Exists(observedRoot))
                 {
                     watchedSolutionPath = Directory.GetFiles(observedRoot, "*.sln", SearchOption.TopDirectoryOnly)
                         .OrderBy(path => path, StringComparer.OrdinalIgnoreCase)
@@ -69,7 +67,7 @@ public sealed record MonitorClientSettings(
             }
         }
 
-        return new MonitorClientSettings(uiRoot, monitorMcpServerRoot, legacyMonitorRoot, watchedSolutionPath, codeLensSolutionPath, ollamaEndpoint, ollamaModel);
+        return new MonitorClientSettings(uiRoot, monitorMcpServerRoot, legacyMonitorRoot, watchedSolutionPath, ollamaEndpoint, ollamaModel);
     }
 
     private static string? ResolvePath(string? path, string baseDirectory)

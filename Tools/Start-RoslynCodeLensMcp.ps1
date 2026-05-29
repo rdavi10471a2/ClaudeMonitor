@@ -8,7 +8,7 @@ if (-not (Test-Path -LiteralPath $settingsPath)) {
 }
 
 $settings = Get-Content -LiteralPath $settingsPath -Raw | ConvertFrom-Json
-$solutionPath = $settings.MonitorClient.CodeLensSolutionPath
+$solutionPath = $settings.MonitorClient.WatchedSolutionPath
 
 if ([string]::IsNullOrWhiteSpace($solutionPath) -and $settings.WorkflowSettings.ObservedRoot) {
     $observedRoot = $settings.WorkflowSettings.ObservedRoot
@@ -21,12 +21,16 @@ if ([string]::IsNullOrWhiteSpace($solutionPath) -and $settings.WorkflowSettings.
         Select-Object -First 1 -ExpandProperty FullName
 }
 
+if ([string]::IsNullOrWhiteSpace($solutionPath)) {
+    throw "No watched solution configured. Set MonitorClient:WatchedSolutionPath in $settingsPath."
+}
+
 if (-not [System.IO.Path]::IsPathRooted($solutionPath)) {
     $solutionPath = Join-Path (Split-Path -Parent $settingsPath) $solutionPath
 }
 
 if (-not (Test-Path -LiteralPath $solutionPath)) {
-    throw "CodeLens solution path not found: $solutionPath"
+    throw "Watched solution path not found: $solutionPath"
 }
 
 $hubBridgeCommand = Join-Path $repoRoot 'Tools\McpHubBridge\bin\Debug\net10.0\McpHubBridge.exe'

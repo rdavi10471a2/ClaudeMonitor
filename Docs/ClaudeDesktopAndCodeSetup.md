@@ -7,9 +7,9 @@ This note captures the intended Claude setup for MonitorBaseClaude.
 - Claude Code in VS Code or terminal for local project-aware work.
 - Claude Desktop for conversation and MCP experiments where available.
 - Monitor MCP Tool Server for workflow, staging, hashes, ledgers, and review classification.
-- Roslyn CodeLens MCP for semantic .NET code intelligence.
+- Roslyn-derived semantic .NET code intelligence through Monitor-owned index/source-map/hub surfaces.
 
-Claude Code official MCP docs describe project `.mcp.json` files, `/mcp` status checks, project-scoped server approval prompts, and MCP prompts/resources. Roslyn CodeLens setup pages advertise Claude Code and Claude Desktop usage with stdio MCP configuration, including `claude mcp add roslyn-codelens -- roslyn-codelens-mcp` or a `.mcp.json`/desktop config entry.
+Claude Code official MCP docs describe project `.mcp.json` files, `/mcp` status checks, project-scoped server approval prompts, and MCP prompts/resources. Roslyn CodeLens setup pages advertise direct Claude bindings, but this project does not use a direct `roslyn-codelens` binding in the normal VS Code workflow; Monitor is the single Claude-facing MCP server.
 
 Sources used during setup review:
 
@@ -24,15 +24,16 @@ Sources used during setup review:
 Machine-local paths live in `appsettings.json`. Start from `appsettings.template.json`, then set:
 
 - `MonitorClient:WatchedSolutionPath`
-- `MonitorClient:CodeLensSolutionPath`
-- `WorkflowSettings:ObservedRoot`
+- `WorkflowSettings:ObservedRoot` only as a legacy/fallback folder when no watched solution path is configured.
 
-Relative paths in `appsettings.json` are resolved from the config file folder. The project `.mcp.json` uses repo-local PowerShell scripts for Claude Code and developer shells. Claude Desktop on Windows MSIX should use the direct-exe configuration in the Desktop section below.
+`MonitorClient:WatchedSolutionPath` is the shared solution identity for Monitor and Roslyn-derived context. The watched project does not need to be a sibling of the Monitor repository; it can live anywhere the local machine can read.
 
-Build the Monitor MCP server first:
+Relative paths in `appsettings.json` are resolved from the config file folder. The project `.mcp.json` binds one Claude-facing MCP name, `monitor-base-claude`, directly to the repo-local hub bridge executable. The PowerShell scripts under `Tools` are developer convenience wrappers, not the canonical Claude/VS Code binding path.
+
+Build the solution first:
 
 ```powershell
-dotnet build .\MonitorBaseClaude.McpServer\MonitorBaseClaude.McpServer.csproj
+dotnet build .\MonitorBaseClaude.slnx
 ```
 
 Open the project root:
@@ -92,32 +93,28 @@ Claude Desktop may not automatically read `CLAUDE.md` the same way Claude Code d
 - Do not use source process markers or glyph anchors.
 - Diff review is all-or-none.
 
-Desktop MCP configuration must point to the built server executables directly. Do not launch the servers through PowerShell wrappers from Desktop's MSIX build; that path can break stdio forwarding before the MCP `initialize` request reaches the server.
+Desktop MCP configuration should also point directly to the built bridge executable when you want all MCP traffic visible in the WinForms dashboard. Do not launch the servers through PowerShell wrappers from Desktop's MSIX build; that path can break stdio forwarding before the MCP `initialize` request reaches the server.
 
-Use this workstation-local shape after building the Monitor MCP server:
+Use this workstation-local shape after building the solution and starting `MonitorBaseClaude.exe`:
 
 ```json
 {
   "mcpServers": {
     "monitor-base-claude": {
-      "command": "C:\\VSCodeProjects\\MonitorBaseClaude\\MonitorBaseClaude.McpServer\\bin\\Debug\\net10.0\\MonitorBaseClaude.McpServer.exe",
-      "args": ["--settings", "C:\\VSCodeProjects\\MonitorBaseClaude\\appsettings.json"]
-    },
-    "roslyn-codelens": {
-      "command": "C:\\Users\\rdavi\\.dotnet\\tools\\roslyn-codelens-mcp.exe",
-      "args": ["C:\\Schema Studio - DBV2\\Schema Studio.sln"]
+      "command": "C:\\VSCodeProjects\\MonitorBaseClaude\\Tools\\McpHubBridge\\bin\\Debug\\net10.0\\McpHubBridge.exe",
+      "args": ["--server", "monitor"]
     }
   }
 }
 ```
 
-The PowerShell scripts under `Tools` remain useful for developer shells and Claude Code experiments, but they are not the canonical Claude Desktop entry point on Windows MSIX.
+The bridge is the stdio process Claude binds. Starting the WinForms app starts the named-pipe hub, not the bridge process. Claude/VS Code or Claude Desktop starts `McpHubBridge.exe`; the bridge connects to the already-running hub, and the hub starts or reconnects the real Monitor server process behind the pipe. `MonitorClient:WatchedSolutionPath` is the single watched solution path.
 
-## Roslyn CodeLens Pairing
+## Roslyn Context
 
-Roslyn CodeLens is valid as a Claude-facing MCP tool because its public setup material explicitly targets Claude clients. Use it beside Monitor MCP, not instead of Monitor MCP.
+The normal Claude-facing setup exposes only Monitor MCP. Roslyn-derived answers are still available through Monitor's solution index, source maps, overlay compile validation, and hub-owned internals. A direct Roslyn CodeLens MCP binding is reserved for explicit experiments, not the standard workflow.
 
-Use CodeLens for:
+Use Monitor/Roslyn-derived context for:
 
 - diagnostics
 - references
@@ -126,9 +123,9 @@ Use CodeLens for:
 - project dependencies
 - source generator inspection
 - generated code inspection
-- code actions in preview mode
+- code-action analysis only when explicitly surfaced through an approved experimental route
 
-Do not use CodeLens `apply_code_action` as the normal write path for the watched solution. If CodeLens suggests a refactoring or fix, use it as analysis input, then stage the resulting watched-source change through Monitor MCP so the Operator review and vote-plus-hash gate still apply.
+Do not use CodeLens `apply_code_action` as the normal write path for the watched solution if a direct Roslyn binding is manually attached. If CodeLens suggests a refactoring or fix, use it as analysis input, then stage the resulting watched-source change through Monitor MCP so the Operator review and vote-plus-hash gate still apply.
 
 Use Monitor MCP for:
 

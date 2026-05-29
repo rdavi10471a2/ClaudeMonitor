@@ -859,11 +859,10 @@ public sealed record MonitorServerSettings(
         string uiRoot = FindAncestorWithFile(baseDirectory, "MonitorBaseClaude.csproj")
             ?? FindAncestorWithFile(Directory.GetCurrentDirectory(), "MonitorBaseClaude.csproj")
             ?? Directory.GetCurrentDirectory();
-        string siblingRoot = Directory.GetParent(uiRoot)?.FullName ?? uiRoot;
         string mcpRoot = Path.Combine(uiRoot, "MonitorBaseClaude.McpServer");
-        string legacyRoot = Path.Combine(siblingRoot, "ClaudeMonitor", "Monitor");
-        string watchedRoot = siblingRoot;
-        string watchedSolutionPath = FindFirstSolution(Path.Combine(Path.GetPathRoot(uiRoot) ?? "C:\\", "Schema Studio - DBV2")) ?? string.Empty;
+        string legacyRoot = Path.Combine(uiRoot, "Monitor");
+        string watchedRoot = uiRoot;
+        string watchedSolutionPath = string.Empty;
         TimeSpan? idleExitAfter = TimeSpan.FromMinutes(60);
 
         string settingsPath = ResolvePath(ReadOption(args ?? [], "--settings"), Directory.GetCurrentDirectory())
@@ -884,7 +883,9 @@ public sealed record MonitorServerSettings(
             if (document.RootElement.TryGetProperty("WorkflowSettings", out JsonElement workflow))
             {
                 string? observedRoot = ResolvePath(GetString(workflow, "ObservedRoot"), settingsDirectory);
-                if (!string.IsNullOrWhiteSpace(observedRoot) && Directory.Exists(observedRoot))
+                if (string.IsNullOrWhiteSpace(watchedSolutionPath)
+                    && !string.IsNullOrWhiteSpace(observedRoot)
+                    && Directory.Exists(observedRoot))
                 {
                     watchedSolutionPath = Directory.GetFiles(observedRoot, "*.sln", SearchOption.TopDirectoryOnly)
                         .OrderBy(path => path, StringComparer.OrdinalIgnoreCase)
@@ -949,15 +950,6 @@ public sealed record MonitorServerSettings(
         {
             return path;
         }
-    }
-
-    private static string? FindFirstSolution(string folder)
-    {
-        return Directory.Exists(folder)
-            ? Directory.GetFiles(folder, "*.sln", SearchOption.TopDirectoryOnly)
-                .OrderBy(path => path, StringComparer.OrdinalIgnoreCase)
-                .FirstOrDefault()
-            : null;
     }
 
     private static string? FindAncestorWithFile(string startPath, string fileName)

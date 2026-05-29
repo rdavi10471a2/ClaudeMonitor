@@ -6,7 +6,7 @@ namespace MonitorBaseClaude.Controls;
 
 [DesignerCategory("Code")]
 [AIFileContext("MonitorHomeControl.cs", "Default code-only dashboard page for the monitor workflow, MCP server destination, source implementation folder, and watched solution.")]
-[FileVersion("1.6")]
+[FileVersion("1.7")]
 public sealed class MonitorHomeControl : UserControl
 {
     private readonly MonitorClientSettings settings;
@@ -16,7 +16,7 @@ public sealed class MonitorHomeControl : UserControl
     private readonly Label legacyMonitorRootValue = CreateValueLabel();
     private readonly Label watchedSolutionValue = CreateValueLabel();
     private readonly Label watchedProjectFolderValue = CreateValueLabel();
-    private readonly Label codeLensSolutionValue = CreateValueLabel();
+    private readonly Label roslynBridgeSolutionValue = CreateValueLabel();
     private readonly Label ollamaValue = CreateValueLabel();
     private readonly Label monitorStatusValue = CreateValueLabel();
     private readonly RichTextBox notes = new()
@@ -68,7 +68,7 @@ public sealed class MonitorHomeControl : UserControl
         AddFact(facts, 2, "Source implementation root", legacyMonitorRootValue);
         AddFact(facts, 3, "Watched solution", watchedSolutionValue);
         AddFact(facts, 4, "Watched project folder", watchedProjectFolderValue);
-        AddFact(facts, 5, "CodeLens solution", codeLensSolutionValue);
+        AddFact(facts, 5, "Roslyn bridge solution", roslynBridgeSolutionValue);
         AddFact(facts, 6, "Local Ollama", ollamaValue);
         AddFact(facts, 7, "Monitor MCP", monitorStatusValue);
 
@@ -98,7 +98,7 @@ public sealed class MonitorHomeControl : UserControl
         legacyMonitorRootValue.Text = settings.LegacyMonitorRoot;
         watchedSolutionValue.Text = settings.WatchedSolutionPath;
         watchedProjectFolderValue.Text = Path.GetDirectoryName(settings.WatchedSolutionPath) ?? "(folder not found)";
-        codeLensSolutionValue.Text = settings.CodeLensSolutionPath;
+        roslynBridgeSolutionValue.Text = settings.WatchedSolutionPath;
         ollamaValue.Text = $"{settings.OllamaModel} at {settings.OllamaEndpoint}";
         monitorStatusValue.Text = Directory.Exists(settings.MonitorMcpServerRoot) ? "Scaffolded, not connected" : "Not created";
         notes.Text = "Monitor dashboard\r\n=================\r\n\r\nWorking model:\r\n- WinForms UI lives here and drives MCP servers.\r\n- Monitor MCP Server is the workflow API for files, sessions, refresh, compare, and history.\r\n- Source implementation root is reference code while the Server tool surface is completed.\r\n- CodeLens MCP Server is the Roslyn API for symbols, diagnostics, dependencies, and analysis.\r\n- Watched input is a solution file, currently DBV2.\r\n- Local Ollama is the baby-Claude Host simulation for tool routing and answer shaping.\r\n\r\nConnecting to MonitorBaseClaude.McpServer...\r\n";

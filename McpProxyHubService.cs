@@ -10,7 +10,7 @@ using MonitorBaseClaude.AI;
 namespace MonitorBaseClaude;
 
 [AIFileContext("McpProxyHubService.cs", "WinForms-owned MCP stdio relay hub that keeps external MCP traffic observable through the dashboard process.")]
-[FileVersion("1.0")]
+[FileVersion("1.1")]
 public sealed class McpProxyHubService : IDisposable
 {
     public const string PipeName = "MonitorBaseClaude.McpProxyHub";
@@ -515,7 +515,7 @@ public sealed class McpProxyHubService : IDisposable
         if (handshake.Server.Equals("roslyn", StringComparison.OrdinalIgnoreCase)
             || handshake.Server.Equals("roslyn-codelens", StringComparison.OrdinalIgnoreCase))
         {
-            string solutionPath = FirstNonWhiteSpace(handshake.SolutionPath, settings.CodeLensSolutionPath)
+            string solutionPath = FirstNonWhiteSpace(handshake.SolutionPath, settings.WatchedSolutionPath)
                 ?? throw new InvalidOperationException("Roslyn hub launch requires a solution path.");
             string? resolvedSolution = RoslynCodeLensMcpClientService.ResolveSolutionPath(solutionPath)
                 ?? throw new FileNotFoundException("Roslyn solution path not found.", solutionPath);

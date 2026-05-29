@@ -99,7 +99,8 @@ internal static class Program
     private static void PrintUsage()
     {
         Console.Error.WriteLine("McpHubBridge --server monitor");
-        Console.Error.WriteLine("McpHubBridge --server roslyn --solution <solution-or-folder> [--server-command <roslyn-codelens-mcp.exe>]");
+        Console.Error.WriteLine("McpHubBridge --server roslyn [--solution <solution-or-folder>] [--server-command <roslyn-codelens-mcp.exe>]");
+        Console.Error.WriteLine("When --solution is omitted, the WinForms hub uses MonitorClient:WatchedSolutionPath.");
     }
 }
 

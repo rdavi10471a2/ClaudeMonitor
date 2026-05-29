@@ -38,7 +38,7 @@ Working\History\ToolSmokeTests\<run-id>\
 | `--fixture-template-class-smoke` | Disposable DBV2-shaped C# fixture with placeholder file | Generated class shape through whole-file `submit_file`; verifies region order, nested types, final source map. This is not true new-file staging. | `fixture-template-class-summary.md` |
 | `--fixture-new-file-smoke` | Disposable DBV2-shaped C# fixture with nonexistent target paths | True new-file staging through `submit_file`; verifies `<new-file>` baseline hashes, simulated accepted creation, rejected absent-file classification, and source-map read after creation. | `fixture-new-file-summary.md` |
 | `--fixture-razor-smoke` | Disposable Razor fixture | Text `submit_file` path for `.razor`; verifies syntax/overlay behavior is Razor-pending and accepted decision path. | `fixture-razor-summary.md` |
-| `--fixture-roslyn-semantic-smoke` | Configured `CodeLensSolutionPath` | External Roslyn CodeLens semantic ladder: `tools/list`, `list_solutions`, `get_diagnostics`, `search_symbols(query)`, `get_type_overview(typeName)`, `find_references(symbol)`, `find_callers(symbol)`, `find_implementations(symbol)`, `analyze_change_impact(symbol)`. Optional: `--symbol-query`, `--type-name`, `--symbol`, `--implementation-symbol`. | `fixture-roslyn-semantic-summary.md` |
+| `--fixture-roslyn-semantic-smoke` | Configured watched solution | External Roslyn CodeLens semantic ladder through the bridge: `tools/list`, `list_solutions`, `get_diagnostics`, `search_symbols(query)`, `get_type_overview(typeName)`, `find_references(symbol)`, `find_callers(symbol)`, `find_implementations(symbol)`, `analyze_change_impact(symbol)`. Optional: `--symbol-query`, `--type-name`, `--symbol`, `--implementation-symbol`. | `fixture-roslyn-semantic-summary.md` |
 | `--source-map-smoke [path]` | Configured watched solution | Single `get_source_map` call with optional `--scope` and `--mode`; writes raw and summary artifacts. | `source-map-summary.md` |
 | `--source-map-budget-smoke [path]` | Configured watched solution | Same as source-map smoke, but expects an over-budget/truncated response. Defaults: `scope=project`, `mode=full`. | `source-map-summary.md` |
 | `--source-map-corpus-smoke [path]` | Configured watched solution | Walks C# files under a target folder/project and records source-map size, token proxy, symbol counts, diagnostics, compact map, and navigation index. | `source-map-corpus-summary.md` |
@@ -88,7 +88,7 @@ Working\History\ToolSmokeTests\<run-id>\
 ## Known Gaps
 
 - True new-file staging is covered by `--fixture-new-file-smoke`, but the live WinMerge GUI path for reviewing a missing watched source path still needs a manual operator pass.
-- CodeLens semantic smoke currently uses the configured live `CodeLensSolutionPath`; reference/caller/implementation counts are not deterministic.
+- CodeLens semantic smoke currently uses the configured watched solution through the bridge; reference/caller/implementation counts are not deterministic.
 - No overload-specific CodeLens reference smoke exists yet.
 - No async/API impact smoke exists yet.
 - No generated-code/source-generator CodeLens smoke exists yet.

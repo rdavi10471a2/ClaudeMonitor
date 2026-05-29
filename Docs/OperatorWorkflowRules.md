@@ -6,9 +6,11 @@ This file translates the relevant source monitor `AGENTS.md` rules into project 
 
 - Host root: `C:\VSCodeProjects\MonitorBaseClaude`
 - Monitor Tool Server root: `C:\VSCodeProjects\MonitorBaseClaude\MonitorBaseClaude.McpServer`
-- Source implementation root: `C:\VSCodeProjects\ClaudeMonitor\Monitor`
-- Watched solution: `C:\Schema Studio - DBV2\Schema Studio.sln`
-- Watched project folder: `C:\Schema Studio - DBV2`
+- Bridge executable: `C:\VSCodeProjects\MonitorBaseClaude\Tools\McpHubBridge\bin\Debug\net10.0\McpHubBridge.exe`
+- Watched solution: configured by `MonitorClient:WatchedSolutionPath` in local `appsettings.json`
+- Watched project folder: the containing folder of `MonitorClient:WatchedSolutionPath`
+
+The watched solution does not need to be a sibling of the Monitor repository. Claude-facing MCP bindings should flow through the bridge executable into the WinForms hub; the hub owns the real Monitor/Roslyn server lifecycle and shared watched solution path.
 
 ## State Ownership
 
