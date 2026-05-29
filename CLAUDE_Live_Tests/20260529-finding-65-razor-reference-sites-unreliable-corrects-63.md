@@ -65,3 +65,25 @@ Observation only; not a fix design. Practical consumer rule derived from this ru
 - Finding **where** a member is used when markup is involved: do not trust the indexed reference line, and do not trust an empty caller set. Grep the real `.razor` to locate the actual usage.
 
 This supersedes Finding 63's framing. The two failure shapes (generated-coordinate references with real path/hash; silent empty callers for split markup handlers) are distinct and may have separate root causes in how the indexer treats the Razor-generated compilation unit versus the hand-written companion partials.
+
+## Follow-up — scoping the `__GeneratedComponent` exclude question
+
+Considered: can the `__GeneratedComponent` namespace (the synthetic namespace for the generated Razor `AspNetCore_<hash> : ComponentBase` classes) be excluded from the index entirely to drop the unreliable Razor reference data? Note this is a synthetic namespace, not a disk folder.
+
+A blanket exclude is the wrong cut **today** because that namespace carries both halves at once:
+- Good half: for inline `@code` components it is the only place `@code` member **declarations** are indexed, and those declarations map to real `.razor` coordinates (the part that works — navigate TO a member).
+- Bad half: the non-navigable generated-coordinate reference/caller rows described above.
+
+Impact measured on the watched solution (`C:\SchemaStudioWebViewer V 1.1`, 2026-05-29):
+- total `.razor` files: 33
+- have an `@code` block: 27
+- have a `.razor.cs` companion: 2
+- **inline `@code` with no companion: 26**
+
+So excluding `__GeneratedComponent` now would blind the index to the `@code` declarations of 26 of 33 components to suppress the bad reference rows. Net loss.
+
+Two clean directions (observation, not a chosen fix):
+1. **Finish the inline→split migration** (project policy already favors two-file Razor going forward). Once a component is split, its declarations and real-coordinate references live in the companion `.cs` under the real namespace, and the markup file contributes only the render-class shell plus junk refs — at which point `__GeneratedComponent` is pure noise and safe to drop. The 2 already-split components are already in this state.
+2. **Surgical indexer change instead of a blanket exclude:** keep the Razor declaration rows (real coords), suppress only the generated-coordinate reference/caller rows. Targets the unreliable data without losing navigation.
+
+Until one of those lands, the operating rule stands: trust the index to navigate TO a member; grep the `.razor` to find WHERE it is used.
